@@ -1,0 +1,23 @@
+timeStamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,Latency,Connect
+1705315200000,150,GET Homepage,200,OK,Thread Group 1-1,text,true,,5420,320,10,10,140,45
+1705315200100,180,GET Homepage,200,OK,Thread Group 1-2,text,true,,5450,320,10,10,170,50
+1705315200200,165,GET Homepage,200,OK,Thread Group 1-3,text,true,,5400,320,10,10,155,48
+1705315200300,200,GET Homepage,200,OK,Thread Group 1-4,text,true,,5480,320,10,10,190,55
+1705315200400,145,GET Homepage,200,OK,Thread Group 1-5,text,true,,5390,320,10,10,135,42
+1705315200500,175,GET API Call,200,OK,Thread Group 1-1,text,true,,1200,180,10,10,165,38
+1705315200600,160,GET API Call,200,OK,Thread Group 1-2,text,true,,1220,180,10,10,150,40
+1705315200700,185,GET API Call,200,OK,Thread Group 1-3,text,true,,1180,180,10,10,175,42
+1705315200800,155,GET API Call,500,Internal Server Error,Thread Group 1-4,text,false,Server error,850,180,10,10,145,35
+1705315200900,170,GET API Call,200,OK,Thread Group 1-5,text,true,,1210,180,10,10,160,39
+
+
+
+
+
+
+
+
+
+
+
+

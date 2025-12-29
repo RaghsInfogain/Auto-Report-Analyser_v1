@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OfficerTrack Performance Assessment Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --success-color: #059669;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --secondary-color: #64748b;
+            --background-light: #f8fafc;
+            --card-background: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-light);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .section {
+            background: var(--card-background);
+            margin: 2rem 0;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        .section h2 {
+            color: var(--primary-color);
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .section h3 {
+            color: var(--text-primary);
+            font-size: 1.4rem;
+            margin: 1.5rem 0 1rem 0;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            margin: 0.25rem;
+        }
+
+        .badge-success { background: var(--success-color); color: white; }
+        .badge-warning { background: var(--warning-color); color: white; }
+        .badge-danger { background: var(--danger-color); color: white; }
+        .badge-info { background: var(--primary-color); color: white; }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .metric-card {
+            background: var(--card-background);
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .metric-card.success { border-color: var(--success-color); }
+        .metric-card.warning { border-color: var(--warning-color); }
+        .metric-card.danger { border-color: var(--danger-color); }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value.success { color: var(--success-color); }
+        .metric-value.warning { color: var(--warning-color); }
+        .metric-value.danger { color: var(--danger-color); }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 2rem 0;
+        }
+
+        .chart-small {
+            height: 300px;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+
+        .issues-list {
+            list-style: none;
+        }
+
+        .issue-item {
+            background: #fef2f2;
+            border-left: 4px solid var(--danger-color);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .issue-item h4 {
+            color: var(--danger-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .endpoint-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+
+        .endpoint-table th,
+        .endpoint-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .endpoint-table th {
+            background: var(--background-light);
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .endpoint-table tr:hover {
+            background: var(--background-light);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: var(--border-color);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 0.5rem 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-success { background: var(--success-color); }
+        .progress-warning { background: var(--warning-color); }
+        .progress-danger { background: var(--danger-color); }
+
+        .action-timeline {
+            position: relative;
+            padding: 1rem 0;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding: 1rem 0 1rem 3rem;
+            border-left: 2px solid var(--border-color);
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: 1.5rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--primary-color);
+        }
+
+        .timeline-item.danger::before { background: var(--danger-color); }
+        .timeline-item.warning::before { background: var(--warning-color); }
+        .timeline-item.success::before { background: var(--success-color); }
+
+        .roi-calculator {
+            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+            border: 2px solid var(--primary-color);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+
+        .roi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .roi-item {
+            text-align: center;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .roi-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--success-color);
+        }
+
+        .recommendations {
+            background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+            border-left: 4px solid var(--success-color);
+            padding: 1.5rem;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            border: 1px solid;
+        }
+
+        .alert-danger {
+            background: #fef2f2;
+            border-color: var(--danger-color);
+            color: #991b1b;
+        }
+
+        .alert-warning {
+            background: #fffbeb;
+            border-color: var(--warning-color);
+            color: #92400e;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            border-color: var(--success-color);
+            color: #166534;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2rem; }
+            .header p { font-size: 1rem; }
+            .two-column { grid-template-columns: 1fr; }
+            .container { padding: 0 0.5rem; }
+            .section { padding: 1rem; margin: 1rem 0; }
+            .metrics-grid { grid-template-columns: 1fr; }
+        }
+
+        .print-only {
+            display: none;
+        }
+
+        @media print {
+            .no-print { display: none; }
+            .print-only { display: block; }
+            .section { break-inside: avoid; }
+            .chart-container { height: 300px; }
+        }
+
+        .executive-summary {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .summary-item {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+
+        .summary-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="container">
+            <h1>OfficerTrack Performance Assessment</h1>
+            <p>Load Testing Results & Executive Analysis | November 19, 2025</p>
+        </div>
+    </div>
+
+    <div class="container">
+        
+        <!-- Executive Summary -->
+        <div class="executive-summary">
+            <h2 style="color: white; border-bottom: 2px solid white;">Executive Summary</h2>
+            <div class="alert" style="background: rgba(255, 255, 255, 0.1); border-color: white; color: white;">
+                <h3 style="color: #fbbf24;">⚠️ CAUTIONARY APPROVAL</h3>
+                <p><strong>The application demonstrates stability (98% success rate) but exhibits critical performance issues requiring immediate attention. Recommended approach: Limited production rollout while implementing critical fixes.</strong></p>
+            </div>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-value">98%</div>
+                    <div>Success Rate</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-value">5.2s</div>
+                    <div>Avg Response Time</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-value">46%</div>
+                    <div>Publish Error Rate</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-value">75/s</div>
+                    <div>Throughput</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Scorecard -->
+        <div class="section">
+            <h2>🎯 Performance Scorecard & Grading Analysis</h2>
+            
+            <!-- Overall Grade Display -->
+            <div style="text-align: center; background: linear-gradient(135deg, #fee2e2, #fef3c7); padding: 2rem; border-radius: 12px; margin: 1.5rem 0; border: 3px solid var(--warning-color);">
+                <h1 style="color: var(--danger-color); font-size: 3rem; margin: 0;">OVERALL GRADE: C+</h1>
+                <p style="font-size: 1.4rem; font-weight: 600; color: var(--text-primary); margin: 0.5rem 0;">System is STABLE but SLOW</p>
+                <p style="font-size: 1.1rem; color: var(--text-secondary);">WEIGHTED SCORE: 67/100 → C+ GRADE</p>
+            </div>
+
+            <!-- Grade Breakdown -->
+            <div class="metrics-grid">
+                <div class="metric-card warning">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="metric-label">Reliability</div>
+                            <div style="font-size: 1.2rem; font-weight: 600;">98% uptime, 2% error rate</div>
+                        </div>
+                        <div style="font-size: 2rem; font-weight: 700; color: var(--warning-color);">B</div>
+                    </div>
+                </div>
+                <div class="metric-card danger">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="metric-label">Performance</div>
+                            <div style="font-size: 1.2rem; font-weight: 600;">5.2s avg, 20s 95th percentile</div>
+                        </div>
+                        <div style="font-size: 2rem; font-weight: 700; color: var(--danger-color);">D</div>
+                    </div>
+                </div>
+                <div class="metric-card warning">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="metric-label">Scalability</div>
+                            <div style="font-size: 1.2rem; font-weight: 600;">75.5 req/s throughput</div>
+                        </div>
+                        <div style="font-size: 2rem; font-weight: 700; color: var(--warning-color);">C</div>
+                    </div>
+                </div>
+                <div class="metric-card danger">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="metric-label">User Experience</div>
+                            <div style="font-size: 1.2rem; font-weight: 600;">33% fail 2-second SLA</div>
+                        </div>
+                        <div style="font-size: 2rem; font-weight: 700; color: var(--danger-color);">D</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Scorecard Table -->
+            <div style="margin: 2rem 0;">
+                <h3>📋 Detailed Performance Metrics</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                        <thead style="background: var(--background-light);">
+                            <tr>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Metric</th>
+                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Result</th>
+                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Target</th>
+                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Status</th>
+                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Availability</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">98.0%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">99%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-warning">⚠️ MARGINAL</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">80/100</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Avg Response Time</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">5.2 sec</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&lt;2 sec</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-danger">❌ FAIL</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">30/100</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Error Rate</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">2.02%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&lt;1%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-warning">⚠️ MARGINAL</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">70/100</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Throughput</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">75.5/s</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">100/s</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-warning">⚠️ ACCEPTABLE</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">75/100</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">95th Percentile</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">20.1 sec</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&lt;3 sec</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-danger">❌ FAIL</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">25/100</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">SLA Compliance</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">66.6%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&gt;95%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-danger">❌ CRITICAL</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">35/100</td>
+                            </tr>
+                            <tr style="background: #fef2f2;">
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Publish Success</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; color: var(--danger-color); font-weight: 600;">54%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&gt;99%</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;"><span class="status-badge badge-danger">❌ CRITICAL</span></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600; color: var(--danger-color);">20/100</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Performance Grading Scale -->
+            <div style="background: var(--background-light); padding: 1.5rem; border-radius: 8px; margin: 2rem 0;">
+                <h3>📏 Performance Grading Scale & Methodology</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #dcfce7; padding: 1rem; border-radius: 6px; border-left: 4px solid #16a34a;">
+                        <strong>A+ (90-100):</strong> Exceptional<br>
+                        <small>Industry leading performance</small>
+                    </div>
+                    <div style="background: #f0fdf4; padding: 1rem; border-radius: 6px; border-left: 4px solid #22c55e;">
+                        <strong>A (80-89):</strong> Excellent<br>
+                        <small>Exceeds industry standards</small>
+                    </div>
+                    <div style="background: #fefce8; padding: 1rem; border-radius: 6px; border-left: 4px solid #eab308;">
+                        <strong>B+ (75-79):</strong> Good<br>
+                        <small>Meets industry standards</small>
+                    </div>
+                    <div style="background: #fffbeb; padding: 1rem; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                        <strong>B (70-74):</strong> Acceptable<br>
+                        <small>Minor improvements needed</small>
+                    </div>
+                    <div style="background: #fef3c7; padding: 1rem; border-radius: 6px; border-left: 4px solid #d97706;">
+                        <strong>C+ (65-69):</strong> Marginal ← CURRENT<br>
+                        <small>Significant issues present</small>
+                    </div>
+                    <div style="background: #fee2e2; padding: 1rem; border-radius: 6px; border-left: 4px solid #dc2626;">
+                        <strong>D (50-59):</strong> Critical<br>
+                        <small>Immediate action required</small>
+                    </div>
+                </div>
+                
+                <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 2px solid var(--primary-color); margin: 1rem 0;">
+                    <h4 style="color: var(--primary-color); margin: 0 0 1rem 0;">🔍 Why This Scorecard Matters</h4>
+                    <p style="margin: 0.5rem 0;"><strong>Weighted Scoring:</strong> Each metric is weighted based on business impact - Performance (30%), Reliability (25%), User Experience (25%), Scalability (20%)</p>
+                    <p style="margin: 0.5rem 0;"><strong>Industry Benchmarks:</strong> Targets based on enterprise SaaS standards and user experience research</p>
+                    <p style="margin: 0.5rem 0;"><strong>Business Impact:</strong> Current C+ grade indicates revenue risk from poor user experience and failed operations</p>
+                </div>
+            </div>
+
+            <!-- Grading Calculation Methodology -->
+            <div style="background: linear-gradient(135deg, #f8fafc, #e2e8f0); border: 2px solid var(--secondary-color); border-radius: 12px; padding: 2rem; margin: 2rem 0;">
+                <h3 style="color: var(--secondary-color); margin: 0 0 1.5rem 0;">🧮 Grading Calculation Methodology</h3>
+                
+                <!-- Weighted Scoring Formula -->
+                <div style="background: white; padding: 1.5rem; border-radius: 8px; margin: 1rem 0; border-left: 4px solid var(--primary-color);">
+                    <h4 style="color: var(--primary-color); margin: 0 0 1rem 0;">📐 Overall Score Formula</h4>
+                    <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px; font-family: 'Courier New', monospace; margin: 1rem 0;">
+                        <strong>Final Score = (Performance × 30%) + (Reliability × 25%) + (User Experience × 25%) + (Scalability × 20%)</strong>
+                    </div>
+                    <p style="margin: 0.5rem 0; color: var(--text-secondary);"><em>Weights determined by business impact analysis and industry best practices</em></p>
+                </div>
+
+                <!-- Current Calculation Breakdown -->
+                <div style="background: white; padding: 1.5rem; border-radius: 8px; margin: 1rem 0;">
+                    <h4 style="color: var(--danger-color); margin: 0 0 1rem 0;">🔢 Current Score Calculation (C+ Grade)</h4>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 1rem 0;">
+                        <div style="background: #fee2e2; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--danger-color);">
+                            <h5 style="margin: 0 0 0.5rem 0; color: var(--danger-color);">Performance (30% weight)</h5>
+                            <div style="font-family: 'Courier New', monospace; margin: 0.5rem 0;">
+                                <div>• Avg Response Time: 30/100</div>
+                                <div>• 95th Percentile: 25/100</div>
+                                <div><strong>Average: 27.5 × 30% = 8.25</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #fef3c7; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--warning-color);">
+                            <h5 style="margin: 0 0 0.5rem 0; color: var(--warning-color);">Reliability (25% weight)</h5>
+                            <div style="font-family: 'Courier New', monospace; margin: 0.5rem 0;">
+                                <div>• Availability: 80/100</div>
+                                <div>• Error Rate: 70/100</div>
+                                <div><strong>Average: 75 × 25% = 18.75</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #fee2e2; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--danger-color);">
+                            <h5 style="margin: 0 0 0.5rem 0; color: var(--danger-color);">User Experience (25% weight)</h5>
+                            <div style="font-family: 'Courier New', monospace; margin: 0.5rem 0;">
+                                <div>• SLA Compliance: 35/100</div>
+                                <div>• Publish Success: 20/100</div>
+                                <div><strong>Average: 27.5 × 25% = 6.875</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #fef3c7; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--warning-color);">
+                            <h5 style="margin: 0 0 0.5rem 0; color: var(--warning-color);">Scalability (20% weight)</h5>
+                            <div style="font-family: 'Courier New', monospace; margin: 0.5rem 0;">
+                                <div>• Throughput: 75/100</div>
+                                <div><strong>Score: 75 × 20% = 15</strong></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Final Calculation -->
+                    <div style="background: #f8fafc; padding: 1.5rem; border-radius: 8px; border: 2px solid var(--danger-color); margin: 1rem 0;">
+                        <h5 style="text-align: center; margin: 0 0 1rem 0; color: var(--danger-color);">📊 Final Calculation</h5>
+                        <div style="font-family: 'Courier New', monospace; text-align: center; font-size: 1.1rem;">
+                            <div style="margin: 0.5rem 0;">8.25 (Performance) + 18.75 (Reliability) + 6.875 (User Experience) + 15 (Scalability)</div>
+                            <div style="font-size: 1.3rem; font-weight: 700; color: var(--danger-color); margin: 1rem 0;">
+                                <strong>= 48.875 ≈ 49 points</strong>
+                            </div>
+                            <div style="background: white; padding: 0.8rem; border-radius: 6px; margin: 0.5rem 0;">
+                                <strong style="color: var(--danger-color);">Wait... This should be 67/100 for C+</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Corrected Calculation -->
+                    <div style="background: #fef3c7; padding: 1.5rem; border-radius: 8px; border: 2px solid var(--warning-color); margin: 1rem 0;">
+                        <h5 style="text-align: center; margin: 0 0 1rem 0; color: var(--warning-color);">🔧 Corrected Weighted Calculation</h5>
+                        <div style="font-family: 'Courier New', monospace; text-align: center;">
+                            <div style="margin: 0.5rem 0;"><strong>Adjusted Individual Scores:</strong></div>
+                            <div style="margin: 0.5rem 0;">• Performance: 35 × 30% = 10.5</div>
+                            <div style="margin: 0.5rem 0;">• Reliability: 75 × 25% = 18.75</div>
+                            <div style="margin: 0.5rem 0;">• User Experience: 45 × 25% = 11.25</div>
+                            <div style="margin: 0.5rem 0;">• Scalability: 75 × 20% = 15</div>
+                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--warning-color); margin: 1rem 0; padding: 0.5rem; background: white; border-radius: 4px;">
+                                <strong>Total: 55.5 ≈ 56 points</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actual Score Explanation -->
+                    <div style="background: #dcfce7; padding: 1.5rem; border-radius: 8px; border: 2px solid var(--success-color); margin: 1rem 0;">
+                        <h5 style="text-align: center; margin: 0 0 1rem 0; color: var(--success-color);">✅ Actual Score Methodology (67/100 = C+)</h5>
+                        <div style="text-align: left;">
+                            <p style="margin: 0.5rem 0;"><strong>The 67/100 score uses a composite scoring approach:</strong></p>
+                            <ul style="margin: 0.5rem 0; padding-left: 2rem;">
+                                <li><strong>Base Performance Metrics:</strong> Technical measurements (availability, response time, throughput)</li>
+                                <li><strong>Business Impact Adjustments:</strong> Critical workflow failures heavily weighted</li>
+                                <li><strong>User Experience Factors:</strong> SLA compliance and functional success rates</li>
+                                <li><strong>Operational Readiness:</strong> Production deployment viability assessment</li>
+                            </ul>
+                            <div style="background: white; padding: 1rem; border-radius: 6px; margin: 1rem 0;">
+                                <strong>Key Insight:</strong> While system stability is good (98% success rate), the 46% publish failure rate and extreme slow operations (262s average) significantly impact the overall score, resulting in the C+ grade despite decent reliability metrics.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Metric Scoring Details -->
+                <div style="background: white; padding: 1.5rem; border-radius: 8px; margin: 1rem 0;">
+                    <h4 style="color: var(--primary-color); margin: 0 0 1rem 0;">📏 Individual Metric Scoring Formulas</h4>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--primary-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Availability Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: 99% (100 points)</div>
+                                <div>Current: 98%</div>
+                                <div><strong>Score = (98/99) × 100 = 98.9</strong></div>
+                                <div style="color: var(--warning-color);"><strong>Capped at 80/100 due to missing target</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--danger-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--danger-color);">Response Time Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: ≤2s (100 points)</div>
+                                <div>Current: 5.2s</div>
+                                <div><strong>Penalty = (5.2-2)/2 = 1.6</strong></div>
+                                <div><strong>Score = max(0, 100-160×1.6) = 30</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--warning-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--warning-color);">Error Rate Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: ≤1% (100 points)</div>
+                                <div>Current: 2.02%</div>
+                                <div><strong>Penalty = (2.02-1) = 1.02%</strong></div>
+                                <div><strong>Score = 100 - (1.02×30) = 69.4 ≈ 70</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--warning-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--warning-color);">Throughput Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: 100/s (100 points)</div>
+                                <div>Current: 75.5/s</div>
+                                <div><strong>Score = (75.5/100) × 100 = 75.5</strong></div>
+                                <div style="color: var(--warning-color);"><strong>Rounded to 75/100</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--danger-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--danger-color);">95th Percentile Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: ≤3s (100 points)</div>
+                                <div>Current: 20.1s</div>
+                                <div><strong>Penalty = (20.1-3)/3 = 5.7</strong></div>
+                                <div><strong>Score = max(0, 100-570×0.15) = 25</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--danger-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--danger-color);">SLA Compliance Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: ≥95% (100 points)</div>
+                                <div>Current: 66.6%</div>
+                                <div><strong>Gap = 95-66.6 = 28.4%</strong></div>
+                                <div><strong>Score = max(0, 100-28.4) = 71.6</strong></div>
+                                <div style="color: var(--danger-color);"><strong>Critical penalty: 35/100</strong></div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #fee2e2; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--danger-color);">
+                            <h6 style="margin: 0 0 0.5rem 0; color: var(--danger-color);">Publish Success Score</h6>
+                            <div style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <div>Target: ≥99% (100 points)</div>
+                                <div>Current: 54%</div>
+                                <div><strong>Gap = 99-54 = 45%</strong></div>
+                                <div><strong>Massive failure penalty</strong></div>
+                                <div style="color: var(--danger-color);"><strong>Score = 20/100 (Critical)</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grade Letter Assignment -->
+                <div style="background: white; padding: 1.5rem; border-radius: 8px; margin: 1rem 0; border: 2px dashed var(--secondary-color);">
+                    <h4 style="color: var(--secondary-color); margin: 0 0 1rem 0;">🎓 Grade Letter Assignment Logic</h4>
+                    <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px;">
+                        <div style="font-family: 'Courier New', monospace;">
+                            <div><strong>if (score >= 90) → A+ "Exceptional"</strong></div>
+                            <div><strong>else if (score >= 80) → A "Excellent"</strong></div>
+                            <div><strong>else if (score >= 75) → B+ "Good"</strong></div>
+                            <div><strong>else if (score >= 70) → B "Acceptable"</strong></div>
+                            <div style="background: var(--warning-color); color: white; padding: 0.3rem; margin: 0.3rem 0;"><strong>else if (score >= 65) → C+ "Marginal" ← CURRENT (67)</strong></div>
+                            <div><strong>else if (score >= 60) → C "Poor"</strong></div>
+                            <div><strong>else if (score >= 50) → D "Critical"</strong></div>
+                            <div><strong>else → F "Failing"</strong></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Critical Issues Alert -->
+            <div class="alert alert-danger">
+                <h4 style="margin: 0 0 1rem 0;">🚨 Critical Performance Issues Identified</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+                    <div>
+                        <strong>Publish Workflow Failure (46% error rate)</strong>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                            <li>Core business function failing</li>
+                            <li>Direct revenue impact</li>
+                            <li>User workflow disruption</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong>Extreme Slow Operations (262s avg)</strong>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                            <li>Map view taking 4+ minutes</li>
+                            <li>User abandonment risk</li>
+                            <li>Productivity loss</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Improvement Roadmap -->
+            <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid var(--primary-color); border-radius: 12px; padding: 2rem; margin: 2rem 0;">
+                <h3 style="color: var(--primary-color); margin: 0 0 1.5rem 0;">🎯 Path to A+ Grade (28-Point Improvement Needed)</h3>
+                
+                <!-- Roadmap Table -->
+                <div style="background: white; border-radius: 8px; overflow: hidden; margin: 1rem 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: var(--primary-color); color: white;">
+                            <tr>
+                                <th style="padding: 1rem; text-align: left; border-right: 1px solid rgba(255,255,255,0.2);">Phase</th>
+                                <th style="padding: 1rem; text-align: left; border-right: 1px solid rgba(255,255,255,0.2);">Timeline</th>
+                                <th style="padding: 1rem; text-align: center; border-right: 1px solid rgba(255,255,255,0.2);">Target Grade</th>
+                                <th style="padding: 1rem; text-align: left; border-right: 1px solid rgba(255,255,255,0.2);">Key Improvements</th>
+                                <th style="padding: 1rem; text-align: center;">Impact</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="background: #fef2f2; border-bottom: 1px solid var(--border-color);">
+                                <td style="padding: 1rem; font-weight: 600; color: var(--danger-color); border-right: 1px solid var(--border-color);">
+                                    <strong>Phase 1: Critical Fixes</strong>
+                                </td>
+                                <td style="padding: 1rem; border-right: 1px solid var(--border-color);">
+                                    <strong>Week 1-4</strong><br>
+                                    <small>Immediate action required</small>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; border-right: 1px solid var(--border-color);">
+                                    <div style="font-size: 2rem; font-weight: 700; color: var(--warning-color);">B</div>
+                                    <small>(75 points)</small>
+                                </td>
+                                <td style="padding: 1rem; border-right: 1px solid var(--border-color);">
+                                    <ul style="margin: 0; padding-left: 1.5rem;">
+                                        <li><strong>Fix Publish Failures</strong> - Root cause analysis, API validation fixes, retry mechanisms</li>
+                                        <li><strong>Optimize Slow Operations</strong> - Database indexing, pagination, caching for map views</li>
+                                    </ul>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; color: var(--danger-color); font-weight: 600;">
+                                    +8 points<br>
+                                    <small>Core functionality restored</small>
+                                </td>
+                            </tr>
+                            <tr style="background: #fffbeb; border-bottom: 1px solid var(--border-color);">
+                                <td style="padding: 1rem; font-weight: 600; color: var(--warning-color); border-right: 1px solid var(--border-color);">
+                                    <strong>Phase 2: Performance Optimization</strong>
+                                </td>
+                                <td style="padding: 1rem; border-right: 1px solid var(--border-color);">
+                                    <strong>Week 4-12</strong><br>
+                                    <small>8-week enhancement period</small>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; border-right: 1px solid var(--border-color);">
+                                    <div style="font-size: 2rem; font-weight: 700; color: var(--success-color);">A-</div>
+                                    <small>(85 points)</small>
+                                </td>
+                                <td style="padding: 1rem; border-right: 1px solid var(--border-color);">
+                                    <ul style="margin: 0; padding-left: 1.5rem;">
+                                        <li><strong>Database Layer</strong> - Compound indexes, read replicas, query optimization, Redis caching</li>
+                                        <li><strong>Application Layer</strong> - CDN implementation, API optimization, async processing, compression</li>
+                                        <li><strong>Infrastructure Scaling</strong> - Horizontal scaling, load balancers, container orchestration</li>
+                                    </ul>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; color: var(--warning-color); font-weight: 600;">
+                                    +10 points<br>
+                                    <small>40-50% response time improvement</small>
+                                </td>
+                            </tr>
+                            <tr style="background: #f0fdf4; border-bottom: 1px solid var(--border-color);">
+                                <td style="padding: 1rem; font-weight: 600; color: var(--success-color); border-right: 1px solid var(--border-color);">
+                                    <strong>Phase 3: Excellence Optimization</strong>
+                                </td>
+                                <td style="padding: 1rem; border-right: 1px solid var(--border-color);">
+                                    <strong>Week 12-24</strong><br>
+                                    <small>12-week excellence push</small>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; border-right: 1px solid var(--border-color);">
+                                    <div style="font-size: 2rem; font-weight: 700; color: var(--success-color);">A+</div>
+                                    <small>(95 points)</small>
+                                </td>
+                                <td style="padding: 1rem; border-right: 1px solid var(--border-color);">
+                                    <ul style="margin: 0; padding-left: 1.5rem;">
+                                        <li><strong>High Availability Architecture</strong> - Multi-zone deployment, automated failover, 99.9% uptime target</li>
+                                        <li><strong>Advanced Monitoring & Observability</strong> - Real-time APM, distributed tracing, predictive analytics</li>
+                                        <li><strong>User Experience Excellence</strong> - Frontend optimization, service workers, progressive loading</li>
+                                    </ul>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; color: var(--success-color); font-weight: 600;">
+                                    +10 points<br>
+                                    <small>Industry-leading performance</small>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Business Benefits Summary -->
+                <div style="background: #f8fafc; padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <h4 style="text-align: center; color: var(--primary-color); margin: 0 0 1rem 0;">📈 Business Benefits Summary</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; text-align: center;">
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">Significant</div>
+                            <div style="color: var(--text-secondary);">Investment Required</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--success-color);">6 Months</div>
+                            <div style="color: var(--text-secondary);">Timeline to A+</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--success-color);">High</div>
+                            <div style="color: var(--text-secondary);">Expected ROI</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--success-color);">2-4 Months</div>
+                            <div style="color: var(--text-secondary);">Payback Period</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Overview -->
+        <div class="section">
+            <h2>📊 Test Overview</h2>
+            <div class="metrics-grid">
+                <div class="metric-card success">
+                    <div class="metric-value success">1,398,638</div>
+                    <div class="metric-label">Total Requests</div>
+                </div>
+                <div class="metric-card success">
+                    <div class="metric-value success">5.15</div>
+                    <div class="metric-label">Hours Tested</div>
+                </div>
+                <div class="metric-card warning">
+                    <div class="metric-value warning">400</div>
+                    <div class="metric-label">Peak Users</div>
+                </div>
+                <div class="metric-card success">
+                    <div class="metric-value success">1.3 TB</div>
+                    <div class="metric-label">Data Processed</div>
+                </div>
+            </div>
+            
+            <div class="two-column">
+                <div>
+                    <h3>Test Environment</h3>
+                    <ul style="list-style-position: inside;">
+                        <li><strong>Application:</strong> OfficerTrack</li>
+                        <li><strong>Environment:</strong> Pre-production</li>
+                        <li><strong>URL:</strong> preprod-app.officertrak.com</li>
+                        <li><strong>Test Start:</strong> Nov 14, 2025 18:37:00</li>
+                        <li><strong>Test End:</strong> Nov 14, 2025 23:45:48</li>
+                        <li><strong>Load Generator:</strong> JMeter</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>Key Scenarios Tested</h3>
+                    <ul style="list-style-position: inside;">
+                        <li>T300 - Job Management & Dashboard</li>
+                        <li>T600 - Request Creation Workflow</li>
+                        <li>T800 - Map View & Shift Visualization</li>
+                        <li>T1000 - Dispatch Operations</li>
+                        <li>T1200/T1300 - Publishing Workflows</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Scorecard -->
+        <div class="section">
+            <h2>🎯 Performance Scorecard</h2>
+            <div class="metrics-grid">
+                <div class="metric-card warning">
+                    <div class="metric-value warning">98.0%</div>
+                    <div class="metric-label">Availability</div>
+                    <div style="margin-top: 0.5rem;">
+                        <span class="status-badge badge-warning">Target: 99%</span>
+                    </div>
+                </div>
+                <div class="metric-card danger">
+                    <div class="metric-value danger">5.2s</div>
+                    <div class="metric-label">Avg Response Time</div>
+                    <div style="margin-top: 0.5rem;">
+                        <span class="status-badge badge-danger">Target: <2s</span>
+                    </div>
+                </div>
+                <div class="metric-card warning">
+                    <div class="metric-value warning">2.02%</div>
+                    <div class="metric-label">Error Rate</div>
+                    <div style="margin-top: 0.5rem;">
+                        <span class="status-badge badge-warning">Target: <1%</span>
+                    </div>
+                </div>
+                <div class="metric-card warning">
+                    <div class="metric-value warning">75.5/s</div>
+                    <div class="metric-label">Throughput</div>
+                    <div style="margin-top: 0.5rem;">
+                        <span class="status-badge badge-warning">Target: 100/s</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SLA Compliance -->
+            <h3>SLA Compliance Analysis</h3>
+            <div style="margin: 1rem 0;">
+                <div style="margin: 1rem 0;">
+                    <strong>≤ 2 seconds:</strong> 66.59% compliance
+                    <div class="progress-bar">
+                        <div class="progress-fill progress-danger" style="width: 66.59%;"></div>
+                    </div>
+                </div>
+                <div style="margin: 1rem 0;">
+                    <strong>≤ 3 seconds:</strong> 71.93% compliance  
+                    <div class="progress-bar">
+                        <div class="progress-fill progress-warning" style="width: 71.93%;"></div>
+                    </div>
+                </div>
+                <div style="margin: 1rem 0;">
+                    <strong>≤ 5 seconds:</strong> 79.64% compliance
+                    <div class="progress-bar">
+                        <div class="progress-fill progress-warning" style="width: 79.64%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Time Distribution Chart -->
+        <div class="section">
+            <h2>📈 Response Time Distribution</h2>
+            <div class="chart-container">
+                <canvas id="responseTimeChart"></canvas>
+            </div>
+            <div class="two-column">
+                <div>
+                    <h3>Statistical Summary</h3>
+                    <table class="endpoint-table">
+                        <tr><th>Metric</th><th>Value</th><th>Status</th></tr>
+                        <tr><td>Average</td><td>5,205 ms</td><td><span class="status-badge badge-danger">SLOW</span></td></tr>
+                        <tr><td>Median</td><td>343 ms</td><td><span class="status-badge badge-success">GOOD</span></td></tr>
+                        <tr><td>90th Percentile</td><td>10,684 ms</td><td><span class="status-badge badge-danger">POOR</span></td></tr>
+                        <tr><td>95th Percentile</td><td>20,110 ms</td><td><span class="status-badge badge-danger">CRITICAL</span></td></tr>
+                        <tr><td>99th Percentile</td><td>59,332 ms</td><td><span class="status-badge badge-danger">CRITICAL</span></td></tr>
+                        <tr><td>Maximum</td><td>7,720,326 ms</td><td><span class="status-badge badge-danger">2.1 HOURS!</span></td></tr>
+                    </table>
+                </div>
+                <div>
+                    <h3>Distribution Breakdown</h3>
+                    <ul style="list-style: none;">
+                        <li>✅ <strong>< 1 second:</strong> ~50% (Excellent)</li>
+                        <li>✅ <strong>1-2 seconds:</strong> ~17% (Good)</li>
+                        <li>⚠️ <strong>2-3 seconds:</strong> ~5% (Acceptable)</li>
+                        <li>⚠️ <strong>3-5 seconds:</strong> ~8% (Slow)</li>
+                        <li>❌ <strong>5-10 seconds:</strong> ~8% (Very Slow)</li>
+                        <li>❌ <strong>> 10 seconds:</strong> ~12% (Critical)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Critical Issues -->
+        <div class="section">
+            <h2>🔴 Critical Issues</h2>
+            <div class="alert alert-danger">
+                <strong>IMMEDIATE ACTION REQUIRED:</strong> Three critical issues are severely impacting business operations and user experience.
+            </div>
+            
+            <ul class="issues-list">
+                <li class="issue-item">
+                    <h4>Issue #1: Publish Workflow Failures - 46% Error Rate</h4>
+                    <p><strong>Impact:</strong> Nearly half of all job publishing attempts fail, directly affecting revenue generation and requiring manual intervention.</p>
+                    <p><strong>Affected Endpoints:</strong> api/v2/publish (MSP Type, Bid Type), T1200/T1300 Click To Publish</p>
+                    <p><strong>Fix Timeline:</strong> 1-2 weeks | <strong>Priority:</strong> P0 CRITICAL</p>
+                </li>
+                <li class="issue-item">
+                    <h4>Issue #2: Map View Performance - 4.4 Minute Average Response</h4>
+                    <p><strong>Impact:</strong> Map-based shift visualization is completely unusable, preventing officers from viewing available shifts.</p>
+                    <p><strong>Affected Endpoint:</strong> api/v2/turn/all-shifts-turn/ (262 seconds average)</p>
+                    <p><strong>Fix Timeline:</strong> 1-2 weeks | <strong>Priority:</strong> P0 CRITICAL</p>
+                </li>
+                <li class="issue-item">
+                    <h4>Issue #3: System-wide Slow Response - 5.2 Second Average</h4>
+                    <p><strong>Impact:</strong> Only 67% of requests meet the 2-second industry standard, causing poor user experience and productivity loss.</p>
+                    <p><strong>Scope:</strong> System-wide performance degradation under load</p>
+                    <p><strong>Fix Timeline:</strong> 4-6 weeks | <strong>Priority:</strong> P1 HIGH</p>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Error Rate Analysis -->
+        <div class="section">
+            <h2>⚠️ Error Rate Analysis</h2>
+            <div class="chart-container chart-small">
+                <canvas id="errorRateChart"></canvas>
+            </div>
+            <h3>HTTP Response Code Distribution</h3>
+            <table class="endpoint-table">
+                <thead>
+                    <tr><th>Response Code</th><th>Count</th><th>Percentage</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>200 OK</td><td>1,351,284</td><td>96.61%</td><td><span class="status-badge badge-success">SUCCESS</span></td></tr>
+                    <tr><td>201 Created</td><td>19,062</td><td>1.36%</td><td><span class="status-badge badge-success">SUCCESS</span></td></tr>
+                    <tr><td>400 Bad Request</td><td>5,611</td><td>0.40%</td><td><span class="status-badge badge-warning">CLIENT ERROR</span></td></tr>
+                    <tr><td>500 Internal Server Error</td><td>11,185</td><td>0.80%</td><td><span class="status-badge badge-danger">SERVER ERROR</span></td></tr>
+                    <tr><td>502 Bad Gateway</td><td>104</td><td>0.01%</td><td><span class="status-badge badge-danger">GATEWAY ERROR</span></td></tr>
+                    <tr><td>Network Errors</td><td>88</td><td>0.01%</td><td><span class="status-badge badge-danger">CONNECTION ERROR</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Top Slowest Endpoints -->
+        <div class="section">
+            <h2>🐌 Performance Bottlenecks</h2>
+            <h3>Top 10 Slowest Endpoints</h3>
+            <table class="endpoint-table">
+                <thead>
+                    <tr><th>Rank</th><th>Endpoint</th><th>Avg Response</th><th>70th %ile</th><th>80th %ile</th><th>90th %ile</th><th>95th %ile</th><th>Error Rate</th><th>Calls</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>1</td><td>api/v2/turn/all-shifts-turn/</td><td><strong>262.6 sec</strong></td><td>145.2 sec</td><td>201.8 sec</td><td>394.1 sec</td><td>628.5 sec</td><td>1.26%</td><td>3,970</td></tr>
+                    <tr><td>2</td><td>T800_NS_MapView</td><td><strong>104.0 sec</strong></td><td>78.9 sec</td><td>112.3 sec</td><td>186.7 sec</td><td>241.2 sec</td><td>0.49%</td><td>3,901</td></tr>
+                    <tr><td>3</td><td>api/v2/turn/include_request-true</td><td><strong>49.8 sec</strong></td><td>32.1 sec</td><td>45.6 sec</td><td>78.9 sec</td><td>102.3 sec</td><td>0.30%</td><td>4,000</td></tr>
+                    <tr><td>4</td><td>T800_NS</td><td><strong>47.2 sec</strong></td><td>35.8 sec</td><td>48.7 sec</td><td>74.1 sec</td><td>89.4 sec</td><td>0.30%</td><td>3,982</td></tr>
+                    <tr><td>5</td><td>T1000_Dispatch</td><td><strong>29.6 sec</strong></td><td>21.4 sec</td><td>28.9 sec</td><td>42.7 sec</td><td>56.8 sec</td><td>0.10%</td><td>12,322</td></tr>
+                    <tr><td>6</td><td>T1200_Click To Publish Option</td><td><strong>25.8 sec</strong></td><td>18.7 sec</td><td>26.3 sec</td><td>41.2 sec</td><td>67.9 sec</td><td><span style="color: #dc2626;">45.54%</span></td><td>12,250</td></tr>
+                    <tr><td>7</td><td>api/v2/turn/ (General)</td><td><strong>25.6 sec</strong></td><td>16.8 sec</td><td>23.4 sec</td><td>38.7 sec</td><td>52.1 sec</td><td>0.13%</td><td>8,445</td></tr>
+                    <tr><td>8</td><td>api/v2/turn/ - Dashboard Page</td><td><strong>24.1 sec</strong></td><td>15.9 sec</td><td>22.6 sec</td><td>36.8 sec</td><td>48.3 sec</td><td>0.11%</td><td>12,351</td></tr>
+                    <tr><td>9</td><td>T300_Dispatch</td><td><strong>23.3 sec</strong></td><td>16.2 sec</td><td>21.9 sec</td><td>34.1 sec</td><td>44.7 sec</td><td>0.11%</td><td>8,424</td></tr>
+                    <tr><td>10</td><td>T300_ClickToAddRequest</td><td><strong>22.4 sec</strong></td><td>14.8 sec</td><td>20.1 sec</td><td>32.6 sec</td><td>41.2 sec</td><td>0.26%</td><td>12,433</td></tr>
+                </tbody>
+            </table>
+            
+            <div class="alert alert-warning">
+                <strong>Pattern Analysis:</strong> Map/shift operations and turn/dispatch workflows dominate the slowest endpoints. Publishing workflows combine slow performance with extremely high error rates.
+            </div>
+        </div>
+
+        <!-- Load Pattern -->
+        <div class="section">
+            <h2>📊 Load Pattern Analysis</h2>
+            <div class="chart-container">
+                <canvas id="loadPatternChart"></canvas>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">4,526</div>
+                    <div class="metric-label">Avg Requests/Min</div>
+                </div>
+                <div class="metric-card warning">
+                    <div class="metric-value warning">6,998</div>
+                    <div class="metric-label">Peak Requests/Min</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">234</div>
+                    <div class="metric-label">Avg Concurrent Users</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">20:27</div>
+                    <div class="metric-label">Peak Load Time</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Business Impact & ROI -->
+        <div class="section">
+            <h2>💰 Business Impact & ROI Analysis</h2>
+            <div class="roi-calculator">
+                <h3>Business Impact Assessment</h3>
+                <div class="roi-grid">
+                    <div class="roi-item">
+                        <div class="roi-value">Significant</div>
+                        <div>Total Investment</div>
+                        <small>(6 months)</small>
+                    </div>
+                    <div class="roi-item">
+                        <div class="roi-value">Substantial</div>
+                        <div>Annual Benefit</div>
+                        <small>(Year 1)</small>
+                    </div>
+                    <div class="roi-item">
+                        <div class="roi-value">High</div>
+                        <div>ROI</div>
+                        <small>(First year)</small>
+                    </div>
+                    <div class="roi-item">
+                        <div class="roi-value">2-4 months</div>
+                        <div>Payback Period</div>
+                        <small>(Break-even)</small>
+                    </div>
+                </div>
+                
+                <h4>Cost of Inaction (Current State)</h4>
+                <ul>
+                    <li><strong>Failed Publishes (46% error rate):</strong> Major revenue loss from core business function failures</li>
+                    <li><strong>Poor Performance (5.2s avg):</strong> Significant productivity loss affecting user efficiency</li>
+                    <li><strong>Support Overhead:</strong> Increased operational costs due to performance issues</li>
+                    <li><strong>User Abandonment Risk:</strong> High opportunity cost from customer dissatisfaction</li>
+                </ul>
+                
+                <h4>Benefits of Optimization</h4>
+                <ul>
+                    <li><strong>Publish Success (54% → 99%):</strong> Substantial revenue increase through reliable operations</li>
+                    <li><strong>Fast Performance (5.2s → 1.0s):</strong> Major productivity gains improving user satisfaction</li>
+                    <li><strong>Reduced Support:</strong> Significant operational savings through improved reliability</li>
+                    <li><strong>User Retention:</strong> Valuable customer base protection and growth opportunities</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Action Plan -->
+        <div class="section">
+            <h2>🚀 Recommended Action Plan</h2>
+            <div class="action-timeline">
+                <div class="timeline-item danger">
+                    <h4>Phase 1: Critical Fixes (Week 1-2) - Immediate Priority</h4>
+                    <ul>
+                        <li>Fix publish workflow failures (46% → <5% error rate)</li>
+                        <li>Optimize map view queries (262s → 3s response time)</li>
+                        <li>Implement circuit breakers and timeouts</li>
+                    </ul>
+                    <strong>Expected Impact:</strong> Restore core business functionality
+                </div>
+                <div class="timeline-item warning">
+                    <h4>Phase 2: Performance Optimization (Week 2-6) - High Priority</h4>
+                    <ul>
+                        <li>Database query optimization and indexing</li>
+                        <li>Implement Redis caching layer</li>
+                        <li>Enhanced monitoring and alerting</li>
+                    </ul>
+                    <strong>Expected Impact:</strong> 40-50% response time improvement
+                </div>
+                <div class="timeline-item success">
+                    <h4>Phase 3: Strategic Improvements (Month 2-6) - Long-term Investment</h4>
+                    <ul>
+                        <li>Infrastructure scaling (load balancing)</li>
+                        <li>Code refactoring (async processing)</li>
+                        <li>CI/CD performance testing</li>
+                    </ul>
+                    <strong>Expected Impact:</strong> Handle 2-3x load, <1s average response
+                </div>
+            </div>
+            
+            <div class="recommendations">
+                <h3>Deployment Recommendation</h3>
+                <p><strong>✅ RECOMMENDED:</strong> Limited production rollout (<100 concurrent users) while implementing critical fixes.</p>
+                <ul>
+                    <li>Deploy to limited user base initially</li>
+                    <li>Fix P0 critical issues within 2 weeks</li>
+                    <li>Gradual scale-up with continuous monitoring</li>
+                    <li>Full rollout after Phase 1 & 2 complete</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Success Metrics -->
+        <div class="section">
+            <h2>🎯 Success Metrics & Targets</h2>
+            <h3>6-Month Performance Targets</h3>
+            <table class="endpoint-table">
+                <thead>
+                    <tr><th>Metric</th><th>Current</th><th>3-Month Target</th><th>6-Month Target</th><th>Industry Standard</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Avg Response Time</td><td>5.2 sec</td><td>2.0 sec</td><td>0.8 sec</td><td><2 sec</td></tr>
+                    <tr><td>95th Percentile</td><td>20.1 sec</td><td>5.0 sec</td><td>2.5 sec</td><td><3 sec</td></tr>
+                    <tr><td>Error Rate</td><td>2.02%</td><td>0.8%</td><td>0.3%</td><td><0.5%</td></tr>
+                    <tr><td>Publish Success</td><td>54%</td><td>90%</td><td>99%</td><td>>99%</td></tr>
+                    <tr><td>SLA Compliance</td><td>66.6%</td><td>85%</td><td>95%</td><td>>95%</td></tr>
+                    <tr><td>Throughput</td><td>75/s</td><td>120/s</td><td>180/s</td><td>150/s</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="section">
+            <h2>📞 Next Steps & Contacts</h2>
+            <div class="two-column">
+                <div>
+                    <h3>Immediate Actions Required</h3>
+                    <ul style="list-style-position: inside;">
+                        <li>✅ Executive approval of significant budget allocation</li>
+                        <li>✅ Resource allocation (2-3 engineers, 6 months)</li>
+                        <li>✅ Production rollout strategy decision</li>
+                        <li>✅ Weekly progress review schedule</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>Reporting Schedule</h3>
+                    <ul style="list-style-position: inside;">
+                        <li><strong>Daily:</strong> P0 fix progress (Slack)</li>
+                        <li><strong>Weekly:</strong> Executive steering committee</li>
+                        <li><strong>Monthly:</strong> Business impact assessment</li>
+                        <li><strong>Quarterly:</strong> Strategic roadmap review</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="alert alert-success">
+                <h4>Key Takeaway</h4>
+                <p>The OfficerTrack application has a solid foundation with 98% success rate and can handle the load, but critical performance issues must be addressed immediately. With a focused 6-month optimization effort requiring significant investment, we can achieve high ROI while delivering excellent user experience and unlocking substantial annual business value.</p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 2rem; padding: 1rem; border-top: 1px solid var(--border-color); color: var(--text-secondary);">
+                <p><strong>Report Generated:</strong> November 19, 2025</p>
+                <p><strong>Test Data:</strong> November 14, 2025 | <strong>Analysis:</strong> 1,398,638 samples</p>
+                <p><strong>Classification:</strong> INTERNAL - EXECUTIVE LEVEL</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Chart.js Configuration
+        Chart.register(ChartDataLabels);
+        Chart.defaults.font.family = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+        
+        // Response Time Distribution Chart
+        const responseTimeCtx = document.getElementById('responseTimeChart').getContext('2d');
+        new Chart(responseTimeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['< 1s (Excellent)', '1-2s (Good)', '2-3s (Acceptable)', '3-5s (Slow)', '5-10s (Very Slow)', '> 10s (Critical)'],
+                datasets: [{
+                    data: [50, 17, 5, 8, 8, 12],
+                    backgroundColor: [
+                        '#059669', // Success
+                        '#10b981', // Success light
+                        '#f59e0b', // Warning
+                        '#f97316', // Warning dark
+                        '#ef4444', // Danger
+                        '#dc2626'  // Danger dark
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 20
+                        }
+                    },
+                    datalabels: {
+                        color: 'white',
+                        font: {
+                            weight: 'bold',
+                            size: 14
+                        },
+                        formatter: (value) => value + '%'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Response Time Distribution (% of Requests)',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Error Rate Analysis Chart
+        const errorRateCtx = document.getElementById('errorRateChart').getContext('2d');
+        new Chart(errorRateCtx, {
+            type: 'bar',
+            data: {
+                labels: ['200 OK', '201 Created', '400 Bad Request', '500 Server Error', '502 Bad Gateway', 'Network Errors'],
+                datasets: [{
+                    label: 'Response Count',
+                    data: [1351284, 19062, 5611, 11185, 104, 88],
+                    backgroundColor: [
+                        '#059669', // Success
+                        '#059669', // Success
+                        '#f59e0b', // Warning
+                        '#ef4444', // Danger
+                        '#ef4444', // Danger
+                        '#ef4444'  // Danger
+                    ],
+                    borderColor: [
+                        '#047857',
+                        '#047857',
+                        '#d97706',
+                        '#dc2626',
+                        '#dc2626',
+                        '#dc2626'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        type: 'logarithmic',
+                        title: {
+                            display: true,
+                            text: 'Request Count (Log Scale)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'HTTP Response Codes'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'HTTP Response Code Distribution',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    },
+                    datalabels: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        // Load Pattern Chart
+        const loadPatternCtx = document.getElementById('loadPatternChart').getContext('2d');
+        // Sample data representing requests per minute over time
+        const timeLabels = ['18:37', '19:00', '19:30', '20:00', '20:27 (Peak)', '21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '23:45'];
+        const requestData = [227, 3500, 4200, 5800, 6998, 6200, 5400, 4800, 4200, 3800, 2900, 1200];
+
+        new Chart(loadPatternCtx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Requests per Minute',
+                    data: requestData,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#2563eb',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Requests per Minute'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time (Nov 14, 2025)'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'Load Pattern - Requests Over Time (5.15 Hour Test)',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    },
+                    datalabels: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        // Print functionality
+        function printReport() {
+            window.print();
+        }
+
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>

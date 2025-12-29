@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Test - Direct Connection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover { background: #0056b3; }
+        #log {
+            background: #f8f9fa;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Upload Test Page - Direct Backend Connection</h1>
+    
+    <div class="status info">
+        <strong>Backend URL:</strong> <span id="backendUrl">http://localhost:8000</span><br>
+        <strong>This page bypasses React to test the backend directly.</strong>
+    </div>
+    
+    <h2>Step 1: Test Backend Connection</h2>
+    <button onclick="testBackend()">Test Backend Connection</button>
+    <div id="backendStatus"></div>
+    
+    <h2>Step 2: Upload File</h2>
+    <input type="file" id="fileInput" accept=".csv,.json,.jtl">
+    <select id="category">
+        <option value="jmeter">JMeter</option>
+        <option value="web_vitals">Web Vitals</option>
+        <option value="ui_performance">UI Performance</option>
+    </select>
+    <button onclick="uploadFile()">Upload File</button>
+    <div id="uploadStatus"></div>
+    
+    <h2>Debug Log</h2>
+    <div id="log"></div>
+    
+    <script>
+        const BACKEND_URL = 'http://localhost:8000';
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            entry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${timestamp}] ${type.toUpperCase()}:`, message);
+        }
+        
+        async function testBackend() {
+            const statusDiv = document.getElementById('backendStatus');
+            statusDiv.innerHTML = '<div class="status info">Testing backend connection...</div>';
+            log('Testing backend connection to ' + BACKEND_URL);
+            
+            try {
+                const response = await fetch(BACKEND_URL + '/');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `<div class="status success">✅ Backend connected successfully!<br>Response: ${JSON.stringify(data)}</div>`;
+                    log('Backend connection successful: ' + JSON.stringify(data), 'success');
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ Backend responded with error: ${response.status}</div>`;
+                    log('Backend error: ' + response.status, 'error');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Cannot connect to backend: ${error.message}</div>`;
+                log('Backend connection failed: ' + error.message, 'error');
+                log('Error details: ' + JSON.stringify(error), 'error');
+            }
+        }
+        
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const category = document.getElementById('category').value;
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                statusDiv.innerHTML = '<div class="status error">❌ Please select a file</div>';
+                log('No file selected', 'error');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            log('Starting upload: ' + file.name + ' (' + file.size + ' bytes, category: ' + category + ')');
+            
+            statusDiv.innerHTML = '<div class="status info">Uploading...</div>';
+            
+            const formData = new FormData();
+            formData.append('files', file);
+            formData.append('categories', category);
+            
+            try {
+                log('Sending POST request to ' + BACKEND_URL + '/api/upload');
+                const response = await fetch(BACKEND_URL + '/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log('Response received. Status: ' + response.status);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `<div class="status success">✅ Upload successful!<br>Run ID: ${data.run_id}<br>Files: ${data.files.length}</div>`;
+                    log('Upload successful! Run ID: ' + data.run_id, 'success');
+                    log('Response: ' + JSON.stringify(data, null, 2), 'success');
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ Upload failed: ${data.detail || response.statusText}</div>`;
+                    log('Upload failed: ' + (data.detail || response.statusText), 'error');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Upload error: ${error.message}</div>`;
+                log('Upload error: ' + error.message, 'error');
+                log('Error type: ' + error.name, 'error');
+                log('Full error: ' + JSON.stringify({
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                }), 'error');
+            }
+        }
+        
+        // Test backend on page load
+        window.onload = function() {
+            log('Page loaded');
+            log('Backend URL: ' + BACKEND_URL);
+            testBackend();
+        };
+    </script>
+</body>
+</html>
+
+

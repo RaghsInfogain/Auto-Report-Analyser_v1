@@ -1,0 +1,74 @@
+[
+  {
+    "timestamp": "2024-01-15T10:30:00Z",
+    "url": "https://example.com",
+    "dns_lookup_time": 45,
+    "connection_time": 85,
+    "ssl_time": 120,
+    "time_to_first_byte": 580,
+    "content_download_time": 320,
+    "dom_processing_time": 850,
+    "page_load_time": 2100,
+    "full_page_load_time": 2450
+  },
+  {
+    "timestamp": "2024-01-15T10:31:00Z",
+    "url": "https://example.com",
+    "dns_lookup_time": 50,
+    "connection_time": 90,
+    "ssl_time": 130,
+    "time_to_first_byte": 620,
+    "content_download_time": 340,
+    "dom_processing_time": 900,
+    "page_load_time": 2300,
+    "full_page_load_time": 2680
+  },
+  {
+    "timestamp": "2024-01-15T10:32:00Z",
+    "url": "https://example.com",
+    "dns_lookup_time": 42,
+    "connection_time": 80,
+    "ssl_time": 115,
+    "time_to_first_byte": 550,
+    "content_download_time": 300,
+    "dom_processing_time": 820,
+    "page_load_time": 2000,
+    "full_page_load_time": 2350
+  },
+  {
+    "timestamp": "2024-01-15T10:33:00Z",
+    "url": "https://example.com",
+    "dns_lookup_time": 55,
+    "connection_time": 95,
+    "ssl_time": 140,
+    "time_to_first_byte": 680,
+    "content_download_time": 380,
+    "dom_processing_time": 950,
+    "page_load_time": 2500,
+    "full_page_load_time": 2900
+  },
+  {
+    "timestamp": "2024-01-15T10:34:00Z",
+    "url": "https://example.com",
+    "dns_lookup_time": 48,
+    "connection_time": 88,
+    "ssl_time": 125,
+    "time_to_first_byte": 600,
+    "content_download_time": 330,
+    "dom_processing_time": 880,
+    "page_load_time": 2200,
+    "full_page_load_time": 2580
+  }
+]
+
+
+
+
+
+
+
+
+
+
+
+

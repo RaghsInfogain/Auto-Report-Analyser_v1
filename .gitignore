@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Backend specific
+backend/venv/
+backend/*.db
+backend/performance_analyzer.db
+backend/performance_analyzer.db.backup
+backend/*.log
+backend/uploads/
+backend/reports/
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.cache/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+backend.log
+frontend.log
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Test files
+test_upload.sh
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,64 @@
+[
+  {
+    "timestamp": "2024-01-15T10:30:00Z",
+    "url": "https://example.com",
+    "lcp": 2400,
+    "fid": 95,
+    "cls": 0.08,
+    "fcp": 1600,
+    "ttfb": 580,
+    "inp": 120
+  },
+  {
+    "timestamp": "2024-01-15T10:31:00Z",
+    "url": "https://example.com",
+    "lcp": 2800,
+    "fid": 110,
+    "cls": 0.12,
+    "fcp": 1800,
+    "ttfb": 620,
+    "inp": 140
+  },
+  {
+    "timestamp": "2024-01-15T10:32:00Z",
+    "url": "https://example.com",
+    "lcp": 2200,
+    "fid": 85,
+    "cls": 0.06,
+    "fcp": 1500,
+    "ttfb": 550,
+    "inp": 100
+  },
+  {
+    "timestamp": "2024-01-15T10:33:00Z",
+    "url": "https://example.com",
+    "lcp": 3200,
+    "fid": 130,
+    "cls": 0.15,
+    "fcp": 2000,
+    "ttfb": 680,
+    "inp": 160
+  },
+  {
+    "timestamp": "2024-01-15T10:34:00Z",
+    "url": "https://example.com",
+    "lcp": 2600,
+    "fid": 100,
+    "cls": 0.09,
+    "fcp": 1700,
+    "ttfb": 600,
+    "inp": 125
+  }
+]
+
+
+
+
+
+
+
+
+
+
+
+
