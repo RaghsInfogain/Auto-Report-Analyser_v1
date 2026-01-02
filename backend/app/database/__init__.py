@@ -3,19 +3,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import os
+from pathlib import Path
 
 from .models import Base
 
-# Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./performance_analyzer.db")
+# Database configuration - use absolute path for persistence
+_db_path = Path(__file__).parent.parent.parent / "performance_analyzer.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_db_path.absolute()}")
 
 # Create engine
 if DATABASE_URL.startswith("sqlite"):
-    # SQLite configuration
+    # SQLite configuration with timeout to prevent hangs
     engine = create_engine(
         DATABASE_URL,
-        connect_args={"check_same_thread": False},
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30.0  # 30 second timeout to prevent indefinite hangs
+        },
         poolclass=StaticPool,
+        pool_pre_ping=True,  # Verify connections before using
     )
 else:
     # PostgreSQL or other databases

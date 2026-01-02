@@ -80,8 +80,10 @@ class DatabaseService:
     
     @staticmethod
     def get_all_run_ids(db: Session) -> List[dict]:
-        """Get all unique run_ids with their file counts and info"""
-        from sqlalchemy import func
+        """Get all unique run_ids with their file counts and info - optimized to avoid N+1 queries"""
+        from sqlalchemy import func, case
+        
+        # Single query to get all runs with aggregated data
         runs = db.query(
             UploadedFile.run_id,
             func.count(UploadedFile.file_id).label('file_count'),
@@ -90,13 +92,32 @@ class DatabaseService:
             func.min(UploadedFile.uploaded_at).label('uploaded_at')
         ).group_by(UploadedFile.run_id).order_by(func.min(UploadedFile.uploaded_at).desc()).all()
         
+        if not runs:
+            return []
+        
+        # Get all run_ids
+        run_ids = [run.run_id for run in runs]
+        
+        # Single query to get all files for all runs at once
+        all_files = db.query(UploadedFile).filter(UploadedFile.run_id.in_(run_ids)).all()
+        
+        # Group files by run_id in memory (much faster than N queries)
+        files_by_run = {}
+        for file in all_files:
+            if file.run_id not in files_by_run:
+                files_by_run[file.run_id] = []
+            files_by_run[file.run_id].append(file)
+        
         result = []
         for run in runs:
-            # Get files for this run
-            files = db.query(UploadedFile).filter(UploadedFile.run_id == run.run_id).all()
-            # Determine overall status
+            run_id = run.run_id
+            files = files_by_run.get(run_id, [])
+            
+            # Determine overall status efficiently
             statuses = [f.report_status for f in files]
-            if all(s == 'generated' for s in statuses):
+            if not statuses:
+                overall_status = 'pending'
+            elif all(s == 'generated' for s in statuses):
                 overall_status = 'generated'
             elif any(s == 'error' for s in statuses):
                 overall_status = 'error'
@@ -107,18 +128,35 @@ class DatabaseService:
             else:
                 overall_status = 'pending'
             
-            # Get categories
+            # Get categories efficiently
             categories = list(set(f.category for f in files))
             
+            # Only include basic file info to avoid loading relationships
+            files_data = []
+            for f in files:
+                files_data.append({
+                    "file_id": f.file_id,
+                    "run_id": f.run_id,
+                    "filename": f.filename,
+                    "category": f.category,
+                    "file_size": f.file_size,
+                    "record_count": f.record_count or 0,
+                    "report_status": f.report_status,
+                    "uploaded_at": f.uploaded_at.isoformat() if f.uploaded_at else None,
+                    "uploaded_by": f.uploaded_by,
+                    "has_analysis": False,  # Don't query relationships
+                    "has_reports": False    # Don't query relationships
+                })
+            
             result.append({
-                'run_id': run.run_id,
+                'run_id': run_id,
                 'file_count': run.file_count,
                 'total_size': run.total_size or 0,
                 'total_records': run.total_records or 0,
                 'uploaded_at': run.uploaded_at.isoformat() if run.uploaded_at else None,
                 'report_status': overall_status,
                 'categories': categories,
-                'files': [f.to_dict() for f in files]
+                'files': files_data
             })
         
         return result

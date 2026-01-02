@@ -48,24 +48,14 @@ const Layout: React.FC = () => {
             {isSidebarOpen && <span className="nav-text">Dashboard</span>}
           </NavLink>
 
-          <NavLink to="/upload" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">⬆️</span>
-            {isSidebarOpen && <span className="nav-text">Upload Files</span>}
+          <NavLink to="/files" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">📁</span>
+            {isSidebarOpen && <span className="nav-text">My Files</span>}
           </NavLink>
 
           <NavLink to="/reports" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">📄</span>
             {isSidebarOpen && <span className="nav-text">Reports</span>}
-          </NavLink>
-
-          <NavLink to="/analysis" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📈</span>
-            {isSidebarOpen && <span className="nav-text">Analysis</span>}
-          </NavLink>
-
-          <NavLink to="/files" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📁</span>
-            {isSidebarOpen && <span className="nav-text">My Files</span>}
           </NavLink>
 
           <NavLink to="/ai-chat" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>

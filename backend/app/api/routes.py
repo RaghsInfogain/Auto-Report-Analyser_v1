@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
@@ -271,7 +271,7 @@ async def get_file_report(file_id: str, report_type: str, db: Session = Depends(
 @router.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...),
-    categories: List[str] = File(...),
+    categories: List[str] = Form(...),
     db: Session = Depends(get_db)
 ):
     """
@@ -279,8 +279,17 @@ async def upload_files(
     Expected: files and categories arrays (same length)
     All files in single upload share one Run ID
     """
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No files provided. Please select at least one file to upload.")
+    
+    if not categories or len(categories) == 0:
+        raise HTTPException(status_code=400, detail="No categories provided. Please specify a category for each file.")
+    
     if len(files) != len(categories):
-        raise HTTPException(status_code=400, detail="Number of files must match number of categories")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Number of files ({len(files)}) must match number of categories ({len(categories)}). Please ensure each file has a corresponding category."
+        )
     
     # Generate a single sequential Run ID for this upload batch
     run_id = DatabaseService.generate_next_run_id(db)
@@ -333,8 +342,18 @@ async def list_files(db: Session = Depends(get_db)):
 @router.get("/runs")
 async def list_runs(db: Session = Depends(get_db)):
     """List all runs (grouped by upload batch)"""
-    runs = DatabaseService.get_all_run_ids(db)
-    return {"runs": runs}
+    try:
+        import time
+        start_time = time.time()
+        runs = DatabaseService.get_all_run_ids(db)
+        elapsed = time.time() - start_time
+        print(f"get_all_run_ids took {elapsed:.2f} seconds, returned {len(runs)} runs")
+        return {"runs": runs}
+    except Exception as e:
+        print(f"Error in list_runs: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error loading runs: {str(e)}")
 
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, db: Session = Depends(get_db)):
@@ -393,10 +412,11 @@ async def delete_run(run_id: str, db: Session = Depends(get_db)):
     return {"message": f"Run {run_id} deleted successfully"}
 
 @router.post("/runs/{run_id}/generate-report")
-async def generate_run_report(run_id: str, db: Session = Depends(get_db)):
+async def generate_run_report(run_id: str, db: Session = Depends(get_db), regenerate: bool = Query(False, description="Regenerate reports from existing analysis")):
     """
     Generate consolidated report for a run (all files in the run)
     Analyzes all files and creates a single combined report
+    If regenerate=True, regenerates reports from existing analysis
     """
     files = DatabaseService.get_files_by_run_id(db, run_id)
     if not files:
@@ -405,7 +425,7 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db)):
     try:
         # Update status for all files
         for f in files:
-            f.report_status = "analyzing"
+            f.report_status = "analyzing" if not regenerate else "generating"
         db.commit()
         
         # Analyze all files and collect metrics
@@ -414,60 +434,83 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db)):
         start_time = time.time()
         
         for db_file in files:
-            file_path = db_file.file_path
-            category = db_file.category
+            # Check if analysis already exists
+            existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
             
-            # Parse and analyze each file
-            if category == "web_vitals":
-                if file_path.endswith(".json"):
-                    data = JSONParser.parse(file_path, category)
-                else:
-                    data = CSVParser.parse(file_path, category)
-                metrics_obj = WebVitalsAnalyzer.analyze(data)
-                metrics = metrics_obj.dict()
-            elif category == "jmeter":
-                if file_path.endswith(".jtl") or file_path.endswith(".csv"):
-                    data = JTLParser.parse(file_path)
-                else:
-                    data = JSONParser.parse(file_path, category)
-                metrics_obj = JMeterAnalyzer.analyze(data)
-                metrics = metrics_obj.dict()
-            elif category == "ui_performance":
-                if file_path.endswith(".json"):
-                    data = JSONParser.parse(file_path, category)
-                else:
-                    data = CSVParser.parse(file_path, category)
-                metrics_obj = UIPerformanceAnalyzer.analyze(data)
-                metrics = metrics_obj.dict()
+            if existing_analysis and not regenerate:
+                # Reuse existing analysis
+                print(f"Reusing existing analysis for {db_file.filename}")
+                metrics = existing_analysis.metrics
+                record_count = db_file.record_count or 0
             else:
-                continue
+                # Perform new analysis
+                print(f"Analyzing {db_file.filename}...")
+                file_path = db_file.file_path
+                category = db_file.category
+                
+                # Parse and analyze each file
+                if category == "web_vitals":
+                    if file_path.endswith(".json"):
+                        data = JSONParser.parse(file_path, category)
+                    else:
+                        data = CSVParser.parse(file_path, category)
+                    metrics_obj = WebVitalsAnalyzer.analyze(data)
+                    metrics = metrics_obj.dict()
+                elif category == "jmeter":
+                    if file_path.endswith(".jtl") or file_path.endswith(".csv"):
+                        data = JTLParser.parse(file_path)
+                    else:
+                        data = JSONParser.parse(file_path, category)
+                    print(f"Parsed {len(data)} records, starting analysis...")
+                    metrics_obj = JMeterAnalyzer.analyze(data)
+                    metrics = metrics_obj.dict()
+                    print(f"Analysis complete for {db_file.filename}")
+                elif category == "ui_performance":
+                    if file_path.endswith(".json"):
+                        data = JSONParser.parse(file_path, category)
+                    else:
+                        data = CSVParser.parse(file_path, category)
+                    metrics_obj = UIPerformanceAnalyzer.analyze(data)
+                    metrics = metrics_obj.dict()
+                else:
+                    continue
+                
+                record_count = len(data) if isinstance(data, list) else 1
+                db_file.record_count = record_count
+                
+                # Store or update analysis
+                if existing_analysis:
+                    existing_analysis.metrics = metrics
+                    existing_analysis.analyzed_at = datetime.utcnow()
+                    existing_analysis.analysis_duration = time.time() - start_time
+                    db.commit()
+                else:
+                    DatabaseService.create_analysis_result(
+                        db=db,
+                        file_id=db_file.file_id,
+                        category=category,
+                        metrics=metrics,
+                        analysis_duration=time.time() - start_time
+                    )
             
-            record_count = len(data) if isinstance(data, list) else 1
             total_records += record_count
-            db_file.record_count = record_count
-            
-            # Store individual analysis
-            DatabaseService.create_analysis_result(
-                db=db,
-                file_id=db_file.file_id,
-                category=category,
-                metrics=metrics,
-                analysis_duration=time.time() - start_time
-            )
             
             all_metrics.append({
                 'file_id': db_file.file_id,
                 'filename': db_file.filename,
-                'category': category,
+                'category': db_file.category,
                 'metrics': metrics
             })
         
         analysis_duration = time.time() - start_time
         
         # Update status to generating
-        for f in files:
-            f.report_status = "generating"
-        db.commit()
+        if not regenerate:
+            for f in files:
+                f.report_status = "generating"
+            db.commit()
+        
+        print(f"Generating reports for {run_id}...")
         
         # Generate consolidated report (use first file's category for report type)
         # For mixed categories, prioritize jmeter > ui_performance > web_vitals
@@ -485,22 +528,47 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db)):
         # Use the first file for report generation
         primary_file = files[0]
         
+        # Delete existing reports if regenerating
+        if regenerate:
+            existing_reports = DatabaseService.get_reports_by_file(db, primary_file.file_id)
+            for report in existing_reports:
+                if report.report_path and os.path.exists(report.report_path):
+                    try:
+                        os.remove(report.report_path)
+                    except Exception as e:
+                        print(f"Error deleting old report: {e}")
+                db.delete(report)
+            db.commit()
+            print(f"Deleted {len(existing_reports)} old reports")
+        
         # Generate reports based on primary category
+        print(f"Generating HTML report...")
         if primary_category == "jmeter":
             html_content = HTMLReportGenerator.generate_jmeter_html_report(primary_metrics)
-            pdf_bytes = PDFReportGenerator.generate_jmeter_pdf_report(primary_metrics)
-            ppt_bytes = PPTReportGenerator.generate_jmeter_ppt_report(primary_metrics)
         elif primary_category == "web_vitals":
             html_content = HTMLReportGenerator.generate_web_vitals_html_report(primary_metrics, primary_file.filename)
-            pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(primary_metrics, primary_file.filename)
-            ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(primary_metrics, primary_file.filename)
         else:
             html_content = HTMLReportGenerator.generate_ui_performance_html_report(primary_metrics, primary_file.filename)
+        
+        print(f"Generating PDF report...")
+        if primary_category == "jmeter":
+            pdf_bytes = PDFReportGenerator.generate_jmeter_pdf_report(primary_metrics)
+        elif primary_category == "web_vitals":
+            pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(primary_metrics, primary_file.filename)
+        else:
             pdf_bytes = PDFReportGenerator.generate_ui_performance_pdf_report(primary_metrics, primary_file.filename)
+        
+        print(f"Generating PPT report...")
+        if primary_category == "jmeter":
+            ppt_bytes = PPTReportGenerator.generate_jmeter_ppt_report(primary_metrics)
+        elif primary_category == "web_vitals":
+            ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(primary_metrics, primary_file.filename)
+        else:
             ppt_bytes = PPTReportGenerator.generate_ui_performance_ppt_report(primary_metrics, primary_file.filename)
         
+        print(f"Saving reports to database...")
+        
         # Save reports (associate with first file in run)
-        html_report_id = str(uuid.uuid4())
         html_path = REPORTS_DIR / f"{run_id}_report.html"
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
@@ -540,6 +608,8 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db)):
             file_size=len(ppt_bytes),
             generated_by="raghskmr"
         )
+        
+        print(f"Reports saved successfully")
         
         # Update status to generated for all files
         for f in files:

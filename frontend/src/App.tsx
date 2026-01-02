@@ -5,9 +5,7 @@ import Login from './components/Login';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import Dashboard from './pages/Dashboard';
-import UploadPage from './pages/UploadPage';
 import ReportsPage from './pages/ReportsPage';
-import AnalysisPage from './pages/AnalysisPage';
 import FilesPage from './pages/FilesPage';
 import AIChatPage from './pages/AIChatPage';
 import './App.css';
@@ -28,10 +26,9 @@ function App() {
             }
           >
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="upload" element={<UploadPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="analysis" element={<AnalysisPage />} />
+            <Route path="upload" element={<FilesPage />} />
             <Route path="files" element={<FilesPage />} />
+            <Route path="reports" element={<ReportsPage />} />
             <Route path="ai-chat" element={<AIChatPage />} />
           </Route>
         </Routes>

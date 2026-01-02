@@ -28,6 +28,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
       return;
     }
 
+    // Ensure all files have categories
+    if (categories.length !== selectedFiles.length) {
+      alert(`Please select a category for all ${selectedFiles.length} file(s).`);
+      return;
+    }
+
     setUploading(true);
     try {
       console.log('Starting upload...', { files: selectedFiles.map(f => f.name), categories });
@@ -44,7 +50,38 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
         response: error.response,
         config: error.config
       });
-      const errorMessage = error.response?.data?.detail || error.message || 'Network error';
+      
+      // Handle different error response formats
+      let errorMessage = 'Network error';
+      
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        
+        // Handle FastAPI validation errors (array format)
+        if (Array.isArray(errorData.detail)) {
+          errorMessage = errorData.detail.map((err: any) => {
+            if (typeof err === 'string') return err;
+            if (err.msg) return err.msg;
+            if (err.loc) return `${err.loc.join('.')}: ${err.msg || 'Validation error'}`;
+            return JSON.stringify(err);
+          }).join(', ');
+        }
+        // Handle single detail string
+        else if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        }
+        // Handle object with message
+        else if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+        // Fallback to stringify if it's an object
+        else if (typeof errorData.detail === 'object') {
+          errorMessage = JSON.stringify(errorData.detail);
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       alert(`Upload failed: ${errorMessage}`);
     } finally {
       setUploading(false);

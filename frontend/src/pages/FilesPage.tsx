@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun } from '../services/api';
+import FileUpload from '../components/FileUpload';
+import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile } from '../services/api';
 import './FilesPage.css';
 
 interface ProgressState {
@@ -22,6 +23,7 @@ const FilesPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalContent, setModalContent] = useState<ModalContent | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+  const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
 
   useEffect(() => {
     loadRuns();
@@ -39,6 +41,12 @@ const FilesPage: React.FC = () => {
     }
   };
 
+  const handleFilesUploaded = (files: UploadedFile[]) => {
+    setRecentUploads(files);
+    // Reload runs to show newly uploaded files
+    loadRuns();
+  };
+
   const toggleExpand = (runId: string) => {
     setExpandedRuns(prev => {
       const next = new Set(prev);
@@ -51,26 +59,34 @@ const FilesPage: React.FC = () => {
     });
   };
 
-  const handleGenerateReport = async (run: RunInfo) => {
+  const handleGenerateReport = async (run: RunInfo, regenerate: boolean = false) => {
     try {
-      // Stage 1: Analyzing
-      setProgress({
-        runId: run.run_id,
-        stage: 'analyzing',
-        message: 'Report Analysis is in Progress...'
-      });
+      // Stage 1: Analyzing (skip if regenerating)
+      if (!regenerate) {
+        setProgress({
+          runId: run.run_id,
+          stage: 'analyzing',
+          message: 'Report Analysis is in Progress...'
+        });
 
-      // Update run status in the UI
-      setRuns(runs =>
-        runs.map(r =>
-          r.run_id === run.run_id
-            ? { ...r, report_status: 'analyzing' }
-            : r
-        )
-      );
+        // Update run status in the UI
+        setRuns(runs =>
+          runs.map(r =>
+            r.run_id === run.run_id
+              ? { ...r, report_status: 'analyzing' }
+              : r
+          )
+        );
+      } else {
+        setProgress({
+          runId: run.run_id,
+          stage: 'generating',
+          message: 'Regenerating reports with latest engine...'
+        });
+      }
 
       // Call the unified backend endpoint
-      const result = await generateRunReport(run.run_id);
+      const result = await generateRunReport(run.run_id, regenerate);
 
       // Stage 2: Generating
       setProgress({
@@ -240,8 +256,27 @@ const FilesPage: React.FC = () => {
   return (
     <div className="files-page">
       <div className="page-header">
-        <h1>📊 My Runs</h1>
+        <h1>📊 My Files</h1>
         <p>Upload files and generate comprehensive performance reports</p>
+      </div>
+
+      {/* Upload Section */}
+      <div style={{ marginBottom: '2rem', padding: '20px', border: '1px solid #ddd', borderRadius: '8px', background: '#f9f9f9' }}>
+        <h2 style={{ marginTop: 0 }}>Upload Performance Data Files</h2>
+        <FileUpload onFilesUploaded={handleFilesUploaded} />
+        
+        {recentUploads.length > 0 && (
+          <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f5e9', borderRadius: '4px' }}>
+            <h3 style={{ marginTop: 0 }}>✅ Recently Uploaded</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {recentUploads.map((file) => (
+                <div key={file.file_id} style={{ padding: '0.5rem', background: 'white', borderRadius: '4px' }}>
+                  <strong>{file.filename}</strong> ({file.category}) - {(file.file_size / 1024).toFixed(2)} KB
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {progress && (
@@ -311,7 +346,18 @@ const FilesPage: React.FC = () => {
                     </td>
                     <td>
                       {run.report_status === 'generated' ? (
-                        getStatusBadge('generated')
+                        <div className="report-action">
+                          {getStatusBadge('generated')}
+                          <button
+                            className="generate-btn retry"
+                            onClick={() => handleGenerateReport(run, true)}
+                            disabled={progress?.runId === run.run_id}
+                            title="Regenerate report with latest engine"
+                            style={{ marginLeft: '0.5rem', fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
+                          >
+                            🔄 Regenerate
+                          </button>
+                        </div>
                       ) : run.report_status === 'analyzing' || run.report_status === 'generating' ? (
                         getStatusBadge(run.report_status)
                       ) : run.report_status === 'error' ? (
@@ -412,8 +458,7 @@ const FilesPage: React.FC = () => {
         <div className="empty-state">
           <div className="empty-icon">📁</div>
           <h2>No Runs Found</h2>
-          <p>Upload some files to get started with performance analysis</p>
-          <a href="/upload" className="upload-link-btn">📤 Upload Files</a>
+          <p>Upload some files above to get started with performance analysis</p>
         </div>
       )}
 

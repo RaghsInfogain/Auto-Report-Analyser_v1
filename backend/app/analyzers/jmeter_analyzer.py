@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List, Dict, Tuple
 from app.models.jmeter import JMeterMetrics
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 
 class JMeterAnalyzer:
@@ -162,12 +162,99 @@ class JMeterAnalyzer:
                 return max(0, int((value / target) * 100))
     
     @staticmethod
+    def _calculate_time_series(data: List[Dict], duration_seconds: float) -> List[Dict]:
+        """Calculate time-series data grouped by time intervals - Optimized for large datasets"""
+        if not data or duration_seconds <= 0:
+            return []
+        
+        # Optimize: Sample data if too large (process max 50k records for time series)
+        max_records = 50000
+        if len(data) > max_records:
+            # Sample evenly across the dataset
+            step = len(data) // max_records
+            data = data[::step]
+        
+        # Determine interval size (aim for 50-100 data points)
+        num_intervals = min(100, max(20, int(duration_seconds / 10)))  # 10-second intervals, max 100 points
+        interval_size = duration_seconds / num_intervals
+        
+        # Get min timestamp - optimized
+        timestamps = [d.get("timestamp") for d in data if d.get("timestamp")]
+        if not timestamps:
+            return []
+        
+        min_timestamp = min(timestamps)
+        
+        # Group data by time intervals - use defaultdict for better performance
+        from collections import defaultdict
+        intervals = defaultdict(lambda: {
+            "response_times": [],
+            "vusers": [],
+            "pass_count": 0,
+            "fail_count": 0,
+            "total_count": 0
+        })
+        
+        # Process data in batches for better memory efficiency
+        for d in data:
+            timestamp = d.get("timestamp")
+            if not timestamp:
+                continue
+            
+            # Calculate which interval this data point belongs to
+            time_offset = (timestamp - min_timestamp) / 1000  # Convert to seconds
+            interval_index = int(time_offset / interval_size)
+            
+            interval = intervals[interval_index]
+            if "time" not in interval:
+                interval["time"] = interval_index * interval_size
+            
+            interval["total_count"] += 1
+            
+            # Add response time
+            sample_time = d.get("sample_time")
+            if sample_time is not None:
+                interval["response_times"].append(sample_time)
+            
+            # Add VUsers (all_threads)
+            all_threads = d.get("all_threads")
+            if all_threads is not None:
+                interval["vusers"].append(all_threads)
+            
+            # Count pass/fail
+            if d.get("success") is False or (d.get("response_code") and str(d.get("response_code")).startswith(("4", "5"))):
+                interval["fail_count"] += 1
+            else:
+                interval["pass_count"] += 1
+        
+        # Calculate metrics for each interval - optimized with numpy
+        time_series = []
+        sorted_indices = sorted(intervals.keys())
+        for idx in sorted_indices:
+            interval = intervals[idx]
+            # Use numpy for faster calculations
+            avg_response = float(np.mean(interval["response_times"]) / 1000) if interval["response_times"] else 0.0
+            avg_vusers = float(np.mean(interval["vusers"])) if interval["vusers"] else 0.0
+            throughput = float(interval["total_count"] / interval_size) if interval_size > 0 else 0.0
+            
+            time_series.append({
+                "time": round(interval["time"], 1),
+                "avg_response_time": round(avg_response, 2),
+                "vusers": round(avg_vusers, 0),
+                "throughput": round(throughput, 2),
+                "pass_count": interval["pass_count"],
+                "fail_count": interval["fail_count"]
+            })
+        
+        return time_series
+    
+    @staticmethod
     def calculate_percentile_stats(values):
         """Calculate comprehensive percentile statistics"""
         if not values:
             return {
                 "mean": None, "median": None, 
-                "p70": None, "p80": None, "p90": None, "p95": None, "p99": None,
+                "p70": None, "p75": None, "p80": None, "p90": None, "p95": None, "p99": None,
                 "min": None, "max": None
             }
         arr = np.array(values)
@@ -175,6 +262,7 @@ class JMeterAnalyzer:
             "mean": float(np.mean(arr)),
             "median": float(np.median(arr)),
             "p70": float(np.percentile(arr, 70)),
+            "p75": float(np.percentile(arr, 75)),
             "p80": float(np.percentile(arr, 80)),
             "p90": float(np.percentile(arr, 90)),
             "p95": float(np.percentile(arr, 95)),
@@ -414,7 +502,9 @@ class JMeterAnalyzer:
                     "errors": label_errors,
                     "error_rate": (label_errors / len(items) * 100) if items else 0,
                     "avg_response": stats.get("mean"),
+                    "median": stats.get("median"),
                     "p70": stats.get("p70"),
+                    "p75": stats.get("p75"),
                     "p80": stats.get("p80"),
                     "p90": stats.get("p90"),
                     "p95": stats.get("p95"),
@@ -576,6 +666,9 @@ class JMeterAnalyzer:
             "over_10s": sum(1 for d in data if d.get("sample_time", 0) >= 10000) / len(data) * 100 if data else 0,
         }
         
+        # Calculate time-series data for system behaviour graph
+        time_series_data = JMeterAnalyzer._calculate_time_series(data, duration_seconds)
+        
         metrics = JMeterMetrics(
             total_samples=len(data),
             total_errors=errors,
@@ -599,6 +692,7 @@ class JMeterAnalyzer:
                 "overall_grade_description": overall_grade_description,
                 "grade_reasons": grade_reasons,
                 "response_time_distribution": rt_distribution,
+                "time_series_data": time_series_data,
                 "transaction_stats": transaction_stats,
                 "request_stats": request_stats,
                 "critical_issues": critical_issues,

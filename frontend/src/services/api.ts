@@ -11,9 +11,8 @@ console.log('========================');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  // Don't set default Content-Type for multipart/form-data
+  // Let axios/browser set it automatically with boundary
 });
 
 export interface UploadedFile {
@@ -38,16 +37,26 @@ export interface AnalysisResult {
 export const uploadFiles = async (files: File[], categories: string[]): Promise<{ files: UploadedFile[] }> => {
   console.log('API_BASE_URL:', API_BASE_URL);
   console.log('Upload URL:', `${API_BASE_URL}/api/upload`);
+  console.log('Files:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
+  console.log('Categories:', categories);
   
   const formData = new FormData();
-  files.forEach((file) => formData.append('files', file));
-  categories.forEach((category) => formData.append('categories', category));
-
-  const response = await api.post('/api/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+  files.forEach((file) => {
+    formData.append('files', file);
   });
+  categories.forEach((category) => {
+    formData.append('categories', category);
+  });
+
+  // Log upload details for debugging
+  console.log('Uploading:', {
+    fileCount: files.length,
+    fileNames: files.map(f => f.name),
+    categories: categories
+  });
+
+  // Use axios directly - don't set Content-Type, let browser set it with boundary
+  const response = await axios.post(`${API_BASE_URL}/api/upload`, formData);
   return response.data;
 };
 
@@ -145,7 +154,7 @@ export const deleteRun = async (runId: string): Promise<{ message: string }> => 
   return response.data;
 };
 
-export const generateRunReport = async (runId: string): Promise<{
+export const generateRunReport = async (runId: string, regenerate: boolean = false): Promise<{
   success: boolean;
   run_id: string;
   file_count: number;
@@ -157,7 +166,7 @@ export const generateRunReport = async (runId: string): Promise<{
     ppt: string;
   };
 }> => {
-  const response = await api.post(`/api/runs/${runId}/generate-report`);
+  const response = await api.post(`/api/runs/${runId}/generate-report?regenerate=${regenerate}`);
   return response.data;
 };
 

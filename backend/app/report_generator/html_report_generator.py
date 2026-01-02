@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 from datetime import datetime
 import json
+from app.report_generator.graph_analyzer import GraphAnalyzer
 
 class HTMLReportGenerator:
     """Generate comprehensive HTML reports matching OfficerTrack format"""
@@ -108,7 +109,7 @@ class HTMLReportGenerator:
     <div class="container">
         
         <!-- Executive Summary -->
-        {HTMLReportGenerator._generate_executive_summary(overall_grade, success_rate, avg_response, error_rate_pct, throughput)}
+        {HTMLReportGenerator._generate_executive_summary(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, summary)}
         
         <!-- Performance Scorecard with Grading -->
         {HTMLReportGenerator._generate_performance_scorecard(overall_grade, overall_score, grade_reasons, scores, targets, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, grade_bg_color, grade_border_color, overall_grade_description)}
@@ -118,6 +119,12 @@ class HTMLReportGenerator:
         
         <!-- Performance Summary Tables -->
         {HTMLReportGenerator._generate_performance_tables(transaction_stats, request_stats)}
+        
+        <!-- Overall System Behaviour Graph -->
+        {HTMLReportGenerator._generate_system_behaviour_graph(summary.get("time_series_data", []))}
+        
+        <!-- Additional Performance Graphs -->
+        {HTMLReportGenerator._generate_additional_graphs(summary.get("time_series_data", []), transaction_stats, request_stats, metrics)}
         
         <!-- Critical Issues -->
         {HTMLReportGenerator._generate_critical_issues(critical_issues)}
@@ -130,6 +137,9 @@ class HTMLReportGenerator:
         
         <!-- Success Metrics & Targets -->
         {HTMLReportGenerator._generate_success_metrics(avg_response, p95_response, error_rate_pct, success_rate, sla_compliance_2s, throughput)}
+        
+        <!-- Final Conclusion -->
+        {HTMLReportGenerator._generate_final_conclusion(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, critical_issues, improvement_roadmap, summary)}
         
         <!-- Next Steps & Footer -->
         {HTMLReportGenerator._generate_footer(current_date)}
@@ -439,8 +449,8 @@ class HTMLReportGenerator:
     </style>'''
     
     @staticmethod
-    def _generate_executive_summary(grade: str, success_rate: float, avg_response: float, error_rate: float, throughput: float) -> str:
-        """Generate executive summary section"""
+    def _generate_executive_summary(grade: str, score: float, success_rate: float, avg_response: float, error_rate: float, throughput: float, p95_response: float, sla_compliance: float, summary: dict) -> str:
+        """Generate executive summary section with key findings"""
         # Determine status color and message
         if grade in ["A+", "A"]:
             status_color = "#10b981"
@@ -457,6 +467,51 @@ class HTMLReportGenerator:
             status_icon = "⚠️"
             status_text = "CAUTIONARY APPROVAL"
             status_message = "The application demonstrates stability but exhibits critical performance issues requiring immediate attention. Recommended approach: Limited production rollout while implementing critical fixes."
+        
+        # Generate key findings
+        key_findings = []
+        
+        # Performance findings
+        if avg_response <= 2.0:
+            key_findings.append(f"✅ <strong>Excellent Response Time:</strong> Average response time of {avg_response:.2f}s meets industry standards for optimal user experience.")
+        elif avg_response <= 5.0:
+            key_findings.append(f"⚠️ <strong>Moderate Response Time:</strong> Average response time of {avg_response:.2f}s is acceptable but has room for improvement to enhance user satisfaction.")
+        else:
+            key_findings.append(f"❌ <strong>Slow Response Time:</strong> Average response time of {avg_response:.2f}s exceeds acceptable thresholds and may impact user experience.")
+        
+        # Reliability findings
+        if error_rate < 1.0:
+            key_findings.append(f"✅ <strong>Low Error Rate:</strong> Error rate of {error_rate:.2f}% indicates high system reliability and stability.")
+        elif error_rate < 5.0:
+            key_findings.append(f"⚠️ <strong>Moderate Error Rate:</strong> Error rate of {error_rate:.2f}% suggests some reliability concerns that should be addressed.")
+        else:
+            key_findings.append(f"❌ <strong>High Error Rate:</strong> Error rate of {error_rate:.2f}% indicates significant reliability issues requiring immediate attention.")
+        
+        # Throughput findings
+        if throughput >= 100:
+            key_findings.append(f"✅ <strong>High Throughput:</strong> System processes {throughput:.0f} requests/second, demonstrating good capacity and scalability.")
+        elif throughput >= 50:
+            key_findings.append(f"⚠️ <strong>Moderate Throughput:</strong> System processes {throughput:.0f} requests/second, which is acceptable but could be optimized for higher loads.")
+        else:
+            key_findings.append(f"❌ <strong>Low Throughput:</strong> System processes only {throughput:.0f} requests/second, indicating potential scalability limitations.")
+        
+        # SLA compliance findings
+        if sla_compliance >= 95:
+            key_findings.append(f"✅ <strong>Excellent SLA Compliance:</strong> {sla_compliance:.1f}% of requests meet the 2-second SLA target, ensuring consistent user experience.")
+        elif sla_compliance >= 80:
+            key_findings.append(f"⚠️ <strong>Moderate SLA Compliance:</strong> {sla_compliance:.1f}% of requests meet the 2-second SLA target, indicating room for improvement.")
+        else:
+            key_findings.append(f"❌ <strong>Poor SLA Compliance:</strong> Only {sla_compliance:.1f}% of requests meet the 2-second SLA target, requiring immediate optimization.")
+        
+        # Success rate findings
+        if success_rate >= 99:
+            key_findings.append(f"✅ <strong>High Success Rate:</strong> {success_rate:.1f}% success rate demonstrates excellent system reliability.")
+        elif success_rate >= 95:
+            key_findings.append(f"⚠️ <strong>Moderate Success Rate:</strong> {success_rate:.1f}% success rate is acceptable but could be improved.")
+        else:
+            key_findings.append(f"❌ <strong>Low Success Rate:</strong> {success_rate:.1f}% success rate indicates significant reliability issues.")
+        
+        findings_html = ''.join([f'<li style="margin-bottom: 0.75rem; line-height: 1.6;">{finding}</li>' for finding in key_findings])
         
         return f'''
         <div class="executive-summary">
@@ -482,6 +537,12 @@ class HTMLReportGenerator:
                     <div class="summary-value">{throughput:.0f}/s</div>
                     <div>Throughput</div>
                 </div>
+            </div>
+            <div style="background: rgba(255, 255, 255, 0.95); padding: 1.5rem; border-radius: 8px; margin-top: 1.5rem; color: var(--text-primary);">
+                <h3 style="color: var(--primary-color); margin-top: 0;">🔍 Key Findings</h3>
+                <ul style="margin: 0; padding-left: 1.5rem;">
+                    {findings_html}
+                </ul>
             </div>
         </div>'''
     
@@ -762,6 +823,43 @@ class HTMLReportGenerator:
         </div>'''
     
     @staticmethod
+    def _get_response_time_color(value_seconds: float) -> str:
+        """Get color class for response time based on thresholds"""
+        if value_seconds < 2.0:
+            return 'success'  # Green
+        elif value_seconds < 5.0:
+            return 'warning'  # Yellow
+        else:
+            return 'danger'  # Red
+    
+    @staticmethod
+    def _get_error_rate_color(error_rate: float) -> str:
+        """Get color class for error rate based on thresholds"""
+        if error_rate < 1.0:
+            return 'success'  # Green
+        elif error_rate < 5.0:
+            return 'warning'  # Yellow
+        else:
+            return 'danger'  # Red
+    
+    @staticmethod
+    def _get_cell_style(value_seconds: float, metric_type: str = 'response_time') -> str:
+        """Get inline style for cell based on value and metric type"""
+        if metric_type == 'response_time':
+            color_class = HTMLReportGenerator._get_response_time_color(value_seconds)
+        elif metric_type == 'error_rate':
+            color_class = HTMLReportGenerator._get_error_rate_color(value_seconds)
+        else:
+            return ''
+        
+        color_map = {
+            'success': 'color: #059669; font-weight: 600;',
+            'warning': 'color: #d97706; font-weight: 600;',
+            'danger': 'color: #dc2626; font-weight: 700;'
+        }
+        return color_map.get(color_class, '')
+    
+    @staticmethod
     def _generate_performance_tables(transaction_stats: dict, request_stats: dict) -> str:
         """Generate performance summary tables for transactions and requests"""
         
@@ -774,43 +872,71 @@ class HTMLReportGenerator:
             
             rows = ""
             for label, data in sorted_stats[:15]:  # Top 15
-                avg_resp = data.get('avg_response', 0)
-                p70 = data.get('p70', 0)
-                p80 = data.get('p80', 0)
-                p90 = data.get('p90', 0)
-                p95 = data.get('p95', 0)
-                error_rate = data.get('error_rate', 0)
-                count = data.get('count', 0)
+                min_resp = data.get('min', 0) or 0
+                avg_resp = data.get('avg_response', 0) or 0
+                median = data.get('median', 0) or 0
+                p75 = data.get('p75', 0) or 0
+                p90 = data.get('p90', 0) or 0
+                p95 = data.get('p95', 0) or 0
+                max_resp = data.get('max', 0) or 0
+                error_rate = data.get('error_rate', 0) or 0
+                count = data.get('count', 0) or 0
                 
-                # Highlight high error rates
-                error_style = 'color: var(--danger-color); font-weight: bold;' if error_rate > 5 else ''
+                # Convert to seconds for color coding
+                min_sec = min_resp / 1000
+                avg_sec = avg_resp / 1000
+                median_sec = median / 1000
+                p75_sec = p75 / 1000
+                p90_sec = p90 / 1000
+                p95_sec = p95 / 1000
+                max_sec = max_resp / 1000
+                
+                # Get styles for each metric
+                min_style = HTMLReportGenerator._get_cell_style(min_sec)
+                avg_style = HTMLReportGenerator._get_cell_style(avg_sec)
+                median_style = HTMLReportGenerator._get_cell_style(median_sec)
+                p75_style = HTMLReportGenerator._get_cell_style(p75_sec)
+                p90_style = HTMLReportGenerator._get_cell_style(p90_sec)
+                p95_style = HTMLReportGenerator._get_cell_style(p95_sec)
+                max_style = HTMLReportGenerator._get_cell_style(max_sec)
+                error_style = HTMLReportGenerator._get_cell_style(error_rate, 'error_rate')
                 
                 rows += f'''
                 <tr>
-                    <td>{label}</td>
-                    <td style="text-align: center;"><strong>{avg_resp/1000:.2f}s</strong></td>
-                    <td style="text-align: center;">{p70/1000:.2f}s</td>
-                    <td style="text-align: center;">{p80/1000:.2f}s</td>
-                    <td style="text-align: center;">{p90/1000:.2f}s</td>
-                    <td style="text-align: center;">{p95/1000:.2f}s</td>
-                    <td style="text-align: center; {error_style}">{error_rate:.2f}%</td>
+                    <td style="font-weight: 600;">{label}</td>
+                    <td style="text-align: center; {min_style}">{min_sec:.2f}s</td>
+                    <td style="text-align: center; {avg_style}"><strong>{avg_sec:.2f}s</strong></td>
+                    <td style="text-align: center; {median_style}">{median_sec:.2f}s</td>
+                    <td style="text-align: center; {p75_style}">{p75_sec:.2f}s</td>
+                    <td style="text-align: center; {p90_style}">{p90_sec:.2f}s</td>
+                    <td style="text-align: center; {p95_style}">{p95_sec:.2f}s</td>
+                    <td style="text-align: center; {max_style}">{max_sec:.2f}s</td>
                     <td style="text-align: center;">{count:,}</td>
+                    <td style="text-align: center; {error_style}">{error_rate:.2f}%</td>
                 </tr>'''
             
             return f'''
             <h3>{title}</h3>
+            <div style="margin-bottom: 1rem; padding: 1rem; background: var(--background-light); border-radius: 8px; font-size: 0.9rem;">
+                <strong>Color Coding:</strong> 
+                <span style="color: #059669;">Green</span> = Within SLA (Response Time &lt; 2s, Error Rate &lt; 1%), 
+                <span style="color: #d97706;">Yellow</span> = Warning (Response Time 2-5s, Error Rate 1-5%), 
+                <span style="color: #dc2626;">Red</span> = Violating SLA (Response Time &gt; 5s, Error Rate &gt; 5%)
+            </div>
             <div style="overflow-x: auto;">
                 <table class="endpoint-table">
                     <thead>
                         <tr>
                             <th>Endpoint/Transaction</th>
-                            <th style="text-align: center;">Avg Response</th>
-                            <th style="text-align: center;">70th %ile</th>
-                            <th style="text-align: center;">80th %ile</th>
-                            <th style="text-align: center;">90th %ile</th>
-                            <th style="text-align: center;">95th %ile</th>
-                            <th style="text-align: center;">Error Rate</th>
+                            <th style="text-align: center;">Min</th>
+                            <th style="text-align: center;">Avg</th>
+                            <th style="text-align: center;">50 pct</th>
+                            <th style="text-align: center;">75 pct</th>
+                            <th style="text-align: center;">90 pct</th>
+                            <th style="text-align: center;">95 pct</th>
+                            <th style="text-align: center;">Max</th>
                             <th style="text-align: center;">Calls</th>
+                            <th style="text-align: center;">Error Rate</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -828,8 +954,1395 @@ class HTMLReportGenerator:
         </div>'''
     
     @staticmethod
+    def _generate_recommendations_html(recommendations: List[str]) -> str:
+        """Generate HTML for recommendations section"""
+        if not recommendations:
+            return ''
+        
+        rec_items = ''.join([f'<li style="margin-bottom: 0.5rem;">{rec}</li>' for rec in recommendations])
+        return f'''<div style="padding: 1rem; background: #fef3c7; border-left: 4px solid #d97706; border-radius: 4px;">
+                    <h4 style="color: var(--text-primary); margin-bottom: 0.75rem;">💡 Recommendations</h4>
+                    <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.9rem;">
+                        {rec_items}
+                    </ul>
+                </div>'''
+    
+    @staticmethod
+    def _format_time_hhmmss(seconds: float) -> str:
+        """Convert seconds to HH:MM:SS format"""
+        total_seconds = int(seconds)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        secs = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    
+    @staticmethod
+    def _generate_graph_data_table(time_series_data: List[dict] = None) -> str:
+        """Generate HTML for graph data table"""
+        if not time_series_data or len(time_series_data) == 0:
+            return '<p style="color: var(--text-secondary); font-size: 0.9rem;">No time-series data available</p>'
+        
+        # Sample data points for table (show every Nth point to keep table manageable)
+        sample_rate = max(1, len(time_series_data) // 20)  # Show ~20 rows max
+        sampled_data = time_series_data[::sample_rate]
+        
+        table_rows = ''
+        for d in sampled_data[:20]:  # Limit to 20 rows
+            time_formatted = HTMLReportGenerator._format_time_hhmmss(d['time'])
+            table_rows += f'''
+            <tr>
+                <td style="padding: 0.5rem; text-align: center;">{time_formatted}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['avg_response_time']:.2f}s</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['vusers']:.0f}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['throughput']:.2f}</td>
+            </tr>
+            '''
+        
+        return f'''
+            <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                <div style="overflow-y: auto; max-height: 500px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                        <thead style="position: sticky; top: 0; z-index: 10;">
+                            <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Avg Response Time (s)</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">VUsers</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Throughput (req/s)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {table_rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        '''
+    
+    @staticmethod
+    def _generate_graph_analysis_html(graph_analysis: Dict[str, Any], time_series_data: List[dict] = None) -> str:
+        """Generate HTML for unified graph understanding and performance analysis section"""
+        
+        # Get unified understanding from distribution analysis
+        distribution_analysis = graph_analysis.get('distribution_analysis', {})
+        unified_understanding = distribution_analysis.get('unified_understanding', '')
+        stats = distribution_analysis.get('statistics', {})
+        business_answers = distribution_analysis.get('business_answers', {})
+        dist_type = distribution_analysis.get('distribution_type', 'unknown')
+        
+        # If unified understanding is not available, generate it from graph pattern analysis
+        if not unified_understanding:
+            analysis_text = graph_analysis.get('analysis', 'Analysis not available.')
+            # Use first part of analysis as fallback
+            sentences = analysis_text.split('. ')
+            unified_understanding = '. '.join(sentences[:3]) + '.' if len(sentences) >= 3 else analysis_text
+        
+        # Generate statistical summary HTML
+        stats_html = HTMLReportGenerator._generate_distribution_stats_html(stats) if stats else ''
+        
+        # Generate business answers HTML (compact version)
+        business_answers_html = ''
+        if business_answers:
+            business_answers_html = HTMLReportGenerator._generate_business_answers_html(business_answers)
+        
+        # Distribution type badge color
+        dist_badge_colors = {
+            'normal': '#10b981',  # green
+            'right_skewed': '#f59e0b',  # amber
+            'left_skewed': '#ef4444',  # red
+            'multi_modal': '#8b5cf6',  # purple
+            'high_variance': '#f97316',  # orange
+        }
+        badge_color = dist_badge_colors.get(dist_type, '#6b7280')
+        
+        return f'''
+            <div style="margin-bottom: 2rem;">
+                <div style="padding: 2rem; background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%); border-radius: 8px; border: 2px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+                        <h3 style="margin: 0; color: var(--text-primary); font-size: 1.3rem; font-weight: 600;">📊 Graph Understanding and Performance Analysis</h3>
+                        {f'<span style="padding: 0.5rem 1rem; background: {badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">{dist_type.replace("_", " ")}</span>' if dist_type != 'unknown' else ''}
+                    </div>
+                    
+                    <!-- Unified Understanding -->
+                    <div style="padding: 1.5rem; background: white; border-radius: 6px; border-left: 4px solid {badge_color}; margin-bottom: 1.5rem;">
+                        <p style="margin: 0; color: var(--text-primary); font-size: 1rem; line-height: 1.8; text-align: justify;">
+                            {unified_understanding}
+                        </p>
+                    </div>
+                    
+                    <!-- Statistical Summary -->
+                    {stats_html}
+                    
+                </div>
+            </div>
+        '''
+    
+    @staticmethod
+    def _generate_additional_graphs(time_series_data: List[dict], transaction_stats: dict, request_stats: dict, metrics: Dict[str, Any]) -> str:
+        """Generate additional performance graphs"""
+        if not time_series_data:
+            return ''
+        
+        graphs_html = []
+        
+        # Graph 1: Response Time Under Load (X=Threads, Y=Response Time)
+        graphs_html.append(HTMLReportGenerator._generate_response_time_under_load_graph(time_series_data))
+        
+        # Graph 2: Response Time Over Time by Transaction
+        graphs_html.append(HTMLReportGenerator._generate_response_time_by_transaction_graph(time_series_data, transaction_stats, request_stats))
+        
+        # Graph 3: Throughput Over Time by Transaction vs VUsers
+        graphs_html.append(HTMLReportGenerator._generate_throughput_by_transaction_graph(time_series_data, transaction_stats, request_stats))
+        
+        # Graph 4: Throughput PASS and Fail Over Time
+        graphs_html.append(HTMLReportGenerator._generate_pass_fail_over_time_graph(time_series_data))
+        
+        # Graph 5: Error Analysis By Description
+        graphs_html.append(HTMLReportGenerator._generate_error_analysis_graph(metrics))
+        
+        return '\n'.join(graphs_html)
+    
+    @staticmethod
+    def _generate_graph_observation(data_points: List[dict], graph_type: str) -> str:
+        """Generate graph observation based on data trend analysis with health assessment parameters"""
+        if not data_points or len(data_points) < 2:
+            return '<p style="color: var(--text-secondary); font-size: 0.9rem;">Insufficient data for trend analysis.</p>'
+        
+        observations = []
+        
+        if graph_type == "response_time_under_load":
+            # Analyze response time vs threads correlation
+            threads = [d.get('threads', 0) for d in data_points]
+            response_times = [d.get('response_time', 0) for d in data_points]
+            if len(threads) > 1:
+                # Calculate trend
+                first_half_avg = sum(response_times[:len(response_times)//2]) / (len(response_times)//2)
+                second_half_avg = sum(response_times[len(response_times)//2:]) / (len(response_times) - len(response_times)//2)
+                avg_rt = sum(response_times) / len(response_times)
+                rt_variance = sum((x - avg_rt) ** 2 for x in response_times) / len(response_times)
+                rt_std = rt_variance ** 0.5
+                cv = rt_std / avg_rt if avg_rt > 0 else 0
+                
+                if second_half_avg > first_half_avg * 1.2:
+                    observations.append(f"Response time increases significantly as thread count increases (from {first_half_avg:.2f}s to {second_half_avg:.2f}s), indicating potential capacity constraints. System stability: Variable - resources may be insufficient at higher loads.")
+                elif second_half_avg > first_half_avg * 1.1:
+                    observations.append(f"Response time shows moderate increase with higher thread counts, suggesting some scalability limitations. System stability: Mostly stable with occasional bottlenecks.")
+                else:
+                    observations.append(f"Response time remains relatively stable across different thread counts (CV: {cv:.2%}), indicating good scalability. System stability: Stable and well-balanced. Current resources appear sufficient with minimal contention or queuing issues.")
+        
+        elif graph_type == "response_time_by_transaction":
+            response_times = [d.get('response_time', 0) for d in data_points]
+            if response_times:
+                avg_rt = sum(response_times) / len(response_times)
+                rt_variance = sum((x - avg_rt) ** 2 for x in response_times) / len(response_times)
+                rt_std = rt_variance ** 0.5
+                cv = rt_std / avg_rt if avg_rt > 0 else 0
+                if cv < 0.2:
+                    observations.append(f"Response time trends show consistent behavior over time (CV: {cv:.2%}). System stability: Stable. Resources are sufficient with no significant contention issues.")
+                else:
+                    observations.append(f"Response time shows variability over time (CV: {cv:.2%}), indicating inconsistent performance. System stability: Variable. May require resource optimization to reduce contention.")
+        
+        elif graph_type == "throughput_by_transaction":
+            throughput = [d.get('throughput', 0) for d in data_points]
+            if throughput:
+                avg_tp = sum(throughput) / len(throughput)
+                tp_variance = sum((x - avg_tp) ** 2 for x in throughput) / len(throughput)
+                tp_std = tp_variance ** 0.5
+                cv = tp_std / avg_tp if avg_tp > 0 else 0
+                if cv < 0.2:
+                    observations.append(f"Throughput patterns show consistent capacity and efficiency over time (CV: {cv:.2%}). System demonstrates stable performance with adequate resource allocation.")
+                else:
+                    observations.append(f"Throughput shows variability (CV: {cv:.2%}), suggesting inconsistent system capacity. May indicate resource contention or queuing issues at certain times.")
+        
+        elif graph_type == "pass_fail":
+            pass_counts = [d.get('pass_count', 0) for d in data_points]
+            fail_counts = [d.get('fail_count', 0) for d in data_points]
+            total_fails = sum(fail_counts)
+            total_passes = sum(pass_counts)
+            if total_fails > 0:
+                fail_rate = (total_fails / (total_passes + total_fails)) * 100
+                if fail_rate > 5:
+                    observations.append(f"High failure rate of {fail_rate:.1f}% indicates significant reliability issues requiring immediate attention. System stability: Unstable. Resources may be insufficient with frequent contention and queuing issues.")
+                elif fail_rate > 1:
+                    observations.append(f"Moderate failure rate of {fail_rate:.1f}% suggests some reliability concerns. System stability: Mostly stable but occasional bottlenecks may occur.")
+                else:
+                    observations.append(f"Low failure rate of {fail_rate:.1f}% demonstrates good system reliability. System stability: Stable and well-balanced. Resources are sufficient with minimal contention.")
+            else:
+                observations.append("No failures detected, indicating excellent system reliability. System stability: Highly stable and well-balanced. Resources are sufficient with no contention or queuing issues.")
+        
+        elif graph_type == "error_analysis":
+            total_errors = sum(d.get('count', 0) for d in data_points)
+            if total_errors > 0:
+                observations.append(f"Error distribution analysis shows {total_errors} total errors. This indicates system reliability concerns that require attention. System stability: Variable. Resources may need optimization to handle error conditions better.")
+            else:
+                observations.append("No errors detected in the analysis. System demonstrates excellent reliability and error handling. System stability: Stable with no error-related contention issues.")
+        
+        if not observations:
+            observations.append("Data analysis indicates normal system behavior patterns with stable performance.")
+        
+        return '<ul style="margin: 0; padding-left: 1.5rem; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6;">' + \
+               ''.join([f'<li style="margin-bottom: 0.5rem;">{obs}</li>' for obs in observations]) + \
+               '</ul>'
+    
+    @staticmethod
+    def _generate_response_time_under_load_graph(time_series_data: List[dict]) -> str:
+        """Graph 1: Response Time Under Load - X=Threads, Y=Response Time with 50/50 layout"""
+        if not time_series_data:
+            return ''
+        
+        # Group by threads (vusers) and calculate average response time
+        threads_data = {}
+        for d in time_series_data:
+            threads = int(d.get('vusers', 0))
+            if threads not in threads_data:
+                threads_data[threads] = []
+            threads_data[threads].append(d.get('avg_response_time', 0))
+        
+        # Calculate average response time per thread count
+        threads_sorted = sorted(threads_data.keys())
+        threads_list = threads_sorted
+        avg_response_per_thread = [sum(threads_data[t]) / len(threads_data[t]) for t in threads_list]
+        
+        # Prepare data for table
+        table_data = [{'threads': t, 'response_time': rt} for t, rt in zip(threads_list, avg_response_per_thread)]
+        table_rows = ''.join([f'''
+            <tr>
+                <td style="padding: 0.5rem; text-align: center;">{d['threads']}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['response_time']:.2f}s</td>
+            </tr>''' for d in table_data[:20]])  # Limit to 20 rows
+        
+        # Generate observation
+        observation = HTMLReportGenerator._generate_graph_observation(table_data, "response_time_under_load")
+        
+        threads_json = json.dumps(threads_list)
+        response_times_json = json.dumps(avg_response_per_thread)
+        
+        return f'''
+        <div class="section">
+            <h2>📈 Response Time Under Load</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Response time performance as load (threads) increases, showing how the system handles increasing user concurrency.
+            </p>
+            
+            <!-- Graph and Data Table Side by Side (50/50) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <!-- Left: Graph (50%) -->
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="responseTimeUnderLoadChart"></canvas>
+                </div>
+                
+                <!-- Right: Graph Data Table (50%) -->
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                        <div style="overflow-y: auto; max-height: 350px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Threads</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Response Time (s)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {table_rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Graph Observation -->
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border-left: 4px solid #2563eb;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
+                {observation}
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const ctx = document.getElementById('responseTimeUnderLoadChart');
+            if (!ctx) return;
+            
+            const threads = {threads_json};
+            const responseTimes = {response_times_json};
+            
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: threads.map(t => t + ' threads'),
+                    datasets: [{{
+                        label: 'Avg Response Time (s)',
+                        data: responseTimes,
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{ display: true, position: 'top' }},
+                        datalabels: {{ display: false }}
+                    }},
+                    scales: {{
+                        x: {{
+                            title: {{ display: true, text: 'Threads (VUsers)' }},
+                            grid: {{ display: true }}
+                        }},
+                        y: {{
+                            title: {{ display: true, text: 'Response Time (s)' }},
+                            beginAtZero: true,
+                            grid: {{ display: true }}
+                        }}
+                    }}
+                }}
+            }});
+        }});
+        </script>
+        '''
+    
+    @staticmethod
+    def _generate_response_time_by_transaction_graph(time_series_data: List[dict], transaction_stats: dict, request_stats: dict) -> str:
+        """Graph 2: Response Time Over Time by Transaction - X=Time, Y1=Avg Response Time (multiple lines), Y2=Threads with 50/50 layout"""
+        if not time_series_data:
+            return ''
+        
+        time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
+        avg_response_times = [d['avg_response_time'] for d in time_series_data]
+        vusers = [d['vusers'] for d in time_series_data]
+        
+        # Prepare data for table (sample every Nth point)
+        sample_rate = max(1, len(time_series_data) // 20)
+        sampled_data = time_series_data[::sample_rate][:20]
+        table_rows = ''.join([f'''
+            <tr>
+                <td style="padding: 0.5rem; text-align: center;">{HTMLReportGenerator._format_time_hhmmss(d['time'])}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['avg_response_time']:.2f}s</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['vusers']:.0f}</td>
+            </tr>''' for d in sampled_data])
+        
+        # Generate observation
+        table_data = [{'time': d['time'], 'response_time': d['avg_response_time']} for d in sampled_data]
+        observation = HTMLReportGenerator._generate_graph_observation(table_data, "response_time_by_transaction")
+        
+        time_labels_json = json.dumps(time_labels)
+        avg_response_times_json = json.dumps(avg_response_times)
+        vusers_json = json.dumps(vusers)
+        
+        # Build datasets for transactions
+        datasets_json = json.dumps([{
+            'label': 'Overall Avg Response Time',
+            'data': avg_response_times,
+            'borderColor': 'rgba(37, 99, 235, 1)',
+            'backgroundColor': 'rgba(37, 99, 235, 0.1)',
+            'yAxisID': 'y',
+            'borderWidth': 2
+        }])
+        
+        return f'''
+        <div class="section">
+            <h2>📈 Response Time Over Time by Transaction</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Response time trends for different transactions/requests over time, with thread count overlay.
+            </p>
+            
+            <!-- Graph and Data Table Side by Side (50/50) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <!-- Left: Graph (50%) -->
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="responseTimeByTransactionChart"></canvas>
+                </div>
+                
+                <!-- Right: Graph Data Table (50%) -->
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                        <div style="overflow-y: auto; max-height: 350px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Response Time (s)</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Threads</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {table_rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Graph Observation -->
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border-left: 4px solid #2563eb;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
+                {observation}
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const ctx = document.getElementById('responseTimeByTransactionChart');
+            if (!ctx) return;
+            
+            const timeLabels = {time_labels_json};
+            const vusers = {vusers_json};
+            const datasets = {datasets_json};
+            
+            datasets.push({{
+                label: 'Threads (VUsers)',
+                data: vusers,
+                borderColor: 'rgba(245, 158, 11, 1)',
+                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                yAxisID: 'y1',
+                fill: false
+            }});
+            
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: timeLabels,
+                    datasets: datasets
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{ display: true, position: 'top' }},
+                        datalabels: {{ display: false }}
+                    }},
+                    scales: {{
+                        x: {{
+                            title: {{ display: true, text: 'Time' }},
+                            grid: {{ display: true }}
+                        }},
+                        y: {{
+                            type: 'linear',
+                            position: 'left',
+                            title: {{ display: true, text: 'Avg Response Time (s)' }},
+                            beginAtZero: true,
+                            grid: {{ display: true }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            position: 'right',
+                            title: {{ display: true, text: 'Threads' }},
+                            beginAtZero: true,
+                            grid: {{ display: false }}
+                        }}
+                    }}
+                }}
+            }});
+        }});
+        </script>
+        '''
+    
+    @staticmethod
+    def _generate_throughput_by_transaction_graph(time_series_data: List[dict], transaction_stats: dict, request_stats: dict) -> str:
+        """Graph 3: Throughput Over Time by Transaction vs VUsers - X=Time, Y1=Throughput, Y2=Threads with 50/50 layout"""
+        if not time_series_data:
+            return ''
+        
+        time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
+        throughput = [d['throughput'] for d in time_series_data]
+        vusers = [d['vusers'] for d in time_series_data]
+        
+        # Prepare data for table
+        sample_rate = max(1, len(time_series_data) // 20)
+        sampled_data = time_series_data[::sample_rate][:20]
+        table_rows = ''.join([f'''
+            <tr>
+                <td style="padding: 0.5rem; text-align: center;">{HTMLReportGenerator._format_time_hhmmss(d['time'])}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['throughput']:.2f}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['vusers']:.0f}</td>
+            </tr>''' for d in sampled_data])
+        
+        # Generate observation
+        table_data = [{'time': d['time'], 'throughput': d['throughput']} for d in sampled_data]
+        observation = HTMLReportGenerator._generate_graph_observation(table_data, "throughput_by_transaction")
+        
+        time_labels_json = json.dumps(time_labels)
+        throughput_json = json.dumps(throughput)
+        vusers_json = json.dumps(vusers)
+        
+        return f'''
+        <div class="section">
+            <h2>📈 Throughput Over Time by Transaction vs VUsers</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Throughput trends for transactions/requests over time compared with virtual user load.
+            </p>
+            
+            <!-- Graph and Data Table Side by Side (50/50) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <!-- Left: Graph (50%) -->
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="throughputByTransactionChart"></canvas>
+                </div>
+                
+                <!-- Right: Graph Data Table (50%) -->
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                        <div style="overflow-y: auto; max-height: 350px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Throughput (req/s)</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Threads</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {table_rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Graph Observation -->
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border-left: 4px solid #2563eb;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
+                {observation}
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const ctx = document.getElementById('throughputByTransactionChart');
+            if (!ctx) return;
+            
+            const timeLabels = {time_labels_json};
+            const throughput = {throughput_json};
+            const vusers = {vusers_json};
+            
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: timeLabels,
+                    datasets: [{{
+                        label: 'Avg Throughput (req/s)',
+                        data: throughput,
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}, {{
+                        label: 'Threads (VUsers)',
+                        data: vusers,
+                        borderColor: 'rgba(245, 158, 11, 1)',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{ display: true, position: 'top' }},
+                        datalabels: {{ display: false }}
+                    }},
+                    scales: {{
+                        x: {{
+                            title: {{ display: true, text: 'Time' }},
+                            grid: {{ display: true }}
+                        }},
+                        y: {{
+                            type: 'linear',
+                            position: 'left',
+                            title: {{ display: true, text: 'Throughput (req/s)' }},
+                            beginAtZero: true,
+                            grid: {{ display: true }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            position: 'right',
+                            title: {{ display: true, text: 'Threads' }},
+                            beginAtZero: true,
+                            grid: {{ display: false }}
+                        }}
+                    }}
+                }}
+            }});
+        }});
+        </script>
+        '''
+    
+    @staticmethod
+    def _generate_pass_fail_over_time_graph(time_series_data: List[dict]) -> str:
+        """Graph 4: Throughput PASS and Fail Over Time - X=Time, Y1=Pass/Fail counts, Y2=Threads with 50/50 layout"""
+        if not time_series_data:
+            return ''
+        
+        time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
+        pass_counts = [d.get('pass_count', 0) for d in time_series_data]
+        fail_counts = [d.get('fail_count', 0) for d in time_series_data]
+        vusers = [d['vusers'] for d in time_series_data]
+        
+        # Prepare data for table
+        sample_rate = max(1, len(time_series_data) // 20)
+        sampled_data = time_series_data[::sample_rate][:20]
+        table_rows = ''.join([f'''
+            <tr>
+                <td style="padding: 0.5rem; text-align: center;">{HTMLReportGenerator._format_time_hhmmss(d['time'])}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d.get('pass_count', 0)}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d.get('fail_count', 0)}</td>
+                <td style="padding: 0.5rem; text-align: center;">{d['vusers']:.0f}</td>
+            </tr>''' for d in sampled_data])
+        
+        # Generate observation
+        table_data = [{'time': d['time'], 'pass_count': d.get('pass_count', 0), 'fail_count': d.get('fail_count', 0)} for d in sampled_data]
+        observation = HTMLReportGenerator._generate_graph_observation(table_data, "pass_fail")
+        
+        time_labels_json = json.dumps(time_labels)
+        pass_counts_json = json.dumps(pass_counts)
+        fail_counts_json = json.dumps(fail_counts)
+        vusers_json = json.dumps(vusers)
+        
+        return f'''
+        <div class="section">
+            <h2>📈 Throughput PASS and Fail Over Time</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Pass and fail transaction counts over time with thread count overlay.
+            </p>
+            
+            <!-- Graph and Data Table Side by Side (50/50) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <!-- Left: Graph (50%) -->
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="passFailOverTimeChart"></canvas>
+                </div>
+                
+                <!-- Right: Graph Data Table (50%) -->
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                        <div style="overflow-y: auto; max-height: 350px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Pass Count</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Fail Count</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Threads</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {table_rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Graph Observation -->
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border-left: 4px solid #2563eb;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
+                {observation}
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const ctx = document.getElementById('passFailOverTimeChart');
+            if (!ctx) return;
+            
+            const timeLabels = {time_labels_json};
+            const passCounts = {pass_counts_json};
+            const failCounts = {fail_counts_json};
+            const vusers = {vusers_json};
+            
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: timeLabels,
+                    datasets: [{{
+                        label: 'Pass Count',
+                        data: passCounts,
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}, {{
+                        label: 'Fail Count',
+                        data: failCounts,
+                        borderColor: 'rgba(239, 68, 68, 1)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}, {{
+                        label: 'Threads (VUsers)',
+                        data: vusers,
+                        borderColor: 'rgba(245, 158, 11, 1)',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{ display: true, position: 'top' }},
+                        datalabels: {{ display: false }}
+                    }},
+                    scales: {{
+                        x: {{
+                            title: {{ display: true, text: 'Time' }},
+                            grid: {{ display: true }}
+                        }},
+                        y: {{
+                            type: 'linear',
+                            position: 'left',
+                            title: {{ display: true, text: 'Transaction Count' }},
+                            beginAtZero: true,
+                            grid: {{ display: true }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            position: 'right',
+                            title: {{ display: true, text: 'Threads' }},
+                            beginAtZero: true,
+                            grid: {{ display: false }}
+                        }}
+                    }}
+                }}
+            }});
+        }});
+        </script>
+        '''
+    
+    @staticmethod
+    def _generate_error_analysis_graph(metrics: Dict[str, Any]) -> str:
+        """Graph 5: Error Analysis By Description over time and on threads with 50/50 layout"""
+        # Extract error information from metrics
+        response_codes = metrics.get('response_codes', {})
+        error_codes = {k: v for k, v in response_codes.items() if str(k).startswith(('4', '5'))}
+        
+        if not error_codes:
+            return f'''
+        <div class="section">
+            <h2>📈 Error Analysis By Description</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Error distribution analysis by response code and description.
+            </p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="errorAnalysisChart"></canvas>
+                </div>
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                    <p style="text-align: center; color: var(--text-secondary);">
+                        <em>No errors detected in this test run.</em>
+                    </p>
+                </div>
+            </div>
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-radius: 8px; border-left: 4px solid #10b981;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
+                <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">No errors detected, indicating excellent system reliability and error handling.</p>
+            </div>
+        </div>
+        '''
+        
+        error_labels = list(error_codes.keys())
+        error_counts = list(error_codes.values())
+        
+        # Prepare data for table
+        table_rows = ''.join([f'''
+            <tr>
+                <td style="padding: 0.5rem; text-align: center;">{code}</td>
+                <td style="padding: 0.5rem; text-align: center;">{count}</td>
+                <td style="padding: 0.5rem; text-align: center;">{"Client Error" if str(code).startswith("4") else "Server Error"}</td>
+            </tr>''' for code, count in zip(error_labels, error_counts)])
+        
+        # Generate observation
+        table_data = [{'code': code, 'count': count} for code, count in zip(error_labels, error_counts)]
+        observation = HTMLReportGenerator._generate_graph_observation(table_data, "error_analysis")
+        
+        error_labels_json = json.dumps([f"Error {code}" for code in error_labels])
+        error_counts_json = json.dumps(error_counts)
+        
+        return f'''
+        <div class="section">
+            <h2>📈 Error Analysis By Description</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Error distribution by response code showing frequency of different error types.
+            </p>
+            
+            <!-- Graph and Data Table Side by Side (50/50) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <!-- Left: Graph (50%) -->
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="errorAnalysisChart"></canvas>
+                </div>
+                
+                <!-- Right: Graph Data Table (50%) -->
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                        <div style="overflow-y: auto; max-height: 350px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Error Code</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Count</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {table_rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Graph Observation -->
+            <div style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border-left: 4px solid #2563eb;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
+                {observation}
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const ctx = document.getElementById('errorAnalysisChart');
+            if (!ctx) return;
+            
+            const errorLabels = {error_labels_json};
+            const errorCounts = {error_counts_json};
+            
+            new Chart(ctx, {{
+                type: 'bar',
+                data: {{
+                    labels: errorLabels,
+                    datasets: [{{
+                        label: 'Error Count',
+                        data: errorCounts,
+                        backgroundColor: [
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(220, 38, 38, 0.8)',
+                            'rgba(185, 28, 28, 0.8)',
+                            'rgba(153, 27, 27, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgba(239, 68, 68, 1)',
+                            'rgba(220, 38, 38, 1)',
+                            'rgba(185, 28, 28, 1)',
+                            'rgba(153, 27, 27, 1)'
+                        ],
+                        borderWidth: 2
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{ display: false }},
+                        datalabels: {{
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            formatter: (value) => value
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            title: {{ display: true, text: 'Error Type' }},
+                            grid: {{ display: false }}
+                        }},
+                        y: {{
+                            title: {{ display: true, text: 'Error Count' }},
+                            beginAtZero: true,
+                            grid: {{ display: true }}
+                        }}
+                    }}
+                }}
+            }});
+        }});
+        </script>
+        '''
+    
+    @staticmethod
+    def _generate_distribution_stats_html(stats: Dict[str, Any]) -> str:
+        """Generate HTML for distribution statistics"""
+        if not stats:
+            return ''
+        
+        return f'''
+            <div style="margin-top: 1rem; padding: 1rem; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
+                <h5 style="margin: 0 0 0.75rem 0; color: var(--text-primary); font-size: 0.95rem; font-weight: 600;">Statistical Summary</h5>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
+                    <div><strong>Mean:</strong> {stats.get('mean', 0):.2f}s</div>
+                    <div><strong>Median:</strong> {stats.get('median', 0):.2f}s</div>
+                    <div><strong>Std Deviation:</strong> {stats.get('std_deviation', 0):.2f}s</div>
+                    <div><strong>Variance:</strong> {stats.get('variance', 0):.2f}</div>
+                    <div><strong>Coefficient of Variation:</strong> {stats.get('coefficient_of_variation', 0):.2%}</div>
+                    <div><strong>Skewness:</strong> {stats.get('skewness', 0):.2f}</div>
+                </div>
+            </div>
+        '''
+    
+    @staticmethod
+    def _generate_business_answers_html(business_answers: Dict[str, Dict[str, Any]]) -> str:
+        """Generate HTML for business questions answers"""
+        if not business_answers:
+            return ''
+        
+        # Answer color mapping
+        answer_colors = {
+            'YES': '#10b981',  # green
+            'MOSTLY': '#f59e0b',  # amber
+            'PARTIALLY': '#f59e0b',  # amber
+            'NO': '#ef4444',  # red
+            'VARIABLE': '#8b5cf6',  # purple
+            'MINIMAL': '#10b981',  # green
+        }
+        
+        # Question labels
+        question_labels = {
+            'stability': '1. System is Stable and Well Balanced',
+            'resource_sufficiency': '2. Current Resources (CPU, Memory, Threads, DB connections) are Sufficient',
+            'contention': '3. Contention or Queuing Issues',
+            'bottlenecks': '4. Occasional Bottlenecks'
+        }
+        
+        questions_html = ''
+        for key, label in question_labels.items():
+            if key in business_answers:
+                answer_data = business_answers[key]
+                answer = answer_data.get('answer', 'UNKNOWN')
+                confidence = answer_data.get('confidence', 'Medium')
+                explanation = answer_data.get('explanation', '')
+                
+                answer_color = answer_colors.get(answer, '#6b7280')
+                if answer.startswith('YES'):
+                    answer_color = '#10b981' if answer == 'YES' else '#f59e0b'
+                elif answer.startswith('NO'):
+                    answer_color = '#ef4444'
+                
+                questions_html += f'''
+                    <div style="margin-top: 0.75rem; padding: 0.75rem; background: white; border-radius: 6px; border-left: 3px solid {answer_color};">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem;">
+                            <h5 style="margin: 0; color: var(--text-primary); font-size: 0.9rem; font-weight: 600;">{label}</h5>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="padding: 0.2rem 0.6rem; background: {answer_color}; color: white; border-radius: 10px; font-size: 0.7rem; font-weight: 600;">
+                                    {answer}
+                                </span>
+                                <span style="padding: 0.2rem 0.5rem; background: #e5e7eb; color: var(--text-secondary); border-radius: 6px; font-size: 0.65rem;">
+                                    {confidence}
+                                </span>
+                            </div>
+                        </div>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5;">{explanation}</p>
+                    </div>
+                '''
+        
+        return f'''
+            <div style="margin-top: 1.5rem; padding: 1.5rem; background: linear-gradient(135deg, #f3f4f6 0%, #ffffff 100%); border-radius: 8px; border: 2px solid #e5e7eb;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.05rem; font-weight: 600;">🎯 System Health Assessment</h4>
+                {questions_html}
+            </div>
+        '''
+    
+    @staticmethod
+    def _analyze_system_performance(time_series_data: List[dict]) -> dict:
+        """Analyze time-series data and generate performance insights based on correlations"""
+        if not time_series_data or len(time_series_data) < 2:
+            return {
+                "performance_status": "Insufficient Data",
+                "insights": ["Not enough data points for analysis"],
+                "correlations": {},
+                "recommendations": []
+            }
+        
+        # Extract metrics
+        response_times = [d['avg_response_time'] for d in time_series_data]
+        vusers = [d['vusers'] for d in time_series_data]
+        throughput = [d['throughput'] for d in time_series_data]
+        
+        # Calculate statistics
+        avg_response = sum(response_times) / len(response_times) if response_times else 0
+        max_response = max(response_times) if response_times else 0
+        min_response = min(response_times) if response_times else 0
+        response_variance = sum((x - avg_response) ** 2 for x in response_times) / len(response_times) if response_times else 0
+        response_stability = "Stable" if response_variance < (avg_response * 0.2) ** 2 else "Variable"
+        
+        avg_throughput = sum(throughput) / len(throughput) if throughput else 0
+        max_throughput = max(throughput) if throughput else 0
+        min_throughput = min(throughput) if throughput else 0
+        throughput_variance = sum((x - avg_throughput) ** 2 for x in throughput) / len(throughput) if throughput else 0
+        throughput_stability = "Stable" if throughput_variance < (avg_throughput * 0.2) ** 2 else "Variable"
+        
+        avg_vusers = sum(vusers) / len(vusers) if vusers else 0
+        max_vusers = max(vusers) if vusers else 0
+        
+        # Calculate correlations (simple linear correlation)
+        def calculate_correlation(x, y):
+            if len(x) != len(y) or len(x) < 2:
+                return 0
+            n = len(x)
+            sum_x = sum(x)
+            sum_y = sum(y)
+            sum_xy = sum(x[i] * y[i] for i in range(n))
+            sum_x2 = sum(x[i] ** 2 for i in range(n))
+            sum_y2 = sum(y[i] ** 2 for i in range(n))
+            
+            numerator = n * sum_xy - sum_x * sum_y
+            denominator = ((n * sum_x2 - sum_x ** 2) * (n * sum_y2 - sum_y ** 2)) ** 0.5
+            return numerator / denominator if denominator != 0 else 0
+        
+        corr_response_vusers = calculate_correlation(vusers, response_times)
+        corr_response_throughput = calculate_correlation(throughput, response_times)
+        corr_vusers_throughput = calculate_correlation(vusers, throughput)
+        
+        # Analyze trends
+        response_trend = "Increasing" if response_times[-1] > response_times[0] * 1.1 else "Decreasing" if response_times[-1] < response_times[0] * 0.9 else "Stable"
+        throughput_trend = "Increasing" if throughput[-1] > throughput[0] * 1.1 else "Decreasing" if throughput[-1] < throughput[0] * 0.9 else "Stable"
+        
+        # Generate insights
+        insights = []
+        performance_status = "Good"
+        recommendations = []
+        
+        # Response time analysis
+        if avg_response < 2.0:
+            insights.append(f"✅ <strong>Excellent Response Time:</strong> Average response time is {avg_response:.2f}s, which is well within acceptable limits (< 2s).")
+        elif avg_response < 5.0:
+            insights.append(f"⚠️ <strong>Moderate Response Time:</strong> Average response time is {avg_response:.2f}s. While acceptable, there's room for improvement.")
+            performance_status = "Moderate"
+        else:
+            insights.append(f"❌ <strong>Poor Response Time:</strong> Average response time is {avg_response:.2f}s, which exceeds acceptable thresholds. Performance optimization is needed.")
+            performance_status = "Poor"
+        
+        # Response time stability
+        if response_stability == "Stable":
+            insights.append(f"✅ <strong>Stable Performance:</strong> Response times remain consistent throughout the test, indicating good system stability.")
+        else:
+            insights.append(f"⚠️ <strong>Variable Performance:</strong> Response times fluctuate significantly (variance: {response_variance:.2f}), suggesting inconsistent system behavior.")
+            if performance_status == "Good":
+                performance_status = "Moderate"
+        
+        # Throughput analysis
+        if avg_throughput > 100:
+            insights.append(f"✅ <strong>High Throughput:</strong> System processes {avg_throughput:.1f} requests/second on average, indicating good capacity.")
+        elif avg_throughput > 50:
+            insights.append(f"⚠️ <strong>Moderate Throughput:</strong> System processes {avg_throughput:.1f} requests/second. Consider optimization for higher loads.")
+        else:
+            insights.append(f"❌ <strong>Low Throughput:</strong> System processes only {avg_throughput:.1f} requests/second, which may limit scalability.")
+            if performance_status != "Poor":
+                performance_status = "Moderate"
+        
+        # Correlation analysis
+        if corr_response_vusers > 0.7:
+            insights.append(f"⚠️ <strong>High Correlation (Response Time ↔ VUsers):</strong> Response time increases significantly as user load increases (correlation: {corr_response_vusers:.2f}). This suggests the system is reaching capacity limits.")
+            recommendations.append("Consider horizontal scaling or performance optimization to handle increased user load.")
+            if performance_status == "Good":
+                performance_status = "Moderate"
+        elif corr_response_vusers > 0.3:
+            insights.append(f"ℹ️ <strong>Moderate Correlation (Response Time ↔ VUsers):</strong> Response time shows some dependency on user load (correlation: {corr_response_vusers:.2f}).")
+        else:
+            insights.append(f"✅ <strong>Low Correlation (Response Time ↔ VUsers):</strong> Response time remains relatively stable regardless of user load (correlation: {corr_response_vusers:.2f}), indicating good scalability.")
+        
+        if corr_response_throughput < -0.5:
+            insights.append(f"❌ <strong>Negative Correlation (Response Time ↔ Throughput):</strong> As throughput increases, response time decreases (correlation: {corr_response_throughput:.2f}), which is unusual and may indicate data quality issues.")
+        elif corr_response_throughput > 0.5:
+            insights.append(f"⚠️ <strong>Positive Correlation (Response Time ↔ Throughput):</strong> Higher throughput correlates with higher response times (correlation: {corr_response_throughput:.2f}), suggesting system stress under load.")
+            if performance_status == "Good":
+                performance_status = "Moderate"
+        else:
+            insights.append(f"✅ <strong>Low Correlation (Response Time ↔ Throughput):</strong> Response time is independent of throughput (correlation: {corr_response_throughput:.2f}), indicating efficient request processing.")
+        
+        if corr_vusers_throughput > 0.7:
+            insights.append(f"✅ <strong>Strong Correlation (VUsers ↔ Throughput):</strong> Throughput scales well with user load (correlation: {corr_vusers_throughput:.2f}), showing good system scalability.")
+        elif corr_vusers_throughput < 0.3:
+            insights.append(f"⚠️ <strong>Weak Correlation (VUsers ↔ Throughput):</strong> Throughput doesn't scale proportionally with user load (correlation: {corr_vusers_throughput:.2f}), which may indicate bottlenecks.")
+            recommendations.append("Investigate system bottlenecks that prevent throughput from scaling with user load.")
+        
+        # Trend analysis
+        if response_trend == "Increasing" and max_response > avg_response * 1.5:
+            insights.append(f"⚠️ <strong>Degrading Performance:</strong> Response time shows an increasing trend, with peak values reaching {max_response:.2f}s. System performance is degrading over time.")
+            recommendations.append("Investigate memory leaks, resource exhaustion, or database connection pool issues.")
+            if performance_status != "Poor":
+                performance_status = "Moderate"
+        
+        if throughput_trend == "Decreasing":
+            insights.append(f"❌ <strong>Declining Throughput:</strong> System throughput is decreasing over time, indicating potential resource exhaustion or bottlenecks.")
+            recommendations.append("Check for resource leaks, database connection issues, or server capacity limits.")
+            performance_status = "Poor"
+        
+        # Overall assessment
+        if performance_status == "Good":
+            insights.append(f"✅ <strong>Overall Assessment:</strong> System demonstrates excellent performance with stable response times, good throughput, and healthy correlations between metrics.")
+        elif performance_status == "Moderate":
+            insights.append(f"⚠️ <strong>Overall Assessment:</strong> System performance is acceptable but shows areas for improvement. Monitor closely and consider optimizations.")
+        else:
+            insights.append(f"❌ <strong>Overall Assessment:</strong> System performance requires immediate attention. Critical issues identified that impact user experience.")
+        
+        return {
+            "performance_status": performance_status,
+            "insights": insights,
+            "correlations": {
+                "response_vusers": round(corr_response_vusers, 3),
+                "response_throughput": round(corr_response_throughput, 3),
+                "vusers_throughput": round(corr_vusers_throughput, 3)
+            },
+            "statistics": {
+                "avg_response": round(avg_response, 2),
+                "max_response": round(max_response, 2),
+                "avg_throughput": round(avg_throughput, 2),
+                "max_throughput": round(max_throughput, 2),
+                "avg_vusers": round(avg_vusers, 1),
+                "max_vusers": round(max_vusers, 1)
+            },
+            "recommendations": recommendations
+        }
+    
+    @staticmethod
+    def _generate_system_behaviour_graph(time_series_data: List[dict]) -> str:
+        """Generate Overall System Behaviour graph with dual Y-axes"""
+        if not time_series_data:
+            return '''
+        <div class="section">
+            <h2>📈 Overall System Behaviour</h2>
+            <p><em>Time-series data not available for this test.</em></p>
+        </div>'''
+        
+        # Analyze performance (basic correlation analysis)
+        analysis = HTMLReportGenerator._analyze_system_performance(time_series_data)
+        
+        # Advanced graph pattern analysis
+        graph_analysis = GraphAnalyzer.analyze_graph_patterns(time_series_data)
+        
+        # Prepare data for JavaScript
+        time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
+        avg_response_times = [d['avg_response_time'] for d in time_series_data]
+        vusers = [d['vusers'] for d in time_series_data]
+        throughput = [d['throughput'] for d in time_series_data]
+        
+        # Format as JSON for JavaScript
+        time_labels_json = json.dumps(time_labels)
+        avg_response_times_json = json.dumps(avg_response_times)
+        vusers_json = json.dumps(vusers)
+        throughput_json = json.dumps(throughput)
+        
+        # Generate graph data table HTML
+        table_html = HTMLReportGenerator._generate_graph_data_table(time_series_data)
+        
+        return f'''
+        <div class="section">
+            <h2>📈 Overall System Behaviour</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                System performance metrics over time showing how response time, throughput, and user load interact during the test.
+            </p>
+            
+            <!-- Graph and Data Table Side by Side (50/50) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                <!-- Left: Graph (50%) -->
+                <div class="chart-container" style="height: 500px;">
+                    <canvas id="systemBehaviourChart"></canvas>
+                </div>
+                
+                <!-- Right: Graph Data Table (50%) -->
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    {table_html}
+                </div>
+            </div>
+            
+            <div style="margin-top: 2rem; padding: 1.5rem; background: var(--background-light); border-radius: 8px;">
+                <h3 style="color: var(--primary-color); margin-bottom: 1rem;">📖 Graph Understanding & Performance Analysis</h3>
+                
+                <!-- Comprehensive Graph Analysis with 50/50 layout -->
+                {HTMLReportGenerator._generate_graph_analysis_html(graph_analysis, time_series_data)}
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const ctx = document.getElementById('systemBehaviourChart');
+            if (!ctx) return;
+            
+            const timeLabels = {time_labels_json};
+            const avgResponseTimes = {avg_response_times_json};
+            const vusers = {vusers_json};
+            const throughput = {throughput_json};
+            
+            // Calculate max values for scaling
+            const maxResponse = Math.max(...avgResponseTimes, 1);
+            const maxThroughput = Math.max(...throughput, 1);
+            
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: timeLabels,
+                    datasets: [{{
+                        label: 'Avg Response Time (s)',
+                        data: avgResponseTimes,
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}, {{
+                        label: 'VUsers',
+                        data: vusers,
+                        borderColor: 'rgba(245, 158, 11, 1)',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y',
+                        pointRadius: 2,
+                        pointHoverRadius: 4,
+                        borderDash: [5, 5]
+                    }}, {{
+                        label: 'Throughput (req/s)',
+                        data: throughput,
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {{
+                        mode: 'index',
+                        intersect: false
+                    }},
+                    plugins: {{
+                        legend: {{
+                            display: true,
+                            position: 'top',
+                            labels: {{
+                                font: {{ size: 12 }},
+                                usePointStyle: true,
+                                padding: 15
+                            }}
+                        }},
+                        title: {{
+                            display: true,
+                            text: 'Average Response Time vs VUsers vs Throughput Over Time',
+                            font: {{ size: 18, weight: 'bold' }},
+                            padding: {{ bottom: 20 }}
+                        }},
+                        datalabels: {{
+                            display: false
+                        }},
+                        tooltip: {{
+                            callbacks: {{
+                                label: function(context) {{
+                                    let label = context.dataset.label || '';
+                                    if (label) {{
+                                        label += ': ';
+                                    }}
+                                    if (context.dataset.label.includes('Response Time')) {{
+                                        label += context.parsed.y.toFixed(2) + 's';
+                                    }} else if (context.dataset.label.includes('Throughput')) {{
+                                        label += context.parsed.y.toFixed(2) + ' req/s';
+                                    }} else if (context.dataset.label.includes('VUsers')) {{
+                                        label += Math.round(context.parsed.y) + ' users';
+                                    }} else {{
+                                        label += Math.round(context.parsed.y);
+                                    }}
+                                    return label;
+                                }}
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            title: {{
+                                display: true,
+                                text: 'Time (seconds)',
+                                font: {{ size: 14, weight: 'bold' }}
+                            }},
+                            grid: {{
+                                display: true,
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }}
+                        }},
+                        y: {{
+                            type: 'linear',
+                            position: 'left',
+                            title: {{
+                                display: true,
+                                text: 'Response Time (s) / VUsers',
+                                font: {{ size: 14, weight: 'bold' }}
+                            }},
+                            beginAtZero: true,
+                            max: Math.max(maxResponse * 1.1, 10),
+                            grid: {{
+                                display: true,
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            position: 'right',
+                            title: {{
+                                display: true,
+                                text: 'Throughput (req/s)',
+                                font: {{ size: 14, weight: 'bold' }}
+                            }},
+                            beginAtZero: true,
+                            max: Math.max(maxThroughput * 1.1, 10),
+                            grid: {{
+                                drawOnChartArea: false
+                            }}
+                        }}
+                    }}
+                }}
+            }});
+        }});
+        </script>'''
+    
+    @staticmethod
     def _generate_critical_issues(issues: List[dict]) -> str:
-        """Generate critical issues section"""
+        """Generate critical issues section in tabular format"""
         if not issues:
             return '''
         <div class="section">
@@ -839,15 +2352,24 @@ class HTMLReportGenerator:
             </div>
         </div>'''
         
-        issue_items = ""
+        # Generate table rows
+        table_rows = ""
         for i, issue in enumerate(issues, 1):
-            issue_items += f'''
-            <li class="issue-item">
-                <h4>Issue #{i}: {issue.get('title', 'Unknown Issue')}</h4>
-                <p><strong>Impact:</strong> {issue.get('impact', 'N/A')}</p>
-                <p><strong>Affected:</strong> {issue.get('affected', 'N/A')}</p>
-                <p><strong>Fix Timeline:</strong> {issue.get('timeline', 'N/A')} | <strong>Priority:</strong> {issue.get('priority', 'N/A')}</p>
-            </li>'''
+            title = issue.get('title', 'Unknown Issue')
+            impact = issue.get('impact', 'N/A')
+            affected = issue.get('affected', 'N/A')
+            example = issue.get('example', affected)  # Use affected as example if example not provided
+            recommendation = issue.get('recommendation', issue.get('fix', 'Review and address the issue'))
+            business_benefit = issue.get('business_benefit', 'Improved system reliability and user experience')
+            
+            table_rows += f'''
+            <tr>
+                <td style="padding: 1rem; font-weight: 600; color: var(--text-primary);">{title}</td>
+                <td style="padding: 1rem; color: var(--text-secondary);">{example}</td>
+                <td style="padding: 1rem; color: var(--text-secondary);">{impact}</td>
+                <td style="padding: 1rem; color: var(--text-secondary);">{recommendation}</td>
+                <td style="padding: 1rem; color: var(--text-secondary);">{business_benefit}</td>
+            </tr>'''
         
         return f'''
         <div class="section">
@@ -856,19 +2378,21 @@ class HTMLReportGenerator:
                 <strong>IMMEDIATE ACTION REQUIRED:</strong> {len(issues)} critical issue{'s' if len(issues) > 1 else ''} {'are' if len(issues) > 1 else 'is'} severely impacting business operations and user experience.
             </div>
             
-            <ul class="issues-list" style="list-style: none;">
-                {issue_items}
-            </ul>
-            
-            <!-- Path to Improve Grade -->
-            <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid var(--primary-color); border-radius: 12px; padding: 2rem; margin: 2rem 0;">
-                <h3 style="color: var(--primary-color); margin: 0 0 1rem 0;">🎯 Path to Improve Grade</h3>
-                <p style="margin-bottom: 1rem;">To achieve an A+ grade and ensure optimal performance, follow the improvement roadmap outlined in the Recommended Action Plan section below. Focus on:</p>
-                <ul style="margin-left: 2rem;">
-                    <li><strong>Phase 1:</strong> Fix critical bugs and performance bottlenecks (Week 1-4)</li>
-                    <li><strong>Phase 2:</strong> Implement optimization and caching strategies (Week 4-12)</li>
-                    <li><strong>Phase 3:</strong> Achieve excellence through advanced monitoring and scaling (Week 12-24)</li>
-                </ul>
+            <div style="overflow-x: auto; margin-top: 1.5rem;">
+                <table class="endpoint-table" style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white;">
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Issue</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Example of Issue</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Impact</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Recommendation</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Business Benefit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {table_rows}
+                    </tbody>
+                </table>
             </div>
         </div>'''
     
@@ -922,35 +2446,48 @@ class HTMLReportGenerator:
     
     @staticmethod
     def _generate_action_plan(roadmap: List[dict], current_grade: str) -> str:
-        """Generate recommended action plan"""
-        timeline_items = ""
-        for phase in roadmap:
-            phase_name = phase.get('phase', 'Phase')
-            timeline = phase.get('timeline', 'TBD')
+        """Generate recommended action plan in tabular format"""
+        if not roadmap:
+            return f'''
+        <div class="section">
+            <h2>🚀 Recommended Action Plan</h2>
+            <p>No specific action plan generated. Consider standard performance optimization strategies.</p>
+        </div>'''
+        
+        # Generate table rows
+        table_rows = ""
+        for i, phase in enumerate(roadmap, 1):
+            phase_name = phase.get('phase', f'Phase {i}')
             target_grade = phase.get('target_grade', 'N/A')
             improvements = phase.get('improvements', [])
-            expected_impact = phase.get('expected_impact', 'N/A')
+            actions = '; '.join(improvements) if improvements else 'Review and optimize system performance'
+            expected_impact = phase.get('expected_impact', 'Improved system performance and reliability')
             
-            # Determine class based on phase
-            item_class = "danger" if "Critical" in phase_name else "warning" if "Optimization" in phase_name else "success"
-            
-            improvement_list = "".join([f"<li>{imp}</li>" for imp in improvements])
-            
-            timeline_items += f'''
-            <div class="timeline-item {item_class}">
-                <h4>{phase_name} ({timeline})</h4>
-                <p><strong>Target Grade:</strong> {target_grade}</p>
-                <ul>
-                    {improvement_list}
-                </ul>
-                <strong>Expected Impact:</strong> {expected_impact}
-            </div>'''
+            table_rows += f'''
+            <tr>
+                <td style="padding: 1rem; font-weight: 600; color: var(--text-primary);">{phase_name}</td>
+                <td style="padding: 1rem; text-align: center; color: var(--text-secondary);">{target_grade}</td>
+                <td style="padding: 1rem; color: var(--text-secondary);">{actions}</td>
+                <td style="padding: 1rem; color: var(--text-secondary);">{expected_impact}</td>
+            </tr>'''
         
         return f'''
         <div class="section">
             <h2>🚀 Recommended Action Plan</h2>
-            <div class="action-timeline">
-                {timeline_items if timeline_items else '<p>No specific action plan generated. Consider standard performance optimization strategies.</p>'}
+            <div style="overflow-x: auto; margin-top: 1.5rem;">
+                <table class="endpoint-table" style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white;">
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Phase</th>
+                            <th style="padding: 1rem; text-align: center; font-weight: 600;">Target Grade</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Actions</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Expected Impact</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {table_rows}
+                    </tbody>
+                </table>
             </div>
             
             <div style="background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border-left: 4px solid var(--success-color); padding: 1.5rem; border-radius: 0 8px 8px 0; margin-top: 2rem;">
@@ -962,6 +2499,121 @@ class HTMLReportGenerator:
                     <li>{'Maintain performance standards' if current_grade in ['A+', 'A'] else 'Gradual scale-up with continuous monitoring'}</li>
                     <li>Regular performance reviews and optimization</li>
                 </ul>
+            </div>
+        </div>'''
+    
+    @staticmethod
+    def _generate_final_conclusion(grade: str, score: float, success_rate: float, avg_response: float, 
+                                   error_rate: float, throughput: float, p95_response: float, 
+                                   sla_compliance: float, critical_issues: List[dict], 
+                                   improvement_roadmap: List[dict], summary: dict) -> str:
+        """Generate final conclusion section"""
+        # Generate conclusion write-up
+        if grade in ["A+", "A"]:
+            conclusion_text = f"The performance assessment reveals an excellent system with a grade of {grade} (Score: {score:.0f}/100). The application demonstrates strong performance metrics including a {success_rate:.1f}% success rate, {avg_response:.2f}s average response time, and {throughput:.0f} requests/second throughput. The system is well-optimized and ready for production deployment with minimal concerns."
+        elif grade in ["B+", "B"]:
+            conclusion_text = f"The performance assessment indicates a good system with a grade of {grade} (Score: {score:.0f}/100). While the application shows acceptable performance with {success_rate:.1f}% success rate and {avg_response:.2f}s average response time, there are opportunities for optimization to achieve excellence. The system can be deployed with monitoring while implementing recommended improvements."
+        else:
+            conclusion_text = f"The performance assessment reveals a system requiring attention with a grade of {grade} (Score: {score:.0f}/100). The application shows {success_rate:.1f}% success rate and {avg_response:.2f}s average response time, indicating areas that need improvement. Immediate action is recommended to address critical issues before full production deployment."
+        
+        # Key Strengths
+        strengths = []
+        if success_rate >= 99:
+            strengths.append(f"High success rate of {success_rate:.1f}% demonstrates excellent system reliability")
+        if avg_response <= 2.0:
+            strengths.append(f"Fast average response time of {avg_response:.2f}s ensures optimal user experience")
+        if error_rate < 1.0:
+            strengths.append(f"Low error rate of {error_rate:.2f}% indicates robust error handling")
+        if throughput >= 100:
+            strengths.append(f"High throughput of {throughput:.0f} req/s shows good system capacity")
+        if sla_compliance >= 95:
+            strengths.append(f"Excellent SLA compliance of {sla_compliance:.1f}% meets performance targets")
+        if not strengths:
+            strengths.append("System demonstrates basic functionality and stability")
+        
+        # Areas of Improvement
+        improvements = []
+        if avg_response > 2.0:
+            improvements.append(f"Optimize response time from {avg_response:.2f}s to target <2s for better user experience")
+        if error_rate > 1.0:
+            improvements.append(f"Reduce error rate from {error_rate:.2f}% to target <1% for improved reliability")
+        if throughput < 100:
+            improvements.append(f"Increase throughput from {throughput:.0f} req/s to handle higher loads")
+        if sla_compliance < 95:
+            improvements.append(f"Improve SLA compliance from {sla_compliance:.1f}% to target 95%+")
+        if critical_issues:
+            improvements.append(f"Address {len(critical_issues)} critical issue(s) identified in the assessment")
+        if not improvements:
+            improvements.append("Continue monitoring and maintain current performance standards")
+        
+        # Recommended Immediate Actions
+        immediate_actions = []
+        if critical_issues:
+            immediate_actions.append("Address critical issues identified in the assessment (see Critical Issues section)")
+        if error_rate > 5.0:
+            immediate_actions.append("Implement error handling improvements to reduce error rate")
+        if avg_response > 5.0:
+            immediate_actions.append("Optimize slow endpoints and database queries to improve response time")
+        if sla_compliance < 80:
+            immediate_actions.append("Implement performance optimizations to improve SLA compliance")
+        if not immediate_actions:
+            immediate_actions.append("Continue monitoring system performance and maintain current standards")
+        
+        # Success Metrics
+        success_metrics = [
+            f"Maintain success rate above {max(95, success_rate * 0.95):.1f}%",
+            f"Achieve average response time below {max(2.0, avg_response * 0.8):.2f}s",
+            f"Reduce error rate to below {max(1.0, error_rate * 0.5):.2f}%",
+            f"Increase throughput to {max(100, throughput * 1.2):.0f}+ req/s",
+            f"Achieve SLA compliance of {min(95, sla_compliance + 10):.1f}%+"
+        ]
+        
+        strengths_html = ''.join([f'<li style="margin-bottom: 0.5rem;">{s}</li>' for s in strengths])
+        improvements_html = ''.join([f'<li style="margin-bottom: 0.5rem;">{i}</li>' for i in improvements])
+        actions_html = ''.join([f'<li style="margin-bottom: 0.5rem;">{a}</li>' for a in immediate_actions])
+        metrics_html = ''.join([f'<li style="margin-bottom: 0.5rem;">{m}</li>' for m in success_metrics])
+        
+        return f'''
+        <div class="section">
+            <h2>📋 Final Conclusion</h2>
+            
+            <div style="background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%); padding: 2rem; border-radius: 8px; border: 2px solid #e5e7eb; margin-bottom: 2rem;">
+                <h3 style="color: var(--primary-color); margin-top: 0;">Conclusion</h3>
+                <p style="font-size: 1.05rem; line-height: 1.8; color: var(--text-primary); text-align: justify;">
+                    {conclusion_text}
+                </p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 1.5rem; border-radius: 8px; border-left: 4px solid #10b981;">
+                    <h4 style="color: #059669; margin-top: 0;">✅ Key Strengths</h4>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-primary);">
+                        {strengths_html}
+                    </ul>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 1.5rem; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                    <h4 style="color: #d97706; margin-top: 0;">🔧 Areas of Improvement</h4>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-primary);">
+                        {improvements_html}
+                    </ul>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 1.5rem; border-radius: 8px; border-left: 4px solid #ef4444;">
+                    <h4 style="color: #dc2626; margin-top: 0;">⚡ Recommended Immediate Actions</h4>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-primary);">
+                        {actions_html}
+                    </ul>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); padding: 1.5rem; border-radius: 8px; border-left: 4px solid #2563eb;">
+                    <h4 style="color: #1d4ed8; margin-top: 0;">🎯 Success Metrics</h4>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-primary);">
+                        {metrics_html}
+                    </ul>
+                </div>
             </div>
         </div>'''
     
@@ -1108,8 +2760,6 @@ class HTMLReportGenerator:
         }}
         Chart.defaults.font.family = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
         
-        // Note: Charts are not rendered in this version
-        // The HTML structure is designed to be easily extended with Chart.js visualizations
         console.log('Performance report loaded successfully');
         console.log('Response time distribution:', {{
             'under_1s': {under_1s:.2f},
