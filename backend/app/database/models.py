@@ -28,6 +28,25 @@ class UploadedFile(Base):
     analysis = relationship("AnalysisResult", back_populates="file", uselist=False, cascade="all, delete-orphan")
     
     def to_dict(self):
+        """Convert to dictionary, avoiding relationship loading"""
+        # Check if analysis exists without triggering lazy load
+        has_analysis = False
+        has_reports = False
+        try:
+            # Use getattr to avoid triggering relationship load
+            analysis = getattr(self, 'analysis', None)
+            if analysis is not None:
+                has_analysis = True
+                # Check reports without triggering load
+                reports = getattr(analysis, 'reports', None)
+                if reports is not None:
+                    try:
+                        has_reports = len(reports) > 0
+                    except:
+                        has_reports = False
+        except:
+            pass
+        
         return {
             "file_id": self.file_id,
             "run_id": self.run_id,
@@ -35,12 +54,12 @@ class UploadedFile(Base):
             "category": self.category,
             "file_path": self.file_path,
             "file_size": self.file_size,
-            "record_count": self.record_count,
+            "record_count": self.record_count or 0,
             "report_status": self.report_status,
             "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None,
             "uploaded_by": self.uploaded_by,
-            "has_analysis": self.analysis is not None,
-            "has_reports": len(self.analysis.reports) > 0 if self.analysis else False
+            "has_analysis": has_analysis,
+            "has_reports": has_reports
         }
 
 

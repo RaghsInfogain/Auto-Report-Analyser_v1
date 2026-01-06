@@ -75,31 +75,55 @@ class DatabaseService:
     
     @staticmethod
     def get_all_uploaded_files(db: Session) -> List[UploadedFile]:
-        """Get all uploaded files"""
-        return db.query(UploadedFile).order_by(UploadedFile.uploaded_at.desc()).all()
+        """Get all uploaded files with error handling"""
+        try:
+            return db.query(UploadedFile).order_by(UploadedFile.uploaded_at.desc()).all()
+        except Exception as e:
+            print(f"Error in get_all_uploaded_files: {str(e)}")
+            # Try to refresh the connection
+            db.rollback()
+            return db.query(UploadedFile).order_by(UploadedFile.uploaded_at.desc()).all()
     
     @staticmethod
     def get_all_run_ids(db: Session) -> List[dict]:
         """Get all unique run_ids with their file counts and info - optimized to avoid N+1 queries"""
         from sqlalchemy import func, case
         
-        # Single query to get all runs with aggregated data
-        runs = db.query(
-            UploadedFile.run_id,
-            func.count(UploadedFile.file_id).label('file_count'),
-            func.sum(UploadedFile.file_size).label('total_size'),
-            func.sum(UploadedFile.record_count).label('total_records'),
-            func.min(UploadedFile.uploaded_at).label('uploaded_at')
-        ).group_by(UploadedFile.run_id).order_by(func.min(UploadedFile.uploaded_at).desc()).all()
-        
-        if not runs:
-            return []
-        
-        # Get all run_ids
-        run_ids = [run.run_id for run in runs]
-        
-        # Single query to get all files for all runs at once
-        all_files = db.query(UploadedFile).filter(UploadedFile.run_id.in_(run_ids)).all()
+        try:
+            # Single query to get all runs with aggregated data
+            runs = db.query(
+                UploadedFile.run_id,
+                func.count(UploadedFile.file_id).label('file_count'),
+                func.sum(UploadedFile.file_size).label('total_size'),
+                func.sum(UploadedFile.record_count).label('total_records'),
+                func.min(UploadedFile.uploaded_at).label('uploaded_at')
+            ).group_by(UploadedFile.run_id).order_by(func.min(UploadedFile.uploaded_at).desc()).all()
+            
+            if not runs:
+                return []
+            
+            # Get all run_ids
+            run_ids = [run.run_id for run in runs]
+            
+            # Single query to get all files for all runs at once
+            all_files = db.query(UploadedFile).filter(UploadedFile.run_id.in_(run_ids)).all()
+        except Exception as e:
+            print(f"Error in get_all_run_ids query: {str(e)}")
+            db.rollback()
+            # Retry once
+            runs = db.query(
+                UploadedFile.run_id,
+                func.count(UploadedFile.file_id).label('file_count'),
+                func.sum(UploadedFile.file_size).label('total_size'),
+                func.sum(UploadedFile.record_count).label('total_records'),
+                func.min(UploadedFile.uploaded_at).label('uploaded_at')
+            ).group_by(UploadedFile.run_id).order_by(func.min(UploadedFile.uploaded_at).desc()).all()
+            
+            if not runs:
+                return []
+            
+            run_ids = [run.run_id for run in runs]
+            all_files = db.query(UploadedFile).filter(UploadedFile.run_id.in_(run_ids)).all()
         
         # Group files by run_id in memory (much faster than N queries)
         files_by_run = {}
@@ -148,11 +172,24 @@ class DatabaseService:
                     "has_reports": False    # Don't query relationships
                 })
             
+            # For merged files, calculate total_records correctly
+            # If all files have the same record_count and point to the same file_path, it's a merged file
+            total_records = run.total_records or 0
+            if files:
+                unique_paths = set(f.file_path for f in files)
+                unique_record_counts = set(f.record_count for f in files if f.record_count)
+                
+                # If all files point to the same path and have same record_count, it's merged
+                if len(unique_paths) == 1 and len(unique_record_counts) == 1:
+                    # All files point to same merged file - use the single record_count
+                    total_records = files[0].record_count or 0
+                    print(f"  Detected merged file for {run_id}: using {total_records:,} records (not {run.total_records or 0:,})")
+            
             result.append({
                 'run_id': run_id,
                 'file_count': run.file_count,
                 'total_size': run.total_size or 0,
-                'total_records': run.total_records or 0,
+                'total_records': total_records,
                 'uploaded_at': run.uploaded_at.isoformat() if run.uploaded_at else None,
                 'report_status': overall_status,
                 'categories': categories,

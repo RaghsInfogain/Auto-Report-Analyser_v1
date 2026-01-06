@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import FileUpload from '../components/FileUpload';
-import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile } from '../services/api';
+import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress } from '../services/api';
 import './FilesPage.css';
 
 interface ProgressState {
   runId: string;
   stage: 'analyzing' | 'generating' | 'completed';
   message: string;
+  progress?: ReportProgress;
 }
 
 interface ModalContent {
@@ -24,9 +25,16 @@ const FilesPage: React.FC = () => {
   const [modalContent, setModalContent] = useState<ModalContent | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
+  const progressPollInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadRuns();
+    
+    return () => {
+      if (progressPollInterval.current) {
+        clearInterval(progressPollInterval.current);
+      }
+    };
   }, []);
 
   const loadRuns = async () => {
@@ -85,32 +93,77 @@ const FilesPage: React.FC = () => {
         });
       }
 
-      // Call the unified backend endpoint
+      // Start polling for progress
+      const pollProgress = async () => {
+        try {
+          const progressData = await getReportProgress(run.run_id);
+          setProgress(prev => prev ? { ...prev, progress: progressData } : null);
+          
+          if (progressData.status === 'completed' || progressData.status === 'failed' || progressData.status === 'stuck') {
+            if (progressPollInterval.current) {
+              clearInterval(progressPollInterval.current);
+              progressPollInterval.current = null;
+            }
+            
+            if (progressData.status === 'completed') {
+              setProgress({
+                runId: run.run_id,
+                stage: 'completed',
+                message: 'Report generated successfully!',
+                progress: progressData
+              });
+              setRuns(runs =>
+                runs.map(r =>
+                  r.run_id === run.run_id
+                    ? { ...r, report_status: 'generated' }
+                    : r
+                )
+              );
+              setTimeout(() => setProgress(null), 3000);
+            } else if (progressData.status === 'stuck' || progressData.status === 'failed') {
+              setProgress({
+                runId: run.run_id,
+                stage: 'completed',
+                message: progressData.message || 'Report generation failed or was stuck',
+                progress: progressData
+              });
+              setRuns(runs =>
+                runs.map(r =>
+                  r.run_id === run.run_id
+                    ? { ...r, report_status: 'pending' }
+                    : r
+                )
+              );
+              setTimeout(() => setProgress(null), 5000);
+            }
+          }
+        } catch (error) {
+          console.error('Error polling progress:', error);
+        }
+      };
+
+      // Poll every 2 seconds
+      if (progressPollInterval.current) {
+        clearInterval(progressPollInterval.current);
+      }
+      progressPollInterval.current = setInterval(pollProgress, 2000);
+
+      // Call the unified backend endpoint (this will take time)
       const result = await generateRunReport(run.run_id, regenerate);
 
-      // Stage 2: Generating
-      setProgress({
-        runId: run.run_id,
-        stage: 'generating',
-        message: 'Report Analysis Completed and Report Generation Started...'
-      });
+      // Stop polling
+      if (progressPollInterval.current) {
+        clearInterval(progressPollInterval.current);
+        progressPollInterval.current = null;
+      }
 
-      setRuns(runs =>
-        runs.map(r =>
-          r.run_id === run.run_id
-            ? { ...r, report_status: 'generating', total_records: result.total_records }
-            : r
-        )
-      );
-
-      // Small delay to show the generating message
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Stage 3: Completed
+      // Final progress update
+      const finalProgress = await getReportProgress(run.run_id);
       setProgress({
         runId: run.run_id,
         stage: 'completed',
-        message: 'Report generated successfully!'
+        message: 'Report generated successfully!',
+        progress: finalProgress
       });
 
       setRuns(runs =>
@@ -121,17 +174,25 @@ const FilesPage: React.FC = () => {
         )
       );
 
-      // Clear progress after 2 seconds
+      // Clear progress after 3 seconds
       setTimeout(() => {
         setProgress(null);
-      }, 2000);
+      }, 3000);
 
     } catch (error: any) {
       console.error('Failed to generate report:', error);
+      
+      // Stop polling on error
+      if (progressPollInterval.current) {
+        clearInterval(progressPollInterval.current);
+        progressPollInterval.current = null;
+      }
+      
       setProgress({
         runId: run.run_id,
         stage: 'completed',
-        message: `Error: ${error.response?.data?.detail || 'Failed to generate report'}`
+        message: `Error: ${error.response?.data?.detail || 'Failed to generate report'}`,
+        progress: undefined
       });
       setRuns(runs =>
         runs.map(r =>
@@ -142,7 +203,7 @@ const FilesPage: React.FC = () => {
       );
       setTimeout(() => {
         setProgress(null);
-      }, 3000);
+      }, 5000);
     }
   };
 
@@ -283,7 +344,54 @@ const FilesPage: React.FC = () => {
         <div className={`progress-banner ${progress.stage}`}>
           <div className="progress-content">
             <div className="progress-spinner"></div>
-            <span className="progress-message">{progress.message}</span>
+            <div className="progress-details">
+              <span className="progress-message">{progress.message}</span>
+              {progress.progress && (
+                <div className="progress-tasks">
+                  <div className="progress-bar-container">
+                    <div className="progress-bar" style={{ width: `${progress.progress.overall_progress}%` }}></div>
+                    <span className="progress-percent">{progress.progress.overall_progress}%</span>
+                  </div>
+                  <table className="progress-table">
+                    <thead>
+                      <tr>
+                        <th>Status</th>
+                        <th>Task</th>
+                        <th>Description</th>
+                        <th>Progress</th>
+                        <th>Started</th>
+                        <th>Completed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(progress.progress.tasks || {}).map(([taskId, task]: [string, any]) => (
+                        <tr key={taskId} className={`task-row ${task.status}`}>
+                          <td className="task-status-cell">
+                            <span className="task-status-icon">
+                              {task.status === 'completed' ? '✓' : task.status === 'in_progress' ? '⟳' : task.status === 'failed' ? '✗' : '○'}
+                            </span>
+                            <span className="task-status-text">{task.status}</span>
+                          </td>
+                          <td className="task-name-cell">{task.name}</td>
+                          <td className="task-description-cell">{task.description || '-'}</td>
+                          <td className="task-progress-cell">
+                            {task.status === 'in_progress' ? `${task.progress_percent}%` : 
+                             task.status === 'completed' ? '100%' : 
+                             task.status === 'failed' ? 'Failed' : '0%'}
+                          </td>
+                          <td className="task-time-cell">
+                            {task.started_at ? new Date(task.started_at).toLocaleTimeString() : '-'}
+                          </td>
+                          <td className="task-time-cell">
+                            {task.completed_at ? new Date(task.completed_at).toLocaleTimeString() : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

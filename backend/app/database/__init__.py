@@ -14,14 +14,16 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_db_path.absolute()}")
 # Create engine
 if DATABASE_URL.startswith("sqlite"):
     # SQLite configuration with timeout to prevent hangs
+    # SQLite doesn't support QueuePool - use StaticPool or NullPool
     engine = create_engine(
         DATABASE_URL,
         connect_args={
             "check_same_thread": False,
-            "timeout": 30.0  # 30 second timeout to prevent indefinite hangs
+            "timeout": 30.0  # 30 second timeout for individual queries
         },
-        poolclass=StaticPool,
+        poolclass=StaticPool,  # SQLite requires StaticPool
         pool_pre_ping=True,  # Verify connections before using
+        echo=False  # Set to True for SQL debugging
     )
 else:
     # PostgreSQL or other databases
@@ -35,12 +37,16 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 def get_db() -> Session:
-    """Dependency for getting database session"""
+    """Dependency for getting database session with proper error handling"""
     db = SessionLocal()
     try:
         yield db
+        db.commit()  # Commit successful transactions
+    except Exception as e:
+        db.rollback()  # Rollback on error
+        raise
     finally:
-        db.close()
+        db.close()  # Always close the session
 
 
 

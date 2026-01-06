@@ -177,3 +177,30 @@ export const getRunReport = async (runId: string, reportType: 'html' | 'pdf' | '
   return response.data;
 };
 
+export interface ReportProgress {
+  run_id: string;
+  status: 'in_progress' | 'completed' | 'failed' | 'stuck' | 'unknown' | 'not_found';
+  started_at?: string;
+  completed_at?: string;
+  current_task?: string;
+  tasks: {
+    [key: string]: {
+      name: string;
+      description: string;
+      status: 'pending' | 'in_progress' | 'completed' | 'failed';
+      started_at?: string;
+      completed_at?: string;
+      progress_percent: number;
+    };
+  };
+  overall_progress: number;
+  message: string;
+  last_updated: string;
+  can_retry?: boolean;
+}
+
+export const getReportProgress = async (runId: string): Promise<ReportProgress> => {
+  const response = await api.get(`/api/runs/${runId}/progress`);
+  return response.data;
+};
+

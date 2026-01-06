@@ -36,9 +36,20 @@ class HTMLReportGenerator:
     @staticmethod
     def generate_jmeter_html_report(
         metrics: Dict[str, Any],
-        filename: str = "performance_report.html"
+        filename: str = "performance_report.html",
+        progress_callback=None
     ) -> str:
         """Generate a comprehensive HTML report for JMeter results"""
+        
+        def update_progress(percent: int, message: str):
+            """Helper to update progress if callback provided"""
+            if progress_callback:
+                try:
+                    progress_callback(percent, message)
+                except:
+                    pass
+        
+        update_progress(5, "Extracting metrics...")
         
         # Extract metrics
         total_samples = metrics.get("total_samples", 0)
@@ -80,22 +91,75 @@ class HTMLReportGenerator:
         response_codes = metrics.get("response_codes", {})
         targets = summary.get("targets", {})
         
+        # Check if this is a consolidated report
+        file_info = summary.get("file_info", [])
+        consolidated_files = summary.get("consolidated_from_files", [])
+        file_count = summary.get("file_count", 1)
+        is_consolidated = file_count > 1
+        
         current_date = datetime.now().strftime("%B %d, %Y")
         
         # Generate grade color
         grade_bg_color = "#fee2e2" if grade_class == "danger" else "#fef3c7" if grade_class == "warning" else "#dcfce7"
         grade_border_color = "var(--danger-color)" if grade_class == "danger" else "var(--warning-color)" if grade_class == "warning" else "var(--success-color)"
         
+        update_progress(10, "Generating HTML sections...")
+        
+        # Generate HTML sections with progress updates
+        update_progress(15, "Generating CSS...")
+        css_content = HTMLReportGenerator._generate_css()
+        
+        update_progress(20, "Generating executive summary...")
+        exec_summary = HTMLReportGenerator._generate_executive_summary(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, summary)
+        
+        update_progress(30, "Generating performance scorecard...")
+        scorecard = HTMLReportGenerator._generate_performance_scorecard(overall_grade, overall_score, grade_reasons, scores, targets, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, grade_bg_color, grade_border_color, overall_grade_description)
+        
+        update_progress(40, "Generating test overview...")
+        test_overview = HTMLReportGenerator._generate_test_overview(total_samples, test_duration_hours, throughput, success_rate)
+        
+        update_progress(50, "Generating performance tables...")
+        perf_tables = HTMLReportGenerator._generate_performance_tables(transaction_stats, request_stats)
+        
+        update_progress(60, "Generating system behaviour graph...")
+        system_graph = HTMLReportGenerator._generate_system_behaviour_graph(summary.get("time_series_data", []), progress_callback=lambda p, m: update_progress(60 + int(p * 0.15), f"Graph: {m}"))
+        
+        update_progress(75, "Generating additional graphs...")
+        additional_graphs = HTMLReportGenerator._generate_additional_graphs(summary.get("time_series_data", []), transaction_stats, request_stats, metrics, progress_callback=lambda p, m: update_progress(75 + int(p * 0.10), f"Additional: {m}"))
+        
+        update_progress(85, "Generating critical issues...")
+        critical_issues_html = HTMLReportGenerator._generate_critical_issues(critical_issues)
+        
+        update_progress(87, "Generating business impact...")
+        business_impact = HTMLReportGenerator._generate_business_impact(error_rate_pct, avg_response)
+        
+        update_progress(89, "Generating action plan...")
+        action_plan = HTMLReportGenerator._generate_action_plan(improvement_roadmap, overall_grade)
+        
+        update_progress(91, "Generating success metrics...")
+        success_metrics = HTMLReportGenerator._generate_success_metrics(avg_response, p95_response, error_rate_pct, success_rate, sla_compliance_2s, throughput)
+        
+        update_progress(93, "Generating final conclusion...")
+        final_conclusion = HTMLReportGenerator._generate_final_conclusion(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, critical_issues, improvement_roadmap, summary)
+        
+        update_progress(95, "Generating footer...")
+        footer = HTMLReportGenerator._generate_footer(current_date)
+        
+        update_progress(97, "Generating JavaScript...")
+        javascript = HTMLReportGenerator._generate_javascript(response_time_dist, response_codes)
+        
+        update_progress(99, "Assembling final HTML...")
+        
         # Generate HTML
         html = f'''<!DOCTYPE html>
 <html lang="en">
-<head>
+    <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Performance Assessment Report</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-    {HTMLReportGenerator._generate_css()}
+    {css_content}
 </head>
 <body>
     <!-- Header -->
@@ -103,50 +167,53 @@ class HTMLReportGenerator:
         <div class="container">
             <h1>Performance Assessment Report</h1>
             <p>Load Testing Results & Executive Analysis | {current_date}</p>
+            {f'<p style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"><strong>Consolidated Report:</strong> {file_count} file(s) analyzed</p>' if is_consolidated else ''}
         </div>
     </div>
 
     <div class="container">
         
+        {HTMLReportGenerator._generate_consolidated_files_info(file_info, consolidated_files) if is_consolidated else ''}
+        
         <!-- Executive Summary -->
-        {HTMLReportGenerator._generate_executive_summary(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, summary)}
+        {exec_summary}
         
         <!-- Performance Scorecard with Grading -->
-        {HTMLReportGenerator._generate_performance_scorecard(overall_grade, overall_score, grade_reasons, scores, targets, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, grade_bg_color, grade_border_color, overall_grade_description)}
+        {scorecard}
         
         <!-- Test Overview -->
-        {HTMLReportGenerator._generate_test_overview(total_samples, test_duration_hours, throughput, success_rate)}
+        {test_overview}
         
         <!-- Performance Summary Tables -->
-        {HTMLReportGenerator._generate_performance_tables(transaction_stats, request_stats)}
+        {perf_tables}
         
         <!-- Overall System Behaviour Graph -->
-        {HTMLReportGenerator._generate_system_behaviour_graph(summary.get("time_series_data", []))}
+        {system_graph}
         
         <!-- Additional Performance Graphs -->
-        {HTMLReportGenerator._generate_additional_graphs(summary.get("time_series_data", []), transaction_stats, request_stats, metrics)}
+        {additional_graphs}
         
         <!-- Critical Issues -->
-        {HTMLReportGenerator._generate_critical_issues(critical_issues)}
+        {critical_issues_html}
         
         <!-- Business Impact Assessment -->
-        {HTMLReportGenerator._generate_business_impact(error_rate_pct, avg_response)}
+        {business_impact}
         
         <!-- Recommended Action Plan -->
-        {HTMLReportGenerator._generate_action_plan(improvement_roadmap, overall_grade)}
+        {action_plan}
         
         <!-- Success Metrics & Targets -->
-        {HTMLReportGenerator._generate_success_metrics(avg_response, p95_response, error_rate_pct, success_rate, sla_compliance_2s, throughput)}
+        {success_metrics}
         
         <!-- Final Conclusion -->
-        {HTMLReportGenerator._generate_final_conclusion(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, critical_issues, improvement_roadmap, summary)}
+        {final_conclusion}
         
         <!-- Next Steps & Footer -->
-        {HTMLReportGenerator._generate_footer(current_date)}
+        {footer}
         
     </div>
 
-    {HTMLReportGenerator._generate_javascript(response_time_dist, response_codes)}
+    {javascript}
 </body>
 </html>'''
         
@@ -773,6 +840,60 @@ class HTMLReportGenerator:
         </div>'''
     
     @staticmethod
+    def _generate_consolidated_files_info(file_info: List[Dict], consolidated_files: List[str]) -> str:
+        """Generate section showing consolidated files information"""
+        if not file_info and not consolidated_files:
+            return ""
+        
+        # Use file_info if available, otherwise use consolidated_files
+        files_to_display = file_info if file_info else [{"filename": f, "samples": 0, "errors": 0, "throughput": 0} for f in consolidated_files]
+        
+        files_html = ""
+        for idx, file_data in enumerate(files_to_display, 1):
+            filename = file_data.get("filename", f"File_{idx}")
+            samples = file_data.get("samples", 0)
+            errors = file_data.get("errors", 0)
+            throughput = file_data.get("throughput", 0)
+            error_rate = (errors / samples * 100) if samples > 0 else 0
+            
+            files_html += f'''
+                    <tr>
+                        <td style="padding: 0.75rem; border-bottom: 1px solid #e2e8f0;">{filename}</td>
+                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{samples:,}</td>
+                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{errors:,}</td>
+                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{error_rate:.2f}%</td>
+                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{throughput:.2f}</td>
+                    </tr>
+            '''
+        
+        return f'''
+        <div class="section">
+            <h2>📁 Consolidated Files Analysis</h2>
+            <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-left: 4px solid #0ea5e9; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                <p style="margin: 0; font-size: 1rem; line-height: 1.6; color: var(--text-primary);">
+                    This report consolidates analysis from <strong>{len(files_to_display)} file(s)</strong>. 
+                    All metrics, graphs, and findings below represent the combined performance data from all files.
+                </p>
+            </div>
+            
+            <table class="endpoint-table" style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white;">
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">File Name</th>
+                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Samples</th>
+                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Errors</th>
+                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Error Rate</th>
+                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Throughput (req/s)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {files_html}
+                </tbody>
+            </table>
+        </div>
+        '''
+    
+    @staticmethod
     def _generate_test_overview(total_samples: int, test_duration: float, throughput: float, success_rate: float) -> str:
         """Generate test overview section"""
         peak_users = int(throughput * 5) if throughput > 0 else 0  # Estimate
@@ -977,6 +1098,24 @@ class HTMLReportGenerator:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
     
     @staticmethod
+    def _abbreviate_label(label: str, max_length: int = 12) -> str:
+        """Abbreviate transaction/request label for table display"""
+        if len(label) <= max_length:
+            return label
+        # Try to abbreviate intelligently
+        # If it has underscores or dashes, use first part
+        if '_' in label:
+            parts = label.split('_')
+            if len(parts[0]) <= max_length:
+                return parts[0]
+        if '-' in label:
+            parts = label.split('-')
+            if len(parts[0]) <= max_length:
+                return parts[0]
+        # Otherwise, truncate with ellipsis
+        return label[:max_length-1] + '…'
+    
+    @staticmethod
     def _generate_graph_data_table(time_series_data: List[dict] = None) -> str:
         """Generate HTML for graph data table"""
         if not time_series_data or len(time_series_data) == 0:
@@ -1077,28 +1216,51 @@ class HTMLReportGenerator:
         '''
     
     @staticmethod
-    def _generate_additional_graphs(time_series_data: List[dict], transaction_stats: dict, request_stats: dict, metrics: Dict[str, Any]) -> str:
+    def _generate_additional_graphs(time_series_data: List[dict], transaction_stats: dict, request_stats: dict, metrics: Dict[str, Any], progress_callback=None) -> str:
         """Generate additional performance graphs"""
         if not time_series_data:
             return ''
         
+        def update_progress(percent: int, message: str):
+            if progress_callback:
+                try:
+                    progress_callback(percent, message)
+                except:
+                    pass
+        
+        # Add progress logging
+        print(f"  Generating additional graphs with {len(time_series_data):,} data points...")
+        update_progress(10, "Starting additional graphs...")
+        
         graphs_html = []
         
         # Graph 1: Response Time Under Load (X=Threads, Y=Response Time)
+        print(f"    Generating Graph 1: Response Time Under Load...")
+        update_progress(20, "Graph 1: Response Time Under Load...")
         graphs_html.append(HTMLReportGenerator._generate_response_time_under_load_graph(time_series_data))
         
         # Graph 2: Response Time Over Time by Transaction
+        print(f"    Generating Graph 2: Response Time Over Time...")
+        update_progress(40, "Graph 2: Response Time Over Time...")
         graphs_html.append(HTMLReportGenerator._generate_response_time_by_transaction_graph(time_series_data, transaction_stats, request_stats))
         
         # Graph 3: Throughput Over Time by Transaction vs VUsers
+        print(f"    Generating Graph 3: Throughput Over Time...")
+        update_progress(60, "Graph 3: Throughput Over Time...")
         graphs_html.append(HTMLReportGenerator._generate_throughput_by_transaction_graph(time_series_data, transaction_stats, request_stats))
         
         # Graph 4: Throughput PASS and Fail Over Time
+        print(f"    Generating Graph 4: Pass/Fail Over Time...")
+        update_progress(80, "Graph 4: Pass/Fail Over Time...")
         graphs_html.append(HTMLReportGenerator._generate_pass_fail_over_time_graph(time_series_data))
         
         # Graph 5: Error Analysis By Description
+        print(f"    Generating Graph 5: Error Analysis...")
+        update_progress(95, "Graph 5: Error Analysis...")
         graphs_html.append(HTMLReportGenerator._generate_error_analysis_graph(metrics))
         
+        print(f"  All additional graphs generated")
+        update_progress(100, "Additional graphs complete")
         return '\n'.join(graphs_html)
     
     @staticmethod
@@ -1286,7 +1448,7 @@ class HTMLReportGenerator:
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {{
-                        legend: {{ display: true, position: 'top' }},
+                        legend: {{ display: false }},
                         datalabels: {{ display: false }}
                     }},
                     scales: {{
@@ -1313,36 +1475,95 @@ class HTMLReportGenerator:
             return ''
         
         time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
-        avg_response_times = [d['avg_response_time'] for d in time_series_data]
         vusers = [d['vusers'] for d in time_series_data]
         
-        # Prepare data for table (sample every Nth point)
+        # Collect all unique transaction/request labels
+        all_labels = set()
+        for d in time_series_data:
+            by_label = d.get('by_label', {})
+            all_labels.update(by_label.keys())
+        
+        # Combine transaction and request stats to get all labels
+        all_labels.update(transaction_stats.keys())
+        all_labels.update(request_stats.keys())
+        all_labels = sorted(list(all_labels))  # Sort for consistent ordering
+        
+        # Generate color palette for multiple lines
+        colors = [
+            'rgba(37, 99, 235, 1)',   # Blue
+            'rgba(16, 185, 129, 1)',  # Green
+            'rgba(245, 158, 11, 1)',  # Orange
+            'rgba(239, 68, 68, 1)',   # Red
+            'rgba(139, 92, 246, 1)',  # Purple
+            'rgba(236, 72, 153, 1)',  # Pink
+            'rgba(14, 165, 233, 1)',  # Sky
+            'rgba(34, 197, 94, 1)',   # Emerald
+            'rgba(251, 146, 60, 1)',  # Orange
+            'rgba(168, 85, 247, 1)'   # Violet
+        ]
+        
+        # Build datasets for each transaction/request and store color mapping
+        datasets = []
+        label_colors = {}  # Store color for each label for table headers
+        for idx, label in enumerate(all_labels):
+            # Extract response time data for this label over time as scatter points
+            label_scatter_data = []
+            for d in time_series_data:
+                by_label = d.get('by_label', {})
+                label_data = by_label.get(label, {})
+                label_scatter_data.append({
+                    'x': d['time'],
+                    'y': label_data.get('avg_response_time', 0.0)
+                })
+            
+            color = colors[idx % len(colors)]
+            label_colors[label] = color
+            datasets.append({
+                'label': label,
+                'data': label_scatter_data,
+                'borderColor': color,
+                'backgroundColor': color,
+                'yAxisID': 'y',
+                'pointRadius': 4,
+                'pointHoverRadius': 6,
+                'showLine': False
+            })
+        
+        # Prepare data for table (sample every Nth point, show all transactions)
         sample_rate = max(1, len(time_series_data) // 20)
         sampled_data = time_series_data[::sample_rate][:20]
-        table_rows = ''.join([f'''
-            <tr>
-                <td style="padding: 0.5rem; text-align: center;">{HTMLReportGenerator._format_time_hhmmss(d['time'])}</td>
-                <td style="padding: 0.5rem; text-align: center;">{d['avg_response_time']:.2f}s</td>
-                <td style="padding: 0.5rem; text-align: center;">{d['vusers']:.0f}</td>
-            </tr>''' for d in sampled_data])
+        
+        # Build table header with colored transaction columns (abbreviated names)
+        table_header = '<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; white-space: nowrap;">Time</th>'
+        for label in all_labels:
+            color = label_colors[label]
+            abbrev_label = HTMLReportGenerator._abbreviate_label(label, max_length=10)
+            table_header += f'<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: {color}; color: white; white-space: nowrap; min-width: 80px;" title="{label}">{abbrev_label}</th>'
+        table_header += '<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: rgba(245, 158, 11, 1); color: white; white-space: nowrap;">Threads</th>'
+        
+        # Build table rows with all transactions
+        table_rows = ''
+        for d in sampled_data:
+            time_str = HTMLReportGenerator._format_time_hhmmss(d['time'])
+            by_label = d.get('by_label', {})
+            
+            # Build row with time, then each transaction value, then threads
+            row_cells = f'<td style="padding: 0.5rem; text-align: center;">{time_str}</td>'
+            for label in all_labels:
+                label_data = by_label.get(label, {})
+                rt = label_data.get('avg_response_time', 0.0)
+                row_cells += f'<td style="padding: 0.5rem; text-align: center;">{rt:.2f}s</td>'
+            row_cells += f'<td style="padding: 0.5rem; text-align: center;">{d["vusers"]:.0f}</td>'
+            
+            table_rows += f'<tr>{row_cells}</tr>'
         
         # Generate observation
         table_data = [{'time': d['time'], 'response_time': d['avg_response_time']} for d in sampled_data]
         observation = HTMLReportGenerator._generate_graph_observation(table_data, "response_time_by_transaction")
         
         time_labels_json = json.dumps(time_labels)
-        avg_response_times_json = json.dumps(avg_response_times)
-        vusers_json = json.dumps(vusers)
-        
-        # Build datasets for transactions
-        datasets_json = json.dumps([{
-            'label': 'Overall Avg Response Time',
-            'data': avg_response_times,
-            'borderColor': 'rgba(37, 99, 235, 1)',
-            'backgroundColor': 'rgba(37, 99, 235, 0.1)',
-            'yAxisID': 'y',
-            'borderWidth': 2
-        }])
+        vusers_scatter_json = json.dumps([{'x': d['time'], 'y': d['vusers']} for d in time_series_data])
+        datasets_json = json.dumps(datasets)
         
         return f'''
         <div class="section">
@@ -1351,31 +1572,28 @@ class HTMLReportGenerator:
                 Response time trends for different transactions/requests over time, with thread count overlay.
             </p>
             
-            <!-- Graph and Data Table Side by Side (50/50) -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-                <!-- Left: Graph (50%) -->
-                <div class="chart-container" style="height: 400px;">
+            <!-- Graph (100% width) -->
+            <div style="margin-bottom: 1.5rem;">
+                <div class="chart-container" style="height: 400px; width: 100%;">
                     <canvas id="responseTimeByTransactionChart"></canvas>
                 </div>
-                
-                <!-- Right: Graph Data Table (50%) -->
-                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
-                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
-                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
-                        <div style="overflow-y: auto; max-height: 350px;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-                                <thead style="position: sticky; top: 0; z-index: 10;">
-                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
-                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Response Time (s)</th>
-                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Threads</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {table_rows}
-                                </tbody>
-                            </table>
-                        </div>
+            </div>
+            
+            <!-- Graph Data Table (100% width below graph) -->
+            <div style="padding: 1rem; background: var(--background-light); border-radius: 8px; margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                    <div style="overflow-x: auto; overflow-y: auto; max-height: 400px;">
+                        <table style="width: auto; min-width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                            <thead style="position: sticky; top: 0; z-index: 10;">
+                                <tr>
+                                    {table_header}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {table_rows}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1393,37 +1611,49 @@ class HTMLReportGenerator:
             if (!ctx) return;
             
             const timeLabels = {time_labels_json};
-            const vusers = {vusers_json};
+            const vusersScatter = {vusers_scatter_json};
             const datasets = {datasets_json};
             
+            // Add threads as scatter plot (can optionally show as line)
             datasets.push({{
                 label: 'Threads (VUsers)',
-                data: vusers,
+                data: vusersScatter,
                 borderColor: 'rgba(245, 158, 11, 1)',
-                backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                borderWidth: 2,
-                borderDash: [5, 5],
+                backgroundColor: 'rgba(245, 158, 11, 0.3)',
+                borderWidth: 1,
+                pointRadius: 3,
+                pointHoverRadius: 5,
                 yAxisID: 'y1',
-                fill: false
+                showLine: true,
+                tension: 0.4
             }});
             
             new Chart(ctx, {{
-                type: 'line',
+                type: 'scatter',
                 data: {{
-                    labels: timeLabels,
                     datasets: datasets
                 }},
                 options: {{
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {{
-                        legend: {{ display: true, position: 'top' }},
+                        legend: {{ display: false }},
                         datalabels: {{ display: false }}
                     }},
                     scales: {{
                         x: {{
-                            title: {{ display: true, text: 'Time' }},
-                            grid: {{ display: true }}
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {{ display: true, text: 'Time (seconds)' }},
+                            grid: {{ display: true }},
+                            ticks: {{
+                                callback: function(value) {{
+                                    const hours = Math.floor(value / 3600);
+                                    const minutes = Math.floor((value % 3600) / 60);
+                                    const secs = Math.floor(value % 60);
+                                    return hours > 0 ? `${{hours}}:${{String(minutes).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}` : `${{minutes}}:${{String(secs).padStart(2, '0')}}`;
+                                }}
+                            }}
                         }},
                         y: {{
                             type: 'linear',
@@ -1453,26 +1683,95 @@ class HTMLReportGenerator:
             return ''
         
         time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
-        throughput = [d['throughput'] for d in time_series_data]
         vusers = [d['vusers'] for d in time_series_data]
         
-        # Prepare data for table
+        # Collect all unique transaction/request labels
+        all_labels = set()
+        for d in time_series_data:
+            by_label = d.get('by_label', {})
+            all_labels.update(by_label.keys())
+        
+        # Combine transaction and request stats to get all labels
+        all_labels.update(transaction_stats.keys())
+        all_labels.update(request_stats.keys())
+        all_labels = sorted(list(all_labels))  # Sort for consistent ordering
+        
+        # Generate color palette for multiple lines
+        colors = [
+            'rgba(37, 99, 235, 1)',   # Blue
+            'rgba(16, 185, 129, 1)',  # Green
+            'rgba(245, 158, 11, 1)',  # Orange
+            'rgba(239, 68, 68, 1)',   # Red
+            'rgba(139, 92, 246, 1)',  # Purple
+            'rgba(236, 72, 153, 1)',  # Pink
+            'rgba(14, 165, 233, 1)',  # Sky
+            'rgba(34, 197, 94, 1)',   # Emerald
+            'rgba(251, 146, 60, 1)',  # Orange
+            'rgba(168, 85, 247, 1)'   # Violet
+        ]
+        
+        # Build datasets for each transaction/request and store color mapping
+        datasets = []
+        label_colors = {}  # Store color for each label for table headers
+        for idx, label in enumerate(all_labels):
+            # Extract throughput data for this label over time as scatter points
+            label_scatter_data = []
+            for d in time_series_data:
+                by_label = d.get('by_label', {})
+                label_data = by_label.get(label, {})
+                label_scatter_data.append({
+                    'x': d['time'],
+                    'y': label_data.get('throughput', 0.0)
+                })
+            
+            color = colors[idx % len(colors)]
+            label_colors[label] = color
+            datasets.append({
+                'label': label,
+                'data': label_scatter_data,
+                'borderColor': color,
+                'backgroundColor': color,
+                'yAxisID': 'y',
+                'pointRadius': 4,
+                'pointHoverRadius': 6,
+                'showLine': False
+            })
+        
+        # Prepare data for table (sample every Nth point, show all transactions)
         sample_rate = max(1, len(time_series_data) // 20)
         sampled_data = time_series_data[::sample_rate][:20]
-        table_rows = ''.join([f'''
-            <tr>
-                <td style="padding: 0.5rem; text-align: center;">{HTMLReportGenerator._format_time_hhmmss(d['time'])}</td>
-                <td style="padding: 0.5rem; text-align: center;">{d['throughput']:.2f}</td>
-                <td style="padding: 0.5rem; text-align: center;">{d['vusers']:.0f}</td>
-            </tr>''' for d in sampled_data])
+        
+        # Build table header with colored transaction columns (abbreviated names)
+        table_header = '<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; white-space: nowrap;">Time</th>'
+        for label in all_labels:
+            color = label_colors[label]
+            abbrev_label = HTMLReportGenerator._abbreviate_label(label, max_length=10)
+            table_header += f'<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: {color}; color: white; white-space: nowrap; min-width: 80px;" title="{label}">{abbrev_label}</th>'
+        table_header += '<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: rgba(245, 158, 11, 1); color: white; white-space: nowrap;">Threads</th>'
+        
+        # Build table rows with all transactions
+        table_rows = ''
+        for d in sampled_data:
+            time_str = HTMLReportGenerator._format_time_hhmmss(d['time'])
+            by_label = d.get('by_label', {})
+            
+            # Build row with time, then each transaction value, then threads
+            row_cells = f'<td style="padding: 0.5rem; text-align: center;">{time_str}</td>'
+            for label in all_labels:
+                label_data = by_label.get(label, {})
+                tp = label_data.get('throughput', 0.0)
+                row_cells += f'<td style="padding: 0.5rem; text-align: center;">{tp:.2f}</td>'
+            row_cells += f'<td style="padding: 0.5rem; text-align: center;">{d["vusers"]:.0f}</td>'
+            
+            table_rows += f'<tr>{row_cells}</tr>'
         
         # Generate observation
         table_data = [{'time': d['time'], 'throughput': d['throughput']} for d in sampled_data]
         observation = HTMLReportGenerator._generate_graph_observation(table_data, "throughput_by_transaction")
         
         time_labels_json = json.dumps(time_labels)
-        throughput_json = json.dumps(throughput)
-        vusers_json = json.dumps(vusers)
+        vusers_scatter_json = json.dumps([{'x': d['time'], 'y': d['vusers']} for d in time_series_data])
+        datasets_json = json.dumps(datasets)
         
         return f'''
         <div class="section">
@@ -1481,31 +1780,28 @@ class HTMLReportGenerator:
                 Throughput trends for transactions/requests over time compared with virtual user load.
             </p>
             
-            <!-- Graph and Data Table Side by Side (50/50) -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-                <!-- Left: Graph (50%) -->
-                <div class="chart-container" style="height: 400px;">
+            <!-- Graph (100% width) -->
+            <div style="margin-bottom: 1.5rem;">
+                <div class="chart-container" style="height: 400px; width: 100%;">
                     <canvas id="throughputByTransactionChart"></canvas>
                 </div>
-                
-                <!-- Right: Graph Data Table (50%) -->
-                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
-                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
-                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
-                        <div style="overflow-y: auto; max-height: 350px;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-                                <thead style="position: sticky; top: 0; z-index: 10;">
-                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
-                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Throughput (req/s)</th>
-                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Threads</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {table_rows}
-                                </tbody>
-                            </table>
-                        </div>
+            </div>
+            
+            <!-- Graph Data Table (100% width below graph) -->
+            <div style="padding: 1rem; background: var(--background-light); border-radius: 8px; margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                    <div style="overflow-x: auto; overflow-y: auto; max-height: 400px;">
+                        <table style="width: auto; min-width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                            <thead style="position: sticky; top: 0; z-index: 10;">
+                                <tr>
+                                    {table_header}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {table_rows}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1523,49 +1819,49 @@ class HTMLReportGenerator:
             if (!ctx) return;
             
             const timeLabels = {time_labels_json};
-            const throughput = {throughput_json};
-            const vusers = {vusers_json};
+            const vusersScatter = {vusers_scatter_json};
+            const datasets = {datasets_json};
+            
+            // Add threads as scatter plot (can optionally show as line)
+            datasets.push({{
+                label: 'Threads (VUsers)',
+                data: vusersScatter,
+                borderColor: 'rgba(245, 158, 11, 1)',
+                backgroundColor: 'rgba(245, 158, 11, 0.3)',
+                borderWidth: 1,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                yAxisID: 'y1',
+                showLine: true,
+                tension: 0.4
+            }});
             
             new Chart(ctx, {{
-                type: 'line',
+                type: 'scatter',
                 data: {{
-                    labels: timeLabels,
-                    datasets: [{{
-                        label: 'Avg Throughput (req/s)',
-                        data: throughput,
-                        borderColor: 'rgba(16, 185, 129, 1)',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.4,
-                        yAxisID: 'y',
-                        pointRadius: 2,
-                        pointHoverRadius: 4
-                    }}, {{
-                        label: 'Threads (VUsers)',
-                        data: vusers,
-                        borderColor: 'rgba(245, 158, 11, 1)',
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        borderWidth: 2,
-                        borderDash: [5, 5],
-                        fill: false,
-                        tension: 0.4,
-                        yAxisID: 'y1',
-                        pointRadius: 2,
-                        pointHoverRadius: 4
-                    }}]
+                    datasets: datasets
                 }},
                 options: {{
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {{
-                        legend: {{ display: true, position: 'top' }},
+                        legend: {{ display: false }},
                         datalabels: {{ display: false }}
                     }},
                     scales: {{
                         x: {{
-                            title: {{ display: true, text: 'Time' }},
-                            grid: {{ display: true }}
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {{ display: true, text: 'Time (seconds)' }},
+                            grid: {{ display: true }},
+                            ticks: {{
+                                callback: function(value) {{
+                                    const hours = Math.floor(value / 3600);
+                                    const minutes = Math.floor((value % 3600) / 60);
+                                    const secs = Math.floor(value % 60);
+                                    return hours > 0 ? `${{hours}}:${{String(minutes).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}` : `${{minutes}}:${{String(secs).padStart(2, '0')}}`;
+                                }}
+                            }}
                         }},
                         y: {{
                             type: 'linear',
@@ -1717,7 +2013,7 @@ class HTMLReportGenerator:
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {{
-                        legend: {{ display: true, position: 'top' }},
+                        legend: {{ display: false }},
                         datalabels: {{ display: false }}
                     }},
                     scales: {{
@@ -2133,7 +2429,7 @@ class HTMLReportGenerator:
         }
     
     @staticmethod
-    def _generate_system_behaviour_graph(time_series_data: List[dict]) -> str:
+    def _generate_system_behaviour_graph(time_series_data: List[dict], progress_callback=None) -> str:
         """Generate Overall System Behaviour graph with dual Y-axes"""
         if not time_series_data:
             return '''
@@ -2142,11 +2438,67 @@ class HTMLReportGenerator:
             <p><em>Time-series data not available for this test.</em></p>
         </div>'''
         
+        def update_progress(percent: int, message: str):
+            if progress_callback:
+                try:
+                    progress_callback(percent, message)
+                except:
+                    pass
+        
+        # Optimize: Sample data if too large (max 500 points for analysis)
+        # This prevents GraphAnalyzer from hanging on large datasets
+        original_count = len(time_series_data)
+        if original_count > 500:
+            # Sample every Nth point to get ~500 points
+            sample_rate = max(1, original_count // 500)
+            sampled_data = time_series_data[::sample_rate]
+            print(f"  Sampling time_series_data: {original_count:,} -> {len(sampled_data):,} points for analysis")
+        else:
+            sampled_data = time_series_data
+        
         # Analyze performance (basic correlation analysis)
+        update_progress(20, "Analyzing system performance...")
         analysis = HTMLReportGenerator._analyze_system_performance(time_series_data)
         
-        # Advanced graph pattern analysis
-        graph_analysis = GraphAnalyzer.analyze_graph_patterns(time_series_data)
+        # Advanced graph pattern analysis (use sampled data for speed)
+        # Add timeout protection - use threading with timeout
+        update_progress(40, f"Running GraphAnalyzer on {len(sampled_data):,} data points...")
+        print(f"  Running GraphAnalyzer on {len(sampled_data):,} data points...")
+        
+        graph_analysis = None
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+            
+            # Run GraphAnalyzer in a thread with 20 second timeout
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(GraphAnalyzer.analyze_graph_patterns, sampled_data)
+                try:
+                    graph_analysis = future.result(timeout=20)
+                    print(f"  GraphAnalyzer completed")
+                except FutureTimeoutError:
+                    print(f"  ⚠️ GraphAnalyzer timed out after 20 seconds, using fallback")
+                    future.cancel()
+                    graph_analysis = {
+                        "analysis": "Graph analysis timed out - using simplified analysis.",
+                        "test_type": "Unknown",
+                        "disturbances": [],
+                        "stability": "Unknown",
+                        "capacity_assessment": "Unknown"
+                    }
+        except Exception as e:
+            print(f"  ⚠️ GraphAnalyzer failed: {e}, using fallback")
+            import traceback
+            traceback.print_exc()
+            # Use fallback analysis
+            graph_analysis = {
+                "analysis": f"Graph analysis unavailable: {str(e)}",
+                "test_type": "Unknown",
+                "disturbances": [],
+                "stability": "Unknown",
+                "capacity_assessment": "Unknown"
+            }
+        
+        update_progress(80, "Preparing graph data...")
         
         # Prepare data for JavaScript
         time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]

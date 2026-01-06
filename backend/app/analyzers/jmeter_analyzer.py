@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 from app.models.jmeter import JMeterMetrics
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -722,3 +722,324 @@ class JMeterAnalyzer:
         )
         
         return metrics
+    
+    @staticmethod
+    def consolidate_metrics(all_metrics: List[Dict[str, Any]], filenames: List[str] = None) -> Dict[str, Any]:
+        """
+        Consolidate metrics from multiple JMeter files into a single metrics object
+        Combines all data points, recalculates statistics, and merges findings
+        """
+        if not all_metrics:
+            raise ValueError("No metrics provided for consolidation")
+        
+        if len(all_metrics) == 1:
+            # Single file, return as-is
+            return all_metrics[0]
+        
+        filenames = filenames or [f"File_{i+1}" for i in range(len(all_metrics))]
+        
+        # Initialize consolidated values
+        consolidated = {
+            "total_samples": 0,
+            "total_errors": 0,
+            "error_rate": 0,
+            "throughput": 0,
+            "response_codes": Counter(),
+            "transaction_stats": {},
+            "request_stats": {},
+            "time_series_data": [],
+            "critical_issues": [],
+            "recommendations": [],
+            "improvement_roadmap": [],
+            "all_sample_times": [],
+            "all_latency_values": [],
+            "all_connect_times": [],
+            "all_response_codes": [],
+            "test_duration_seconds": 0,
+            "file_info": []
+        }
+        
+        # Collect data from all files
+        for idx, metrics in enumerate(all_metrics):
+            consolidated["total_samples"] += metrics.get("total_samples", 0)
+            consolidated["total_errors"] += metrics.get("total_errors", 0)
+            
+            # Collect response codes
+            response_codes = metrics.get("response_codes", {})
+            if isinstance(response_codes, dict):
+                for code, count in response_codes.items():
+                    consolidated["response_codes"][code] = consolidated["response_codes"].get(code, 0) + count
+            
+            # Merge transaction stats
+            transaction_stats = metrics.get("summary", {}).get("transaction_stats", {})
+            for label, stats in transaction_stats.items():
+                if label not in consolidated["transaction_stats"]:
+                    consolidated["transaction_stats"][label] = {
+                        "count": 0,
+                        "errors": 0,
+                        "response_times": [],
+                        "file_sources": []
+                    }
+                consolidated["transaction_stats"][label]["count"] += stats.get("count", 0)
+                consolidated["transaction_stats"][label]["errors"] += stats.get("errors", 0)
+                consolidated["transaction_stats"][label]["file_sources"].append(filenames[idx] if idx < len(filenames) else f"File_{idx+1}")
+            
+            # Merge request stats
+            request_stats = metrics.get("summary", {}).get("request_stats", {})
+            for label, stats in request_stats.items():
+                if label not in consolidated["request_stats"]:
+                    consolidated["request_stats"][label] = {
+                        "count": 0,
+                        "errors": 0,
+                        "response_times": [],
+                        "file_sources": []
+                    }
+                consolidated["request_stats"][label]["count"] += stats.get("count", 0)
+                consolidated["request_stats"][label]["errors"] += stats.get("errors", 0)
+                consolidated["request_stats"][label]["file_sources"].append(filenames[idx] if idx < len(filenames) else f"File_{idx+1}")
+            
+            # Collect time series data
+            time_series = metrics.get("summary", {}).get("time_series_data", [])
+            for ts_point in time_series:
+                # Add file identifier to time series data
+                ts_point_copy = ts_point.copy()
+                ts_point_copy["source_file"] = filenames[idx] if idx < len(filenames) else f"File_{idx+1}"
+                consolidated["time_series_data"].append(ts_point_copy)
+            
+            # Collect critical issues (with file source)
+            critical_issues = metrics.get("summary", {}).get("critical_issues", [])
+            for issue in critical_issues:
+                issue_copy = issue.copy()
+                issue_copy["source_file"] = filenames[idx] if idx < len(filenames) else f"File_{idx+1}"
+                consolidated["critical_issues"].append(issue_copy)
+            
+            # Collect recommendations (deduplicate)
+            recommendations = metrics.get("summary", {}).get("recommendations", [])
+            for rec in recommendations:
+                if rec not in consolidated["recommendations"]:
+                    consolidated["recommendations"].append(rec)
+            
+            # Collect improvement roadmap (merge phases)
+            roadmap = metrics.get("summary", {}).get("improvement_roadmap", [])
+            consolidated["improvement_roadmap"].extend(roadmap)
+            
+            # Collect sample times, latency, connect times for percentile recalculation
+            sample_time = metrics.get("sample_time", {})
+            latency = metrics.get("latency", {})
+            connect_time = metrics.get("connect_time", {})
+            
+            # Store file info
+            consolidated["file_info"].append({
+                "filename": filenames[idx] if idx < len(filenames) else f"File_{idx+1}",
+                "samples": metrics.get("total_samples", 0),
+                "errors": metrics.get("total_errors", 0),
+                "throughput": metrics.get("throughput", 0)
+            })
+        
+        # Recalculate error rate
+        consolidated["error_rate"] = consolidated["total_errors"] / consolidated["total_samples"] if consolidated["total_samples"] > 0 else 0
+        
+        # Sort and merge time series data by time
+        if consolidated["time_series_data"]:
+            consolidated["time_series_data"].sort(key=lambda x: x.get("time", 0))
+            # Merge overlapping time points
+            merged_time_series = JMeterAnalyzer._merge_time_series_data(consolidated["time_series_data"])
+            consolidated["time_series_data"] = merged_time_series
+        
+        # Recalculate transaction/request stats with consolidated data
+        for label, stats in consolidated["transaction_stats"].items():
+            # Recalculate error rate
+            stats["error_rate"] = (stats["errors"] / stats["count"] * 100) if stats["count"] > 0 else 0
+        
+        for label, stats in consolidated["request_stats"].items():
+            # Recalculate error rate
+            stats["error_rate"] = (stats["errors"] / stats["count"] * 100) if stats["count"] > 0 else 0
+        
+        # Use first file's structure as base and update with consolidated data
+        base_metrics = all_metrics[0].copy()
+        
+        # Update with consolidated values
+        base_metrics["total_samples"] = consolidated["total_samples"]
+        base_metrics["total_errors"] = consolidated["total_errors"]
+        base_metrics["error_rate"] = consolidated["error_rate"]
+        
+        # Calculate weighted average throughput
+        total_duration = sum(info.get("samples", 0) / max(info.get("throughput", 1), 1) for info in consolidated["file_info"] if info.get("throughput", 0) > 0)
+        if total_duration > 0:
+            base_metrics["throughput"] = consolidated["total_samples"] / total_duration
+        else:
+            # Fallback to average
+            base_metrics["throughput"] = sum(info.get("throughput", 0) for info in consolidated["file_info"]) / len(consolidated["file_info"]) if consolidated["file_info"] else 0
+        
+        # Update response codes
+        base_metrics["response_codes"] = dict(consolidated["response_codes"])
+        
+        # Update summary with consolidated data
+        summary = base_metrics.get("summary", {}).copy()
+        summary["transaction_stats"] = consolidated["transaction_stats"]
+        summary["request_stats"] = consolidated["request_stats"]
+        summary["time_series_data"] = consolidated["time_series_data"]
+        summary["critical_issues"] = consolidated["critical_issues"]
+        summary["recommendations"] = consolidated["recommendations"]
+        summary["improvement_roadmap"] = consolidated["improvement_roadmap"]
+        summary["file_info"] = consolidated["file_info"]
+        summary["file_count"] = len(all_metrics)
+        summary["consolidated_from_files"] = filenames
+        
+        # Recalculate success rate
+        summary["success_rate"] = ((consolidated["total_samples"] - consolidated["total_errors"]) / consolidated["total_samples"] * 100) if consolidated["total_samples"] > 0 else 0
+        
+        # Recalculate test duration (sum of all test durations or max)
+        test_durations = [m.get("summary", {}).get("test_duration_hours", 0) for m in all_metrics]
+        summary["test_duration_hours"] = max(test_durations) if test_durations else 0
+        
+        # Recalculate SLA compliance based on consolidated sample times
+        # For now, use weighted average from individual files
+        sla_compliances_2s = [m.get("summary", {}).get("sla_compliance_2s", 0) for m in all_metrics]
+        sla_compliances_3s = [m.get("summary", {}).get("sla_compliance_3s", 0) for m in all_metrics]
+        sla_compliances_5s = [m.get("summary", {}).get("sla_compliance_5s", 0) for m in all_metrics]
+        
+        # Weighted average by sample count
+        total_samples_for_sla = sum(m.get("total_samples", 0) for m in all_metrics)
+        if total_samples_for_sla > 0:
+            summary["sla_compliance_2s"] = sum(m.get("summary", {}).get("sla_compliance_2s", 0) * m.get("total_samples", 0) for m in all_metrics) / total_samples_for_sla
+            summary["sla_compliance_3s"] = sum(m.get("summary", {}).get("sla_compliance_3s", 0) * m.get("total_samples", 0) for m in all_metrics) / total_samples_for_sla
+            summary["sla_compliance_5s"] = sum(m.get("summary", {}).get("sla_compliance_5s", 0) * m.get("total_samples", 0) for m in all_metrics) / total_samples_for_sla
+        else:
+            summary["sla_compliance_2s"] = sum(sla_compliances_2s) / len(sla_compliances_2s) if sla_compliances_2s else 0
+            summary["sla_compliance_3s"] = sum(sla_compliances_3s) / len(sla_compliances_3s) if sla_compliances_3s else 0
+            summary["sla_compliance_5s"] = sum(sla_compliances_5s) / len(sla_compliances_5s) if sla_compliances_5s else 0
+        
+        # Recalculate response time statistics using weighted averages
+        # Since we don't have raw data, use weighted average of percentiles from each file
+        sample_time_weights = []
+        sample_time_stats = []
+        
+        for metrics in all_metrics:
+            file_samples = metrics.get("total_samples", 0)
+            if file_samples > 0:
+                sample_time = metrics.get("sample_time", {})
+                if sample_time and sample_time.get("mean") is not None:
+                    sample_time_weights.append(file_samples)
+                    sample_time_stats.append(sample_time)
+        
+        if sample_time_stats and sample_time_weights:
+            # Calculate weighted average for each percentile
+            total_weight = sum(sample_time_weights)
+            consolidated_sample_time = {}
+            
+            # For each percentile, calculate weighted average
+            percentiles = ["mean", "median", "p70", "p75", "p80", "p90", "p95", "p99", "min", "max"]
+            for p in percentiles:
+                weighted_sum = sum(stat.get(p, 0) * weight for stat, weight in zip(sample_time_stats, sample_time_weights) if stat.get(p) is not None)
+                count = sum(1 for stat in sample_time_stats if stat.get(p) is not None)
+                if count > 0:
+                    consolidated_sample_time[p] = weighted_sum / sum(w for stat, w in zip(sample_time_stats, sample_time_weights) if stat.get(p) is not None)
+                else:
+                    consolidated_sample_time[p] = None
+            
+            # For min/max, use actual min/max across all files
+            consolidated_sample_time["min"] = min(stat.get("min", float('inf')) for stat in sample_time_stats if stat.get("min") is not None)
+            consolidated_sample_time["max"] = max(stat.get("max", 0) for stat in sample_time_stats if stat.get("max") is not None)
+            
+            base_metrics["sample_time"] = consolidated_sample_time
+            # Update summary with new avg response time
+            summary["avg_response_time"] = consolidated_sample_time.get("mean", 0) / 1000 if consolidated_sample_time.get("mean") else 0
+        else:
+            # Fallback to first file's sample_time
+            base_metrics["sample_time"] = all_metrics[0].get("sample_time", {})
+        
+        # Recalculate overall score and grade based on consolidated metrics
+        # Use the scoring logic from JMeterAnalyzer
+        consolidated_metrics_for_scoring = {
+            "total_samples": consolidated["total_samples"],
+            "total_errors": consolidated["total_errors"],
+            "error_rate": consolidated["error_rate"],
+            "throughput": base_metrics["throughput"],
+            "sample_time": base_metrics.get("sample_time", {}),
+            "summary": summary
+        }
+        
+        # Recalculate grade (simplified - use existing logic)
+        # For now, use weighted average of individual scores
+        scores = [m.get("summary", {}).get("overall_score", 0) for m in all_metrics]
+        sample_counts = [m.get("total_samples", 0) for m in all_metrics]
+        total_samples_for_score = sum(sample_counts)
+        if total_samples_for_score > 0:
+            summary["overall_score"] = sum(score * count for score, count in zip(scores, sample_counts)) / total_samples_for_score
+        else:
+            summary["overall_score"] = sum(scores) / len(scores) if scores else 0
+        
+        # Determine grade from score
+        grade, grade_class = JMeterAnalyzer.calculate_grade(summary["overall_score"])
+        summary["overall_grade"] = grade
+        summary["grade_class"] = grade_class
+        
+        # Get grade description
+        grade_info = JMeterAnalyzer.GRADE_DEFINITIONS.get(grade, {})
+        summary["overall_grade_description"] = {
+            "grade": grade,
+            "score": round(summary["overall_score"], 1),
+            "title": grade_info.get("title", ""),
+            "description": grade_info.get("description", ""),
+            "score_range": grade_info.get("score_range", ""),
+            "class": grade_class
+        }
+        
+        # Recalculate grade reasons (simplified - use weighted approach)
+        # For now, use first file's grade reasons
+        summary["grade_reasons"] = all_metrics[0].get("summary", {}).get("grade_reasons", {})
+        
+        # Recalculate response time distribution using weighted average from individual files
+        rt_distributions = [m.get("summary", {}).get("response_time_distribution", {}) for m in all_metrics]
+        sample_counts_for_dist = [m.get("total_samples", 0) for m in all_metrics]
+        total_samples_for_dist = sum(sample_counts_for_dist)
+        
+        if rt_distributions and total_samples_for_dist > 0:
+            rt_distribution = {}
+            for key in ["under_1s", "1_to_2s", "2_to_3s", "3_to_5s", "5_to_10s", "over_10s"]:
+                weighted_sum = sum(dist.get(key, 0) * count for dist, count in zip(rt_distributions, sample_counts_for_dist) if dist.get(key) is not None)
+                rt_distribution[key] = weighted_sum / total_samples_for_dist
+            summary["response_time_distribution"] = rt_distribution
+        else:
+            # Fallback to first file's distribution
+            summary["response_time_distribution"] = all_metrics[0].get("summary", {}).get("response_time_distribution", {})
+        
+        base_metrics["summary"] = summary
+        
+        return base_metrics
+    
+    @staticmethod
+    def _merge_time_series_data(time_series_data: List[Dict]) -> List[Dict]:
+        """Merge time series data points that are close in time"""
+        if not time_series_data:
+            return []
+        
+        # Group by time intervals (round to nearest second)
+        time_groups = defaultdict(list)
+        for point in time_series_data:
+            time_key = round(point.get("time", 0))
+            time_groups[time_key].append(point)
+        
+        # Merge points in the same time interval
+        merged = []
+        for time_key in sorted(time_groups.keys()):
+            points = time_groups[time_key]
+            if len(points) == 1:
+                merged.append(points[0])
+            else:
+                # Merge multiple points at same time
+                merged_point = {
+                    "time": time_key,
+                    "avg_response_time": sum(p.get("avg_response_time", 0) for p in points) / len(points),
+                    "vusers": sum(p.get("vusers", 0) for p in points) / len(points),
+                    "throughput": sum(p.get("throughput", 0) for p in points),
+                    "pass_count": sum(p.get("pass_count", 0) for p in points),
+                    "fail_count": sum(p.get("fail_count", 0) for p in points),
+                    "total_count": sum(p.get("total_count", 0) for p in points),
+                    "source_files": list(set(p.get("source_file", "Unknown") for p in points))
+                }
+                merged.append(merged_point)
+        
+        return merged
+    
