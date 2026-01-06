@@ -69,9 +69,42 @@ class GraphAnalyzer:
         )
         
         # 7. Response time distribution analysis (AI/ML Feature Engineering)
-        distribution_analysis = GraphAnalyzer._analyze_response_time_distribution(response_times)
+        try:
+            distribution_analysis = GraphAnalyzer._analyze_response_time_distribution(response_times)
+        except Exception as e:
+            print(f"  ⚠️ Response time distribution analysis failed: {e}")
+            distribution_analysis = {
+                "distribution_type": "unknown",
+                "interpretation": f"Response time analysis error: {str(e)}",
+                "unified_understanding": "Response time distribution analysis could not be completed.",
+                "statistics": {}
+            }
         
-        # 8. Generate comprehensive analysis text
+        # 8. Throughput distribution analysis (AI/ML Feature Engineering)
+        throughput_distribution_analysis = None
+        try:
+            throughput_distribution_analysis = GraphAnalyzer._analyze_throughput_distribution(throughput)
+        except Exception as e:
+            print(f"  ⚠️ Throughput distribution analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            throughput_distribution_analysis = {
+                "distribution_type": "unknown",
+                "interpretation": f"Throughput analysis error: {str(e)}",
+                "unified_understanding": "Throughput distribution analysis could not be completed.",
+                "statistics": {}
+            }
+        
+        # Ensure throughput_distribution_analysis is set
+        if throughput_distribution_analysis is None:
+            throughput_distribution_analysis = {
+                "distribution_type": "unknown",
+                "interpretation": "Throughput analysis not available.",
+                "unified_understanding": "Throughput distribution analysis could not be completed.",
+                "statistics": {}
+            }
+        
+        # 9. Generate comprehensive analysis text
         analysis_text = GraphAnalyzer._generate_analysis_text(
             test_type, steady_periods, disturbances, bottleneck_analysis,
             stability_assessment, capacity_assessment,
@@ -87,6 +120,7 @@ class GraphAnalyzer:
             "stability": stability_assessment,
             "capacity_assessment": capacity_assessment,
             "distribution_analysis": distribution_analysis,
+            "throughput_distribution_analysis": throughput_distribution_analysis,
             "statistics": {
                 "avg_response_time": float(np.mean(response_times)),
                 "avg_throughput": float(np.mean(throughput)),
@@ -610,6 +644,154 @@ class GraphAnalyzer:
                 "is_multimodal": is_multimodal
             }
         }
+    
+    @staticmethod
+    def _analyze_throughput_distribution(throughput: np.ndarray) -> Dict[str, Any]:
+        """
+        Analyze throughput distribution using statistical methods.
+        Similar to response time distribution analysis but for throughput data.
+        """
+        if len(throughput) < 10:
+            return {
+                "distribution_type": "insufficient_data",
+                "interpretation": "Insufficient data points for throughput distribution analysis.",
+                "statistics": {}
+            }
+        
+        # Filter out zero values for analysis
+        non_zero_throughput = throughput[throughput > 0]
+        if len(non_zero_throughput) < 10:
+            return {
+                "distribution_type": "insufficient_data",
+                "interpretation": "Insufficient non-zero throughput data points for analysis.",
+                "statistics": {}
+            }
+        
+        # Calculate basic statistics
+        mean_tp = float(np.mean(non_zero_throughput))
+        median_tp = float(np.median(non_zero_throughput))
+        std_tp = float(np.std(non_zero_throughput))
+        variance_tp = float(np.var(non_zero_throughput))
+        cv = std_tp / mean_tp if mean_tp > 0 else 0  # Coefficient of Variation
+        
+        # Calculate skewness
+        n = len(non_zero_throughput)
+        if n > 2 and std_tp > 0:
+            skewness = float((n / ((n - 1) * (n - 2))) * np.sum(((non_zero_throughput - mean_tp) / std_tp) ** 3))
+        else:
+            skewness = 0.0
+        
+        # Calculate kurtosis
+        if n > 3 and std_tp > 0:
+            kurtosis = float((n * (n + 1) / ((n - 1) * (n - 2) * (n - 3))) * 
+                           np.sum(((non_zero_throughput - mean_tp) / std_tp) ** 4) - 
+                           3 * (n - 1) ** 2 / ((n - 2) * (n - 3)))
+        else:
+            kurtosis = 0.0
+        
+        # Detect multi-modal distribution
+        hist, bin_edges = np.histogram(non_zero_throughput, bins=min(20, max(5, n // 10)))
+        peaks = []
+        for i in range(1, len(hist) - 1):
+            if hist[i] > hist[i-1] and hist[i] > hist[i+1] and hist[i] > np.max(hist) * 0.3:
+                peaks.append(i)
+        
+        is_multimodal = len(peaks) > 1
+        
+        # Determine distribution type
+        distribution_type = GraphAnalyzer._classify_distribution(
+            skewness, kurtosis, mean_tp, median_tp, std_tp, cv, is_multimodal
+        )
+        
+        # Generate business value interpretation (simplified for throughput)
+        interpretation = GraphAnalyzer._generate_throughput_interpretation(
+            distribution_type, skewness, kurtosis, mean_tp, median_tp, std_tp, cv, variance_tp
+        )
+        
+        # Generate unified system understanding
+        unified_understanding = GraphAnalyzer._generate_throughput_understanding(
+            distribution_type, mean_tp, median_tp, std_tp, variance_tp, cv, skewness, kurtosis
+        )
+        
+        return {
+            "distribution_type": distribution_type,
+            "interpretation": interpretation,
+            "unified_understanding": unified_understanding,
+            "statistics": {
+                "mean": mean_tp,
+                "median": median_tp,
+                "std_deviation": std_tp,
+                "variance": variance_tp,
+                "coefficient_of_variation": cv,
+                "skewness": skewness,
+                "kurtosis": kurtosis,
+                "is_multimodal": is_multimodal
+            }
+        }
+    
+    @staticmethod
+    def _generate_throughput_interpretation(
+        dist_type: str, skewness: float, kurtosis: float, mean: float,
+        median: float, std: float, cv: float, variance: float
+    ) -> str:
+        """Generate business value interpretation for throughput distribution"""
+        interpretations = {
+            "normal": (
+                f"Normal Throughput Distribution: The throughput distribution follows a normal pattern, "
+                f"indicating consistent request processing capacity. Mean: {mean:.2f} req/s, Std Dev: {std:.2f} req/s."
+            ),
+            "right_skewed": (
+                f"Right-Skewed Throughput Distribution: Most periods show good throughput ({median:.2f} req/s), "
+                f"but some periods experience significant drops, indicating occasional capacity constraints. "
+                f"Mean: {mean:.2f} req/s, Skewness: {skewness:.2f}."
+            ),
+            "left_skewed": (
+                f"Left-Skewed Throughput Distribution: Most periods show lower throughput, with occasional "
+                f"high-throughput spikes. This suggests the system is generally operating near capacity limits."
+            ),
+            "multi_modal": (
+                f"Multi-Modal Throughput Distribution: Throughput shows distinct performance modes, "
+                f"suggesting different operational states or request types with varying processing requirements."
+            ),
+            "high_variance": (
+                f"High Variance Throughput Distribution: Throughput shows high variability (CV: {cv:.2%}), "
+                f"indicating inconsistent processing capacity and potential resource contention issues."
+            ),
+            "insufficient_data": (
+                "Insufficient data points for throughput distribution analysis."
+            )
+        }
+        return interpretations.get(dist_type, interpretations["normal"])
+    
+    @staticmethod
+    def _generate_throughput_understanding(
+        dist_type: str, mean: float, median: float, std: float, variance: float, cv: float, skewness: float, kurtosis: float
+    ) -> str:
+        """Generate unified system understanding for throughput"""
+        if dist_type == "normal" and cv < 0.3:
+            return (
+                f"Throughput analysis shows stable and consistent processing capacity with mean throughput "
+                f"of {mean:.2f} req/s. The system demonstrates reliable performance with minimal variability, "
+                f"indicating well-balanced resource allocation and efficient request processing."
+            )
+        elif dist_type == "right_skewed":
+            return (
+                f"Throughput analysis reveals that while most periods maintain good processing rates "
+                f"(median: {median:.2f} req/s), occasional throughput drops occur (mean: {mean:.2f} req/s), "
+                f"suggesting intermittent capacity constraints or resource contention that need attention."
+            )
+        elif cv > 1.0:
+            return (
+                f"Throughput analysis indicates high variability (CV: {cv:.2%}) in processing capacity, "
+                f"with mean throughput of {mean:.2f} req/s. This inconsistency suggests the need for "
+                f"optimization to achieve more stable and predictable throughput performance."
+            )
+        else:
+            return (
+                f"Throughput analysis shows mean processing rate of {mean:.2f} req/s with moderate variability. "
+                f"The system demonstrates acceptable throughput performance with room for optimization to "
+                f"achieve more consistent processing rates."
+            )
     
     @staticmethod
     def _classify_distribution(

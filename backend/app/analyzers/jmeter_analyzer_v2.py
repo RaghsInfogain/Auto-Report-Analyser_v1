@@ -198,6 +198,7 @@ class JMeterAnalyzerV2:
                         "avg_response": rt_stats["mean"],
                         "median": rt_stats["median"],
                         "p70": rt_stats["p70"],
+                        "p75": rt_stats["p75"],
                         "p80": rt_stats["p80"],
                         "p90": rt_stats["p90"],
                         "p95": rt_stats["p95"],
@@ -210,7 +211,7 @@ class JMeterAnalyzerV2:
                         "count": len(items),
                         "errors": errors,
                         "error_rate": (errors / len(items) * 100) if items else 0.0,
-                        "avg_response": 0.0, "median": 0.0, "p70": 0.0, "p80": 0.0,
+                        "avg_response": 0.0, "median": 0.0, "p70": 0.0, "p75": 0.0, "p80": 0.0,
                         "p90": 0.0, "p95": 0.0, "p99": 0.0, "min": 0.0, "max": 0.0
                     }
             return stats
@@ -388,25 +389,45 @@ class JMeterAnalyzerV2:
     @staticmethod
     def _identify_issues(error_rate: float, avg_response: float, sla_compliance: float,
                         transaction_stats: Dict, request_stats: Dict) -> List[Dict]:
-        """Identify critical performance issues"""
+        """Identify all performance issues (critical, moderate, and minor)"""
         issues = []
         
+        # Critical Issues (P0)
         if error_rate > 5:
             issues.append({
                 "title": f"High Error Rate - {error_rate:.2f}%",
                 "impact": f"{error_rate:.2f}% of requests failing",
                 "affected": "System-wide",
                 "priority": "P0 CRITICAL",
-                "timeline": "1-2 weeks"
+                "timeline": "1-2 weeks",
+                "example": f"Error rate exceeds acceptable threshold of 5%",
+                "recommendation": "Conduct root cause analysis, implement error handling improvements, and add monitoring",
+                "business_benefit": "Improved system reliability and user trust"
             })
         
-        if avg_response > 3:
+        if avg_response > 5:
+            issues.append({
+                "title": f"Very Slow Response Times - {avg_response:.1f}s Average",
+                "impact": "Severely poor user experience",
+                "affected": "System-wide",
+                "priority": "P0 CRITICAL",
+                "timeline": "2-4 weeks",
+                "example": f"Average response time of {avg_response:.1f}s is unacceptable",
+                "recommendation": "Optimize database queries, implement caching, reduce payload sizes, and scale infrastructure",
+                "business_benefit": "Significantly improved user satisfaction and retention"
+            })
+        
+        # High Priority Issues (P1)
+        if 3 < avg_response <= 5:
             issues.append({
                 "title": f"Slow Response Times - {avg_response:.1f}s Average",
                 "impact": "Poor user experience",
                 "affected": "System-wide",
-                "priority": "P0 CRITICAL" if avg_response > 5 else "P1 HIGH",
-                "timeline": "2-4 weeks"
+                "priority": "P1 HIGH",
+                "timeline": "2-4 weeks",
+                "example": f"Average response time of {avg_response:.1f}s exceeds target of 2s",
+                "recommendation": "Optimize slow endpoints, implement caching strategies, and review database performance",
+                "business_benefit": "Improved user experience and reduced bounce rate"
             })
         
         if sla_compliance < 80:
@@ -415,10 +436,91 @@ class JMeterAnalyzerV2:
                 "impact": "Majority of requests not meeting SLA",
                 "affected": "System-wide",
                 "priority": "P1 HIGH",
-                "timeline": "4-6 weeks"
+                "timeline": "4-6 weeks",
+                "example": f"Only {sla_compliance:.1f}% of requests meet 2s SLA target",
+                "recommendation": "Identify and optimize slow transactions, improve infrastructure capacity",
+                "business_benefit": "Better SLA compliance and customer satisfaction"
             })
         
-        return issues[:5]
+        # Moderate Issues (P2)
+        if 1 < error_rate <= 5:
+            issues.append({
+                "title": f"Elevated Error Rate - {error_rate:.2f}%",
+                "impact": f"{error_rate:.2f}% of requests experiencing failures",
+                "affected": "System-wide",
+                "priority": "P2 MODERATE",
+                "timeline": "4-6 weeks",
+                "example": f"Error rate of {error_rate:.2f}% is above ideal threshold",
+                "recommendation": "Review error logs, improve error handling, and enhance monitoring",
+                "business_benefit": "Reduced error rate and improved system stability"
+            })
+        
+        if 2 < avg_response <= 3:
+            issues.append({
+                "title": f"Moderate Response Times - {avg_response:.1f}s Average",
+                "impact": "Response times could be improved",
+                "affected": "System-wide",
+                "priority": "P2 MODERATE",
+                "timeline": "6-8 weeks",
+                "example": f"Average response time of {avg_response:.1f}s is slightly above target",
+                "recommendation": "Optimize key endpoints and consider performance tuning",
+                "business_benefit": "Enhanced performance and user experience"
+            })
+        
+        if 80 <= sla_compliance < 90:
+            issues.append({
+                "title": f"Moderate SLA Compliance - {sla_compliance:.1f}%",
+                "impact": "SLA compliance below target",
+                "affected": "System-wide",
+                "priority": "P2 MODERATE",
+                "timeline": "6-8 weeks",
+                "example": f"SLA compliance of {sla_compliance:.1f}% is below 90% target",
+                "recommendation": "Focus on optimizing slowest transactions and improving response time consistency",
+                "business_benefit": "Improved SLA compliance and reliability"
+            })
+        
+        # Check for slow transactions/requests
+        all_stats = {**transaction_stats, **request_stats}
+        for label, stats in all_stats.items():
+            avg_rt = stats.get('avg_response', 0) / 1000.0  # Convert to seconds
+            error_rate_label = stats.get('error_rate', 0)
+            
+            if avg_rt > 5:
+                issues.append({
+                    "title": f"Very Slow Transaction: {label} - {avg_rt:.1f}s",
+                    "impact": "Severely impacts user experience for this transaction",
+                    "affected": label,
+                    "priority": "P1 HIGH",
+                    "timeline": "2-4 weeks",
+                    "example": f"Transaction '{label}' has average response time of {avg_rt:.1f}s",
+                    "recommendation": f"Optimize transaction '{label}', review database queries, and consider caching",
+                    "business_benefit": "Improved performance for specific user workflows"
+                })
+            elif avg_rt > 3:
+                issues.append({
+                    "title": f"Slow Transaction: {label} - {avg_rt:.1f}s",
+                    "impact": "Impacts user experience for this transaction",
+                    "affected": label,
+                    "priority": "P2 MODERATE",
+                    "timeline": "4-6 weeks",
+                    "example": f"Transaction '{label}' has average response time of {avg_rt:.1f}s",
+                    "recommendation": f"Review and optimize transaction '{label}' performance",
+                    "business_benefit": "Better performance for specific user actions"
+                })
+            
+            if error_rate_label > 10:
+                issues.append({
+                    "title": f"High Error Rate for {label} - {error_rate_label:.1f}%",
+                    "impact": f"{error_rate_label:.1f}% of requests failing for this transaction",
+                    "affected": label,
+                    "priority": "P1 HIGH",
+                    "timeline": "2-4 weeks",
+                    "example": f"Transaction '{label}' has {error_rate_label:.1f}% error rate",
+                    "recommendation": f"Investigate and fix errors in transaction '{label}'",
+                    "business_benefit": "Improved reliability for specific transaction"
+                })
+        
+        return issues  # Return all issues, not limited to 5
     
     @staticmethod
     def _generate_recommendations(error_rate: float, avg_response: float, throughput: float) -> List[Dict]:

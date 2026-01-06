@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 from datetime import datetime
 import json
+import numpy as np
 from app.report_generator.graph_analyzer import GraphAnalyzer
 
 class HTMLReportGenerator:
@@ -84,7 +85,7 @@ class HTMLReportGenerator:
         response_time_dist = summary.get("response_time_distribution", {})
         transaction_stats = summary.get("transaction_stats", {})
         request_stats = summary.get("request_stats", {})
-        critical_issues = summary.get("critical_issues", [])
+        all_issues = summary.get("critical_issues", [])  # Now contains all issues, not just critical
         recommendations = summary.get("recommendations", [])
         improvement_roadmap = summary.get("improvement_roadmap", [])
         
@@ -127,8 +128,8 @@ class HTMLReportGenerator:
         update_progress(75, "Generating additional graphs...")
         additional_graphs = HTMLReportGenerator._generate_additional_graphs(summary.get("time_series_data", []), transaction_stats, request_stats, metrics, progress_callback=lambda p, m: update_progress(75 + int(p * 0.10), f"Additional: {m}"))
         
-        update_progress(85, "Generating critical issues...")
-        critical_issues_html = HTMLReportGenerator._generate_critical_issues(critical_issues)
+        update_progress(85, "Generating issues...")
+        issues_html = HTMLReportGenerator._generate_issues(all_issues)
         
         update_progress(87, "Generating business impact...")
         business_impact = HTMLReportGenerator._generate_business_impact(error_rate_pct, avg_response)
@@ -140,7 +141,7 @@ class HTMLReportGenerator:
         success_metrics = HTMLReportGenerator._generate_success_metrics(avg_response, p95_response, error_rate_pct, success_rate, sla_compliance_2s, throughput)
         
         update_progress(93, "Generating final conclusion...")
-        final_conclusion = HTMLReportGenerator._generate_final_conclusion(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, critical_issues, improvement_roadmap, summary)
+        final_conclusion = HTMLReportGenerator._generate_final_conclusion(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, all_issues, improvement_roadmap, summary)
         
         update_progress(95, "Generating footer...")
         footer = HTMLReportGenerator._generate_footer(current_date)
@@ -193,8 +194,8 @@ class HTMLReportGenerator:
         <!-- Additional Performance Graphs -->
         {additional_graphs}
         
-        <!-- Critical Issues -->
-        {critical_issues_html}
+        <!-- Issues -->
+        {issues_html}
         
         <!-- Business Impact Assessment -->
         {business_impact}
@@ -1116,6 +1117,43 @@ class HTMLReportGenerator:
         return label[:max_length-1] + '…'
     
     @staticmethod
+    def _detect_outliers_iqr(values: List[float]) -> tuple:
+        """Detect outliers using Interquartile Range (IQR) method
+        Returns: (lower_bound, upper_bound, outlier_mask)
+        """
+        if not values or len(values) < 4:
+            return (0, float('inf'), [False] * len(values))
+        
+        values_array = np.array(values)
+        q1 = np.percentile(values_array, 25)
+        q3 = np.percentile(values_array, 75)
+        iqr = q3 - q1
+        
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        
+        # Ensure lower bound is not negative for response times and throughput
+        lower_bound = max(0, lower_bound)
+        
+        outlier_mask = (values_array < lower_bound) | (values_array > upper_bound)
+        
+        return (lower_bound, upper_bound, outlier_mask.tolist())
+    
+    @staticmethod
+    def _filter_outliers(data_points: List[dict], value_key: str = 'y') -> List[dict]:
+        """Filter outliers from data points using IQR method"""
+        if not data_points or len(data_points) < 4:
+            return data_points
+        
+        values = [point[value_key] for point in data_points]
+        _, _, outlier_mask = HTMLReportGenerator._detect_outliers_iqr(values)
+        
+        # Return only non-outlier points
+        filtered_points = [point for point, is_outlier in zip(data_points, outlier_mask) if not is_outlier]
+        
+        return filtered_points
+    
+    @staticmethod
     def _generate_graph_data_table(time_series_data: List[dict] = None) -> str:
         """Generate HTML for graph data table"""
         if not time_series_data or len(time_series_data) == 0:
@@ -1161,22 +1199,58 @@ class HTMLReportGenerator:
     def _generate_graph_analysis_html(graph_analysis: Dict[str, Any], time_series_data: List[dict] = None) -> str:
         """Generate HTML for unified graph understanding and performance analysis section"""
         
-        # Get unified understanding from distribution analysis
+        # Get response time distribution analysis
         distribution_analysis = graph_analysis.get('distribution_analysis', {})
-        unified_understanding = distribution_analysis.get('unified_understanding', '')
-        stats = distribution_analysis.get('statistics', {})
+        rt_unified_understanding = distribution_analysis.get('unified_understanding', '')
+        rt_stats = distribution_analysis.get('statistics', {})
         business_answers = distribution_analysis.get('business_answers', {})
-        dist_type = distribution_analysis.get('distribution_type', 'unknown')
+        rt_dist_type = distribution_analysis.get('distribution_type', 'unknown')
+        
+        # Get throughput distribution analysis
+        throughput_distribution_analysis = graph_analysis.get('throughput_distribution_analysis', {})
+        tp_unified_understanding = throughput_distribution_analysis.get('unified_understanding', '')
+        tp_stats = throughput_distribution_analysis.get('statistics', {})
+        tp_dist_type = throughput_distribution_analysis.get('distribution_type', 'unknown')
         
         # If unified understanding is not available, generate it from graph pattern analysis
-        if not unified_understanding:
+        if not rt_unified_understanding:
             analysis_text = graph_analysis.get('analysis', 'Analysis not available.')
-            # Use first part of analysis as fallback
             sentences = analysis_text.split('. ')
-            unified_understanding = '. '.join(sentences[:3]) + '.' if len(sentences) >= 3 else analysis_text
+            rt_unified_understanding = '. '.join(sentences[:3]) + '.' if len(sentences) >= 3 else analysis_text
         
-        # Generate statistical summary HTML
-        stats_html = HTMLReportGenerator._generate_distribution_stats_html(stats) if stats else ''
+        # Generate response time statistical summary HTML
+        rt_stats_html = HTMLReportGenerator._generate_distribution_stats_html(rt_stats, "Response Time") if rt_stats else ''
+        
+        # Generate throughput statistical summary HTML
+        tp_stats_html = HTMLReportGenerator._generate_distribution_stats_html(tp_stats, "Throughput") if tp_stats else ''
+        
+        # Generate analysis points for response time
+        rt_analysis_points = HTMLReportGenerator._generate_statistical_analysis_points(rt_stats, "response_time") if rt_stats else []
+        rt_analysis_html = ''
+        if rt_analysis_points:
+            rt_points_html = ''.join([f'<li style="margin-bottom: 0.75rem; line-height: 1.6;">{point}</li>' for point in rt_analysis_points])
+            rt_analysis_html = f'''
+                <div style="padding: 1.5rem; background: #f0f9ff; border-radius: 6px; border-left: 4px solid #2563eb;">
+                    <h5 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1rem; font-weight: 600;">📊 Response Time Performance Analysis</h5>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-primary); font-size: 0.95rem;">
+                        {rt_points_html}
+                    </ul>
+                </div>
+            '''
+        
+        # Generate analysis points for throughput
+        tp_analysis_points = HTMLReportGenerator._generate_statistical_analysis_points(tp_stats, "throughput") if tp_stats else []
+        tp_analysis_html = ''
+        if tp_analysis_points:
+            tp_points_html = ''.join([f'<li style="margin-bottom: 0.75rem; line-height: 1.6;">{point}</li>' for point in tp_analysis_points])
+            tp_analysis_html = f'''
+                <div style="padding: 1.5rem; background: #f0fdf4; border-radius: 6px; border-left: 4px solid #10b981;">
+                    <h5 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1rem; font-weight: 600;">📊 Throughput Performance Analysis</h5>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-primary); font-size: 0.95rem;">
+                        {tp_points_html}
+                    </ul>
+                </div>
+            '''
         
         # Generate business answers HTML (compact version)
         business_answers_html = ''
@@ -1191,25 +1265,69 @@ class HTMLReportGenerator:
             'multi_modal': '#8b5cf6',  # purple
             'high_variance': '#f97316',  # orange
         }
-        badge_color = dist_badge_colors.get(dist_type, '#6b7280')
+        rt_badge_color = dist_badge_colors.get(rt_dist_type, '#6b7280')
+        tp_badge_color = dist_badge_colors.get(tp_dist_type, '#6b7280')
         
         return f'''
             <div style="margin-bottom: 2rem;">
                 <div style="padding: 2rem; background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%); border-radius: 8px; border: 2px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
                         <h3 style="margin: 0; color: var(--text-primary); font-size: 1.3rem; font-weight: 600;">📊 Graph Understanding and Performance Analysis</h3>
-                        {f'<span style="padding: 0.5rem 1rem; background: {badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">{dist_type.replace("_", " ")}</span>' if dist_type != 'unknown' else ''}
+                        <div style="display: flex; gap: 0.5rem;">
+                            {f'<span style="padding: 0.5rem 1rem; background: {rt_badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">RT: {rt_dist_type.replace("_", " ")}</span>' if rt_dist_type != 'unknown' else ''}
+                            {f'<span style="padding: 0.5rem 1rem; background: {tp_badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">TP: {tp_dist_type.replace("_", " ")}</span>' if tp_dist_type != 'unknown' else ''}
+                        </div>
                     </div>
                     
-                    <!-- Unified Understanding -->
-                    <div style="padding: 1.5rem; background: white; border-radius: 6px; border-left: 4px solid {badge_color}; margin-bottom: 1.5rem;">
-                        <p style="margin: 0; color: var(--text-primary); font-size: 1rem; line-height: 1.8; text-align: justify;">
-                            {unified_understanding}
-                        </p>
+                    <!-- Response Time and Throughput Analysis Side by Side -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; align-items: start;">
+                        <!-- Response Time Section -->
+                        <div style="display: flex; flex-direction: column;">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem; font-weight: 600;">⏱️ Response Time Analysis</h4>
+                            
+                            <!-- Unified Understanding -->
+                            <div style="padding: 1.5rem; background: white; border-radius: 6px; border-left: 4px solid {rt_badge_color}; margin-bottom: 1rem; min-height: 80px;">
+                                <p style="margin: 0; color: var(--text-primary); font-size: 1rem; line-height: 1.8; text-align: justify;">
+                                    {rt_unified_understanding}
+                                </p>
+                            </div>
+                            
+                            <!-- Statistical Summary -->
+                            <div style="margin-bottom: 1rem;">
+                                {rt_stats_html if rt_stats_html else '<div style="min-height: 120px;"></div>'}
+                            </div>
+                            
+                            <!-- Analysis Points -->
+                            <div>
+                                {rt_analysis_html if rt_analysis_html else ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Throughput Section -->
+                        <div style="display: flex; flex-direction: column;">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem; font-weight: 600;">🚀 Throughput Analysis</h4>
+                            
+                            <!-- Unified Understanding -->
+                            <div style="padding: 1.5rem; background: white; border-radius: 6px; border-left: 4px solid {tp_badge_color}; margin-bottom: 1rem; min-height: 80px;">
+                                <p style="margin: 0; color: var(--text-primary); font-size: 1rem; line-height: 1.8; text-align: justify;">
+                                    {tp_unified_understanding if tp_unified_understanding else 'Throughput analysis not available.'}
+                                </p>
+                            </div>
+                            
+                            <!-- Statistical Summary -->
+                            <div style="margin-bottom: 1rem;">
+                                {tp_stats_html if tp_stats_html else '<div style="min-height: 120px;"></div>'}
+                            </div>
+                            
+                            <!-- Analysis Points -->
+                            <div>
+                                {tp_analysis_html if tp_analysis_html else ''}
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- Statistical Summary -->
-                    {stats_html}
+                    <!-- Business Answers -->
+                    {business_answers_html}
                     
                 </div>
             </div>
@@ -1477,15 +1595,18 @@ class HTMLReportGenerator:
         time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
         vusers = [d['vusers'] for d in time_series_data]
         
-        # Collect all unique transaction/request labels
+        # Collect all unique transaction/request labels that actually have data in time series
+        # Only use labels that appear in the time_series_data (not just in stats)
         all_labels = set()
         for d in time_series_data:
             by_label = d.get('by_label', {})
             all_labels.update(by_label.keys())
         
-        # Combine transaction and request stats to get all labels
-        all_labels.update(transaction_stats.keys())
-        all_labels.update(request_stats.keys())
+        # If no labels found in time series, fall back to stats (for backward compatibility)
+        if not all_labels:
+            all_labels.update(transaction_stats.keys())
+            all_labels.update(request_stats.keys())
+        
         all_labels = sorted(list(all_labels))  # Sort for consistent ordering
         
         # Generate color palette for multiple lines
@@ -1507,14 +1628,24 @@ class HTMLReportGenerator:
         label_colors = {}  # Store color for each label for table headers
         for idx, label in enumerate(all_labels):
             # Extract response time data for this label over time as scatter points
+            # Collect all data points first (including zeros if transaction exists in that interval)
             label_scatter_data = []
             for d in time_series_data:
                 by_label = d.get('by_label', {})
-                label_data = by_label.get(label, {})
-                label_scatter_data.append({
-                    'x': d['time'],
-                    'y': label_data.get('avg_response_time', 0.0)
-                })
+                # Check if this label has data in this time interval
+                if label in by_label:
+                    label_data = by_label[label]
+                    rt_value = label_data.get('avg_response_time', 0.0)
+                    # Only add point if there's actual data (value > 0)
+                    if rt_value > 0:
+                        label_scatter_data.append({
+                            'x': d['time'],
+                            'y': rt_value
+                        })
+            
+            # Filter outliers using IQR method
+            if len(label_scatter_data) >= 4:
+                label_scatter_data = HTMLReportGenerator._filter_outliers(label_scatter_data, value_key='y')
             
             color = colors[idx % len(colors)]
             label_colors[label] = color
@@ -1542,6 +1673,7 @@ class HTMLReportGenerator:
         table_header += '<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: rgba(245, 158, 11, 1); color: white; white-space: nowrap;">Threads</th>'
         
         # Build table rows with all transactions
+        # Only show rows where at least one transaction has data (not all zeros)
         table_rows = ''
         for d in sampled_data:
             time_str = HTMLReportGenerator._format_time_hhmmss(d['time'])
@@ -1549,13 +1681,24 @@ class HTMLReportGenerator:
             
             # Build row with time, then each transaction value, then threads
             row_cells = f'<td style="padding: 0.5rem; text-align: center;">{time_str}</td>'
+            has_data = False
             for label in all_labels:
-                label_data = by_label.get(label, {})
-                rt = label_data.get('avg_response_time', 0.0)
-                row_cells += f'<td style="padding: 0.5rem; text-align: center;">{rt:.2f}s</td>'
+                # Only show value if transaction has data in this interval
+                if label in by_label:
+                    label_data = by_label[label]
+                    rt = label_data.get('avg_response_time', 0.0)
+                    if rt > 0:
+                        has_data = True
+                        row_cells += f'<td style="padding: 0.5rem; text-align: center;">{rt:.2f}s</td>'
+                    else:
+                        row_cells += f'<td style="padding: 0.5rem; text-align: center; color: #999;">-</td>'
+                else:
+                    row_cells += f'<td style="padding: 0.5rem; text-align: center; color: #999;">-</td>'
             row_cells += f'<td style="padding: 0.5rem; text-align: center;">{d["vusers"]:.0f}</td>'
             
-            table_rows += f'<tr>{row_cells}</tr>'
+            # Only add row if there's at least some data (not all dashes)
+            if has_data:
+                table_rows += f'<tr>{row_cells}</tr>'
         
         # Generate observation
         table_data = [{'time': d['time'], 'response_time': d['avg_response_time']} for d in sampled_data]
@@ -1685,15 +1828,18 @@ class HTMLReportGenerator:
         time_labels = [HTMLReportGenerator._format_time_hhmmss(d['time']) for d in time_series_data]
         vusers = [d['vusers'] for d in time_series_data]
         
-        # Collect all unique transaction/request labels
+        # Collect all unique transaction/request labels that actually have data in time series
+        # Only use labels that appear in the time_series_data (not just in stats)
         all_labels = set()
         for d in time_series_data:
             by_label = d.get('by_label', {})
             all_labels.update(by_label.keys())
         
-        # Combine transaction and request stats to get all labels
-        all_labels.update(transaction_stats.keys())
-        all_labels.update(request_stats.keys())
+        # If no labels found in time series, fall back to stats (for backward compatibility)
+        if not all_labels:
+            all_labels.update(transaction_stats.keys())
+            all_labels.update(request_stats.keys())
+        
         all_labels = sorted(list(all_labels))  # Sort for consistent ordering
         
         # Generate color palette for multiple lines
@@ -1715,14 +1861,24 @@ class HTMLReportGenerator:
         label_colors = {}  # Store color for each label for table headers
         for idx, label in enumerate(all_labels):
             # Extract throughput data for this label over time as scatter points
+            # Collect all data points first (including zeros if transaction exists in that interval)
             label_scatter_data = []
             for d in time_series_data:
                 by_label = d.get('by_label', {})
-                label_data = by_label.get(label, {})
-                label_scatter_data.append({
-                    'x': d['time'],
-                    'y': label_data.get('throughput', 0.0)
-                })
+                # Check if this label has data in this time interval
+                if label in by_label:
+                    label_data = by_label[label]
+                    tp_value = label_data.get('throughput', 0.0)
+                    # Only add point if there's actual data (value > 0)
+                    if tp_value > 0:
+                        label_scatter_data.append({
+                            'x': d['time'],
+                            'y': tp_value
+                        })
+            
+            # Filter outliers using IQR method
+            if len(label_scatter_data) >= 4:
+                label_scatter_data = HTMLReportGenerator._filter_outliers(label_scatter_data, value_key='y')
             
             color = colors[idx % len(colors)]
             label_colors[label] = color
@@ -1750,6 +1906,7 @@ class HTMLReportGenerator:
         table_header += '<th style="padding: 0.75rem; text-align: center; font-weight: 600; background: rgba(245, 158, 11, 1); color: white; white-space: nowrap;">Threads</th>'
         
         # Build table rows with all transactions
+        # Only show rows where at least one transaction has data (not all zeros)
         table_rows = ''
         for d in sampled_data:
             time_str = HTMLReportGenerator._format_time_hhmmss(d['time'])
@@ -1757,13 +1914,24 @@ class HTMLReportGenerator:
             
             # Build row with time, then each transaction value, then threads
             row_cells = f'<td style="padding: 0.5rem; text-align: center;">{time_str}</td>'
+            has_data = False
             for label in all_labels:
-                label_data = by_label.get(label, {})
-                tp = label_data.get('throughput', 0.0)
-                row_cells += f'<td style="padding: 0.5rem; text-align: center;">{tp:.2f}</td>'
+                # Only show value if transaction has data in this interval
+                if label in by_label:
+                    label_data = by_label[label]
+                    tp = label_data.get('throughput', 0.0)
+                    if tp > 0:
+                        has_data = True
+                        row_cells += f'<td style="padding: 0.5rem; text-align: center;">{tp:.2f}</td>'
+                    else:
+                        row_cells += f'<td style="padding: 0.5rem; text-align: center; color: #999;">-</td>'
+                else:
+                    row_cells += f'<td style="padding: 0.5rem; text-align: center; color: #999;">-</td>'
             row_cells += f'<td style="padding: 0.5rem; text-align: center;">{d["vusers"]:.0f}</td>'
             
-            table_rows += f'<tr>{row_cells}</tr>'
+            # Only add row if there's at least some data (not all dashes)
+            if has_data:
+                table_rows += f'<tr>{row_cells}</tr>'
         
         # Generate observation
         table_data = [{'time': d['time'], 'throughput': d['throughput']} for d in sampled_data]
@@ -2194,18 +2362,235 @@ class HTMLReportGenerator:
         '''
     
     @staticmethod
-    def _generate_distribution_stats_html(stats: Dict[str, Any]) -> str:
+    def _generate_statistical_analysis_points(stats: Dict[str, Any], metric_type: str = "response_time") -> List[str]:
+        """
+        Generate analysis points based on statistical summary
+        metric_type: "response_time" or "throughput"
+        Returns list of analysis bullet points
+        """
+        if not stats:
+            return []
+        
+        mean = stats.get('mean', 0)
+        median = stats.get('median', 0)
+        std_dev = stats.get('std_deviation', 0)
+        variance = stats.get('variance', 0)
+        cv = stats.get('coefficient_of_variation', 0)  # Already as decimal
+        skewness = stats.get('skewness', 0)
+        
+        points = []
+        unit = "s" if metric_type == "response_time" else " req/s"
+        metric_name = "response time" if metric_type == "response_time" else "throughput"
+        MetricName = "Response Time" if metric_type == "response_time" else "Throughput"
+        
+        # Point 1: Median vs Mean comparison
+        if median < mean:
+            points.append(
+                f"The median {metric_name} ({median:.2f}{unit}) is lower than the mean ({mean:.2f}{unit}), "
+                f"indicating that most requests are served quickly, but a small number of very slow requests "
+                f"significantly increase the overall average."
+            )
+        elif median > mean:
+            points.append(
+                f"The median {metric_name} ({median:.2f}{unit}) is higher than the mean ({mean:.2f}{unit}), "
+                f"indicating that most requests experience slower performance, with some very fast outliers "
+                f"pulling down the average."
+            )
+        else:
+            points.append(
+                f"The median and mean {metric_name} are similar ({mean:.2f}{unit}), indicating a relatively "
+                f"symmetric distribution with consistent performance across requests."
+            )
+        
+        # Point 2: Standard Deviation analysis
+        if std_dev > mean:
+            points.append(
+                f"The very high standard deviation ({std_dev:.2f}{unit}) compared to the mean shows that "
+                f"{metric_name}s are highly dispersed, meaning users experience widely different performance."
+            )
+        elif std_dev > mean * 0.5:
+            points.append(
+                f"The standard deviation ({std_dev:.2f}{unit}) is close to the mean, indicating moderate "
+                f"variability but not extreme instability."
+            )
+        else:
+            points.append(
+                f"The standard deviation ({std_dev:.2f}{unit}) is relatively low compared to the mean, "
+                f"indicating consistent and predictable performance."
+            )
+        
+        # Point 3: Variance analysis
+        if variance > mean * mean:
+            points.append(
+                f"The large variance ({variance:.2f}) confirms that the system has extreme fluctuations "
+                f"rather than stable, predictable behavior."
+            )
+        elif variance > (mean * mean) * 0.25:
+            points.append(
+                f"The variance ({variance:.2f}) suggests that {metric_name}s fluctuate, but within a "
+                f"reasonable and controllable range."
+            )
+        else:
+            points.append(
+                f"The low variance ({variance:.2f}) indicates stable and consistent system behavior "
+                f"with minimal fluctuations."
+            )
+        
+        # Point 4: Coefficient of Variation
+        cv_pct = cv * 100  # Convert to percentage for display
+        if cv > 2.0:
+            points.append(
+                f"A Coefficient of Variation of {cv_pct:.2f}% means the system is severely unstable; "
+                f"performance varies more than twice the average {metric_name}, which is a critical reliability risk."
+            )
+        elif cv > 1.0:
+            points.append(
+                f"A Coefficient of Variation of {cv_pct:.2f}% indicates noticeable variability, but it is "
+                f"far more stable than a chaotic system; this level is typical of systems under mixed or real-world load."
+            )
+        elif cv > 0.5:
+            points.append(
+                f"A Coefficient of Variation of {cv_pct:.2f}% indicates moderate variability, showing some "
+                f"inconsistency but within acceptable limits for most applications."
+            )
+        else:
+            points.append(
+                f"A Coefficient of Variation of {cv_pct:.2f}% indicates very stable and consistent performance, "
+                f"with minimal variation around the mean."
+            )
+        
+        # Point 5: Skewness analysis
+        if skewness > 2.0:
+            points.append(
+                f"The extremely high skewness ({skewness:.2f}) indicates a heavy right-tailed distribution, "
+                f"meaning a small percentage of requests take disproportionately long to complete."
+            )
+        elif skewness > 1.0:
+            points.append(
+                f"The high skewness ({skewness:.2f}) shows a right-skewed distribution, with some slower "
+                f"requests creating a noticeable tail in the performance distribution."
+            )
+        elif skewness > 0.5:
+            points.append(
+                f"The skewness of {skewness:.2f} shows a mild right skew, meaning a few slower responses exist, "
+                f"but there is no severe long-tail latency problem."
+            )
+        elif skewness < -0.5:
+            points.append(
+                f"The negative skewness ({skewness:.2f}) indicates a left-skewed distribution, where most "
+                f"requests are relatively slow with some fast outliers."
+            )
+        else:
+            points.append(
+                f"The skewness of {skewness:.2f} indicates a relatively symmetric distribution, suggesting "
+                f"balanced performance without significant outliers in either direction."
+            )
+        
+        # Point 6-9: Perspective-based analysis
+        # Responsiveness perspective
+        if metric_type == "response_time":
+            if median < 1.0:
+                points.append(
+                    f"From a responsiveness perspective, the system is generally fast, with most users getting "
+                    f"responses in under a second."
+                )
+            elif median < 2.0:
+                points.append(
+                    f"From a responsiveness perspective, the system appears fast for most users but is "
+                    f"occasionally very slow, creating inconsistent interaction times."
+                )
+            else:
+                points.append(
+                    f"From a responsiveness perspective, the system feels fast for many users but suddenly "
+                    f"very slow for others."
+                )
+        else:  # throughput
+            if mean > 100:
+                points.append(
+                    f"From a responsiveness perspective, the system handles high request volumes effectively, "
+                    f"processing most requests quickly."
+                )
+            elif mean > 50:
+                points.append(
+                    f"From a responsiveness perspective, the system shows good throughput capacity but with "
+                    f"some variability in processing rates."
+                )
+            else:
+                points.append(
+                    f"From a responsiveness perspective, the system shows limited throughput capacity, "
+                    f"indicating potential bottlenecks or resource constraints."
+                )
+        
+        # Reliability perspective
+        if cv > 1.0:
+            points.append(
+                f"From a reliability perspective, performance cannot be trusted because {metric_name}s change "
+                f"drastically between users and over time."
+            )
+        elif cv > 0.5:
+            points.append(
+                f"From a reliability perspective, performance is mostly consistent, with some variation but "
+                f"no extreme unpredictability."
+            )
+        else:
+            points.append(
+                f"From a reliability perspective, performance is highly consistent and predictable, "
+                f"building user trust in the application."
+            )
+        
+        # Scalability perspective
+        if skewness > 1.0 or cv > 1.0:
+            if metric_type == "response_time":
+                points.append(
+                    f"From a scalability perspective, these long-tail delays will worsen as load increases, "
+                    f"leading to queuing, thread exhaustion, and cascading slowdowns."
+                )
+            else:
+                points.append(
+                    f"From a scalability perspective, the high variability in throughput will become more "
+                    f"pronounced under increased load, leading to inconsistent performance and potential failures."
+                )
+        else:
+            points.append(
+                f"From a scalability perspective, the system is likely to handle increased load reasonably well, "
+                f"as there is no heavy tail to amplify delays."
+            )
+        
+        # User experience perspective
+        if cv > 1.0 or skewness > 1.0:
+            if metric_type == "response_time":
+                points.append(
+                    f"From a user experience perspective, even though many users see fast responses, the very "
+                    f"slow outliers dominate perception, causing frustration, retries, and loss of trust in the application."
+                )
+            else:
+                points.append(
+                    f"From a user experience perspective, the inconsistent throughput creates unpredictable "
+                    f"user experiences, leading to frustration and potential abandonment during slow periods."
+                )
+        else:
+            points.append(
+                f"From a user experience perspective, the system will feel smooth and responsive, with only "
+                f"occasional slow interactions that most users will tolerate."
+            )
+        
+        return points
+    
+    @staticmethod
+    def _generate_distribution_stats_html(stats: Dict[str, Any], metric_label: str = "Response Time") -> str:
         """Generate HTML for distribution statistics"""
         if not stats:
             return ''
         
+        unit = "s" if "Response" in metric_label else " req/s"
+        
         return f'''
-            <div style="margin-top: 1rem; padding: 1rem; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
-                <h5 style="margin: 0 0 0.75rem 0; color: var(--text-primary); font-size: 0.95rem; font-weight: 600;">Statistical Summary</h5>
+            <div style="padding: 1rem; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
+                <h5 style="margin: 0 0 0.75rem 0; color: var(--text-primary); font-size: 0.95rem; font-weight: 600;">{metric_label} Statistical Summary</h5>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
-                    <div><strong>Mean:</strong> {stats.get('mean', 0):.2f}s</div>
-                    <div><strong>Median:</strong> {stats.get('median', 0):.2f}s</div>
-                    <div><strong>Std Deviation:</strong> {stats.get('std_deviation', 0):.2f}s</div>
+                    <div><strong>Mean:</strong> {stats.get('mean', 0):.2f}{unit}</div>
+                    <div><strong>Median:</strong> {stats.get('median', 0):.2f}{unit}</div>
+                    <div><strong>Std Deviation:</strong> {stats.get('std_deviation', 0):.2f}{unit}</div>
                     <div><strong>Variance:</strong> {stats.get('variance', 0):.2f}</div>
                     <div><strong>Coefficient of Variation:</strong> {stats.get('coefficient_of_variation', 0):.2%}</div>
                     <div><strong>Skewness:</strong> {stats.get('skewness', 0):.2f}</div>
@@ -2407,7 +2792,7 @@ class HTMLReportGenerator:
         elif performance_status == "Moderate":
             insights.append(f"⚠️ <strong>Overall Assessment:</strong> System performance is acceptable but shows areas for improvement. Monitor closely and consider optimizations.")
         else:
-            insights.append(f"❌ <strong>Overall Assessment:</strong> System performance requires immediate attention. Critical issues identified that impact user experience.")
+            insights.append(f"❌ <strong>Overall Assessment:</strong> System performance requires immediate attention. Issues identified that impact user experience.")
         
         return {
             "performance_status": performance_status,
@@ -2469,33 +2854,65 @@ class HTMLReportGenerator:
         try:
             from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
             
-            # Run GraphAnalyzer in a thread with 20 second timeout
+            # Run GraphAnalyzer in a thread with 30 second timeout (increased from 20)
+            # If it times out, we'll use a simplified analysis
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(GraphAnalyzer.analyze_graph_patterns, sampled_data)
                 try:
-                    graph_analysis = future.result(timeout=20)
-                    print(f"  GraphAnalyzer completed")
+                    graph_analysis = future.result(timeout=30)
+                    print(f"  ✓ GraphAnalyzer completed successfully")
+                    
+                    # Ensure throughput_distribution_analysis exists, if not create empty one
+                    if 'throughput_distribution_analysis' not in graph_analysis:
+                        print(f"  ⚠️ Throughput distribution analysis missing, creating empty one")
+                        graph_analysis['throughput_distribution_analysis'] = {
+                            "distribution_type": "unknown",
+                            "interpretation": "Throughput analysis not available.",
+                            "unified_understanding": "Throughput distribution analysis could not be completed.",
+                            "statistics": {}
+                        }
+                    
                 except FutureTimeoutError:
-                    print(f"  ⚠️ GraphAnalyzer timed out after 20 seconds, using fallback")
+                    print(f"  ⚠️ GraphAnalyzer timed out after 30 seconds, using fallback")
                     future.cancel()
                     graph_analysis = {
                         "analysis": "Graph analysis timed out - using simplified analysis.",
                         "test_type": "Unknown",
                         "disturbances": [],
                         "stability": "Unknown",
-                        "capacity_assessment": "Unknown"
+                        "capacity_assessment": "Unknown",
+                        "distribution_analysis": {
+                            "distribution_type": "unknown",
+                            "unified_understanding": "Analysis timed out - insufficient data for comprehensive analysis.",
+                            "statistics": {}
+                        },
+                        "throughput_distribution_analysis": {
+                            "distribution_type": "unknown",
+                            "unified_understanding": "Throughput analysis timed out.",
+                            "statistics": {}
+                        }
                     }
         except Exception as e:
             print(f"  ⚠️ GraphAnalyzer failed: {e}, using fallback")
             import traceback
             traceback.print_exc()
-            # Use fallback analysis
+            # Use fallback analysis with both distribution analyses
             graph_analysis = {
                 "analysis": f"Graph analysis unavailable: {str(e)}",
                 "test_type": "Unknown",
                 "disturbances": [],
                 "stability": "Unknown",
-                "capacity_assessment": "Unknown"
+                "capacity_assessment": "Unknown",
+                "distribution_analysis": {
+                    "distribution_type": "unknown",
+                    "unified_understanding": f"Response time analysis unavailable: {str(e)}",
+                    "statistics": {}
+                },
+                "throughput_distribution_analysis": {
+                    "distribution_type": "unknown",
+                    "unified_understanding": f"Throughput analysis unavailable: {str(e)}",
+                    "statistics": {}
+                }
             }
         
         update_progress(80, "Preparing graph data...")
@@ -2693,26 +3110,43 @@ class HTMLReportGenerator:
         </script>'''
     
     @staticmethod
-    def _generate_critical_issues(issues: List[dict]) -> str:
-        """Generate critical issues section in tabular format"""
+    def _generate_issues(issues: List[dict]) -> str:
+        """Generate issues section in tabular format (includes all issues: critical, moderate, and minor)"""
         if not issues:
             return '''
         <div class="section">
-            <h2>🔴 Critical Issues</h2>
+            <h2>⚠️ Issues</h2>
             <div class="alert alert-success">
-                <strong>✅ NO CRITICAL ISSUES IDENTIFIED:</strong> The system is performing well with no major concerns.
+                <strong>✅ NO ISSUES IDENTIFIED:</strong> The system is performing well with no concerns identified.
             </div>
         </div>'''
         
-        # Generate table rows
+        # Categorize issues by priority
+        critical_issues = [i for i in issues if i.get('priority', '').startswith('P0')]
+        high_issues = [i for i in issues if i.get('priority', '').startswith('P1')]
+        moderate_issues = [i for i in issues if i.get('priority', '').startswith('P2')]
+        other_issues = [i for i in issues if not i.get('priority', '').startswith(('P0', 'P1', 'P2'))]
+        
+        # Generate table rows with priority-based styling
         table_rows = ""
         for i, issue in enumerate(issues, 1):
             title = issue.get('title', 'Unknown Issue')
             impact = issue.get('impact', 'N/A')
             affected = issue.get('affected', 'N/A')
-            example = issue.get('example', affected)  # Use affected as example if example not provided
+            priority = issue.get('priority', 'UNKNOWN')
+            example = issue.get('example', affected)
             recommendation = issue.get('recommendation', issue.get('fix', 'Review and address the issue'))
             business_benefit = issue.get('business_benefit', 'Improved system reliability and user experience')
+            
+            # Color code based on priority
+            if priority.startswith('P0'):
+                priority_color = '#dc2626'  # Red for critical
+            elif priority.startswith('P1'):
+                priority_color = '#ea580c'  # Orange for high
+            elif priority.startswith('P2'):
+                priority_color = '#ca8a04'  # Yellow for moderate
+            else:
+                priority_color = '#6b7280'  # Gray for other
             
             table_rows += f'''
             <tr>
@@ -2721,24 +3155,40 @@ class HTMLReportGenerator:
                 <td style="padding: 1rem; color: var(--text-secondary);">{impact}</td>
                 <td style="padding: 1rem; color: var(--text-secondary);">{recommendation}</td>
                 <td style="padding: 1rem; color: var(--text-secondary);">{business_benefit}</td>
+                <td style="padding: 1rem; color: {priority_color}; font-weight: 600;">{priority}</td>
             </tr>'''
+        
+        # Generate alert message based on issue severity
+        if critical_issues:
+            alert_class = "alert-danger"
+            alert_text = f"<strong>IMMEDIATE ACTION REQUIRED:</strong> {len(critical_issues)} critical issue{'s' if len(critical_issues) > 1 else ''} identified. "
+        elif high_issues:
+            alert_class = "alert-warning"
+            alert_text = f"<strong>HIGH PRIORITY:</strong> {len(high_issues)} high priority issue{'s' if len(high_issues) > 1 else ''} identified. "
+        else:
+            alert_class = "alert-info"
+            alert_text = f"<strong>ISSUES IDENTIFIED:</strong> {len(issues)} issue{'s' if len(issues) > 1 else ''} identified for review. "
+        
+        if len(issues) > len(critical_issues) + len(high_issues):
+            alert_text += f"Total of {len(issues)} issue{'s' if len(issues) > 1 else ''} across all severity levels."
         
         return f'''
         <div class="section">
-            <h2>🔴 Critical Issues</h2>
-            <div class="alert alert-danger">
-                <strong>IMMEDIATE ACTION REQUIRED:</strong> {len(issues)} critical issue{'s' if len(issues) > 1 else ''} {'are' if len(issues) > 1 else 'is'} severely impacting business operations and user experience.
+            <h2>⚠️ Issues</h2>
+            <div class="alert {alert_class}">
+                {alert_text}
             </div>
             
             <div style="overflow-x: auto; margin-top: 1.5rem;">
                 <table class="endpoint-table" style="width: 100%; border-collapse: collapse;">
                     <thead>
-                        <tr style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white;">
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
                             <th style="padding: 1rem; text-align: left; font-weight: 600;">Issue</th>
                             <th style="padding: 1rem; text-align: left; font-weight: 600;">Example of Issue</th>
                             <th style="padding: 1rem; text-align: left; font-weight: 600;">Impact</th>
                             <th style="padding: 1rem; text-align: left; font-weight: 600;">Recommendation</th>
                             <th style="padding: 1rem; text-align: left; font-weight: 600;">Business Benefit</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Priority</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2857,7 +3307,7 @@ class HTMLReportGenerator:
     @staticmethod
     def _generate_final_conclusion(grade: str, score: float, success_rate: float, avg_response: float, 
                                    error_rate: float, throughput: float, p95_response: float, 
-                                   sla_compliance: float, critical_issues: List[dict], 
+                                   sla_compliance: float, all_issues: List[dict], 
                                    improvement_roadmap: List[dict], summary: dict) -> str:
         """Generate final conclusion section"""
         # Generate conclusion write-up
@@ -2893,15 +3343,21 @@ class HTMLReportGenerator:
             improvements.append(f"Increase throughput from {throughput:.0f} req/s to handle higher loads")
         if sla_compliance < 95:
             improvements.append(f"Improve SLA compliance from {sla_compliance:.1f}% to target 95%+")
+        critical_issues = [i for i in all_issues if i.get('priority', '').startswith('P0')]
         if critical_issues:
             improvements.append(f"Address {len(critical_issues)} critical issue(s) identified in the assessment")
+        if all_issues and not critical_issues:
+            improvements.append(f"Address {len(all_issues)} issue(s) identified in the assessment")
         if not improvements:
             improvements.append("Continue monitoring and maintain current performance standards")
         
         # Recommended Immediate Actions
         immediate_actions = []
+        critical_issues = [i for i in all_issues if i.get('priority', '').startswith('P0')]
         if critical_issues:
-            immediate_actions.append("Address critical issues identified in the assessment (see Critical Issues section)")
+            immediate_actions.append(f"Address {len(critical_issues)} critical issue(s) identified in the assessment (see Issues section)")
+        elif all_issues:
+            immediate_actions.append(f"Review {len(all_issues)} issue(s) identified in the assessment (see Issues section)")
         if error_rate > 5.0:
             immediate_actions.append("Implement error handling improvements to reduce error rate")
         if avg_response > 5.0:
