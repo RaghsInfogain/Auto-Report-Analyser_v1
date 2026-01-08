@@ -8,8 +8,7 @@ const Dashboard: React.FC = () => {
     totalFiles: 0,
     webVitalsFiles: 0,
     jmeterFiles: 0,
-    uiPerformanceFiles: 0,
-    reportsGenerated: 0
+    uiPerformanceFiles: 0
   });
 
   useEffect(() => {
@@ -25,8 +24,7 @@ const Dashboard: React.FC = () => {
         totalFiles: files.length,
         webVitalsFiles: files.filter(f => f.category === 'web_vitals').length,
         jmeterFiles: files.filter(f => f.category === 'jmeter').length,
-        uiPerformanceFiles: files.filter(f => f.category === 'ui_performance').length,
-        reportsGenerated: Math.floor(files.length / 2) // Simulated
+        uiPerformanceFiles: files.filter(f => f.category === 'ui_performance').length
       });
     } catch (error) {
       console.error('Failed to load stats:', error);
@@ -38,14 +36,12 @@ const Dashboard: React.FC = () => {
     { title: 'Web Vitals', value: stats.webVitalsFiles, icon: '⚡', color: '#2ecc71', link: '/files' },
     { title: 'JMeter Tests', value: stats.jmeterFiles, icon: '🧪', color: '#e74c3c', link: '/files' },
     { title: 'UI Performance', value: stats.uiPerformanceFiles, icon: '🎯', color: '#f39c12', link: '/files' },
-    { title: 'Reports', value: stats.reportsGenerated, icon: '📊', color: '#9b59b6', link: '/reports' },
   ];
 
   const quickActions = [
     { title: 'Upload New Files', icon: '⬆️', link: '/upload', color: '#3498db' },
-    { title: 'View Reports', icon: '📄', link: '/reports', color: '#2ecc71' },
-    { title: 'Analyze Data', icon: '📈', link: '/analysis', color: '#e74c3c' },
     { title: 'Manage Files', icon: '📁', link: '/files', color: '#f39c12' },
+    { title: 'AI Assistant', icon: '🤖', link: '/ai-chat', color: '#9b59b6' },
   ];
 
   return (

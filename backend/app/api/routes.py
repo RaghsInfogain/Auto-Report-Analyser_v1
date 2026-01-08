@@ -495,6 +495,33 @@ async def list_runs(db: Session = Depends(get_db)):
         import time
         start_time = time.time()
         runs = DatabaseService.get_all_run_ids(db)
+        
+        # Proactively detect and reset stuck runs
+        from datetime import datetime, timedelta
+        reset_count = 0
+        for run in runs:
+            run_id = run.get('run_id')
+            if run_id and run.get('report_status') in ['analyzing', 'generating']:
+                # Check if it's actually stuck (no progress update in last 5 minutes)
+                files = DatabaseService.get_files_by_run_id(db, run_id)
+                if files:
+                    # Check if any file has been stuck for more than 5 minutes
+                    stuck_files = [f for f in files if f.report_status in ["analyzing", "generating"]]
+                    if stuck_files:
+                        # Check progress tracker
+                        if ReportProgressTracker.is_stuck(run_id, timeout_minutes=5):
+                            print(f"⚠️  Auto-resetting stuck run: {run_id}")
+                            for f in stuck_files:
+                                f.report_status = "pending"
+                            db.commit()
+                            ReportProgressTracker.clear_progress(run_id)
+                            reset_count += 1
+                            # Update the run status in the response
+                            run['report_status'] = 'pending'
+        
+        if reset_count > 0:
+            print(f"✅ Auto-reset {reset_count} stuck run(s) during list_runs")
+        
         elapsed = time.time() - start_time
         print(f"get_all_run_ids took {elapsed:.2f} seconds, returned {len(runs)} runs")
         return {"runs": runs}
@@ -541,6 +568,41 @@ async def get_run(run_id: str, db: Session = Depends(get_db)):
         "report_status": overall_status,
         "uploaded_at": files[0].uploaded_at.isoformat() if files else None,
         "files": [f.to_dict() for f in files]
+    }
+
+@router.post("/runs/{run_id}/reset")
+async def reset_stuck_run(run_id: str, db: Session = Depends(get_db)):
+    """Reset a stuck run (analyzing/generating) back to pending status"""
+    files = DatabaseService.get_files_by_run_id(db, run_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check for stuck files
+    stuck_files = [f for f in files if f.report_status in ["analyzing", "generating"]]
+    
+    if not stuck_files:
+        return {
+            "message": f"Run {run_id} is not stuck",
+            "current_status": files[0].report_status if files else "unknown"
+        }
+    
+    # Reset stuck files to pending
+    reset_count = 0
+    for f in stuck_files:
+        old_status = f.report_status
+        f.report_status = "pending"
+        reset_count += 1
+        print(f"Reset {run_id} file {f.filename}: {old_status} -> pending")
+    
+    db.commit()
+    
+    # Clear progress tracking
+    ReportProgressTracker.clear_progress(run_id)
+    
+    return {
+        "message": f"Run {run_id} reset successfully",
+        "files_reset": reset_count,
+        "new_status": "pending"
     }
 
 @router.delete("/runs/{run_id}")

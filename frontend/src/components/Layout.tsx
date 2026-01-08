@@ -53,11 +53,6 @@ const Layout: React.FC = () => {
             {isSidebarOpen && <span className="nav-text">My Files</span>}
           </NavLink>
 
-          <NavLink to="/reports" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📄</span>
-            {isSidebarOpen && <span className="nav-text">Reports</span>}
-          </NavLink>
-
           <NavLink to="/ai-chat" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">🤖</span>
             {isSidebarOpen && <span className="nav-text">AI Assistant</span>}
