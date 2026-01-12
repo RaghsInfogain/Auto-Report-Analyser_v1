@@ -16,12 +16,15 @@ from app.parsers.json_parser import JSONParser
 from app.parsers.csv_parser import CSVParser
 from app.parsers.jtl_parser import JTLParser
 from app.parsers.jtl_parser_v2 import JTLParserV2
+from app.parsers.lighthouse_parser import LighthouseParser
 from app.analyzers.web_vitals_analyzer import WebVitalsAnalyzer
 from app.analyzers.jmeter_analyzer import JMeterAnalyzer
 from app.analyzers.jmeter_analyzer_v2 import JMeterAnalyzerV2
 from app.analyzers.ui_performance_analyzer import UIPerformanceAnalyzer
+from app.analyzers.lighthouse_analyzer import LighthouseAnalyzer
 from app.report_generator.report_builder import ReportBuilder
 from app.report_generator.html_report_generator import HTMLReportGenerator
+from app.report_generator.lighthouse_html_generator import LighthouseHTMLGenerator
 from app.report_generator.pdf_generator import PDFReportGenerator
 from app.report_generator.ppt_generator import PPTReportGenerator
 from app.database import get_db
@@ -99,12 +102,17 @@ async def generate_complete_report(file_id: str, db: Session = Depends(get_db)):
         # Parse file based on category and extension
         if category == "web_vitals":
             if file_path.endswith(".json"):
-                data = JSONParser.parse(file_path, category)
+                # Use Lighthouse parser and analyzer for Lighthouse JSON files
+                lighthouse_data = LighthouseParser.parse(file_path)
+                analysis_result = LighthouseAnalyzer.analyze(lighthouse_data)
+                metrics = analysis_result  # Lighthouse analyzer returns dict directly
+                record_count = 1  # Lighthouse JSON is a single consolidated report
             else:
+                # Use old parser for CSV web vitals files
                 data = CSVParser.parse(file_path, category)
-            metrics_obj = WebVitalsAnalyzer.analyze(data)
-            metrics = metrics_obj.dict()
-            record_count = len(data) if isinstance(data, list) else 1
+                metrics_obj = WebVitalsAnalyzer.analyze(data)
+                metrics = metrics_obj.dict()
+                record_count = len(data) if isinstance(data, list) else 1
         elif category == "jmeter":
             if file_path.endswith(".jtl") or file_path.endswith(".csv"):
                 data = JTLParserV2.parse(file_path)
@@ -162,10 +170,18 @@ async def generate_complete_report(file_id: str, db: Session = Depends(get_db)):
             pdf_bytes = PDFReportGenerator.generate_jmeter_pdf_report(metrics)
             ppt_bytes = PPTReportGenerator.generate_jmeter_ppt_report(metrics)
         elif category == "web_vitals":
-            # Generate Web Vitals reports
-            html_content = HTMLReportGenerator.generate_web_vitals_html_report(metrics, db_file.filename)
-            pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(metrics, db_file.filename)
-            ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(metrics, db_file.filename)
+            # Check if this is a Lighthouse JSON file (has lighthouse-specific structure)
+            if file_path.endswith(".json") and "lighthouse" in str(file_path).lower() or (isinstance(metrics, dict) and "metrics" in metrics and "grades" in metrics):
+                # Generate Lighthouse HTML report
+                html_content = LighthouseHTMLGenerator.generate_full_report(metrics, db_file.filename)
+                # PDF and PPT generation for Lighthouse - placeholder for now
+                pdf_bytes = b""  # TODO: Implement Lighthouse PDF generator
+                ppt_bytes = b""  # TODO: Implement Lighthouse PPT generator
+            else:
+                # Generate Web Vitals reports (old format)
+                html_content = HTMLReportGenerator.generate_web_vitals_html_report(metrics, db_file.filename)
+                pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(metrics, db_file.filename)
+                ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(metrics, db_file.filename)
         elif category == "ui_performance":
             # Generate UI Performance reports
             html_content = HTMLReportGenerator.generate_ui_performance_html_report(metrics, db_file.filename)
@@ -334,9 +350,11 @@ async def upload_files(
     uploaded_files = []
     jmeter_files_data = []  # Store JMeter files for merging
     jmeter_filenames = []
-    other_files = []  # Store non-JMeter files
+    lighthouse_files_data = []  # Store Lighthouse files for merging
+    lighthouse_filenames = []
+    other_files = []  # Store non-JMeter, non-Lighthouse files
     
-    # First pass: Save all files and group JMeter files
+    # First pass: Save all files and group by category
     for file, category in zip(files, categories):
         if category not in ["web_vitals", "jmeter", "ui_performance"]:
             raise HTTPException(status_code=400, detail=f"Invalid category: {category}")
@@ -347,6 +365,9 @@ async def upload_files(
         if category == "jmeter":
             if file_extension not in [".jtl", ".csv", ".xml"]:
                 raise HTTPException(status_code=400, detail="JMeter files must be .jtl, .csv, or .xml")
+        elif category == "web_vitals":
+            if file_extension not in [".json"]:
+                raise HTTPException(status_code=400, detail="Lighthouse/Web Vitals files must be .json")
         else:
             if file_extension not in [".json", ".csv"]:
                 raise HTTPException(status_code=400, detail="Files must be .json or .csv")
@@ -370,7 +391,7 @@ async def upload_files(
             run_id=run_id  # All files in this upload share the same run_id
         )
         
-        # Group JMeter files for merging
+        # Group files by category for merging
         if category == "jmeter":
             jmeter_files_data.append({
                 "db_file": db_file,
@@ -378,16 +399,31 @@ async def upload_files(
                 "file_id": file_id
             })
             jmeter_filenames.append(file.filename)
+        elif category == "web_vitals" and file_extension == ".json":
+            # Group Lighthouse JSON files for merging
+            lighthouse_files_data.append({
+                "db_file": db_file,
+                "file_path": file_path,
+                "file_id": file_id
+            })
+            lighthouse_filenames.append(file.filename)
         else:
             other_files.append(db_file)
         
         uploaded_files.append(db_file.to_dict())
     
-    # Handle JMeter files: Merge if multiple, keep single as-is
+    # ========================================================================
+    # JMETER FILES MERGING LOGIC (JTL/CSV)
+    # ========================================================================
+    # JMeter files contain time-series data (rows of test results).
+    # Merging strategy: Simple concatenation - combine all records into one file.
+    # This preserves all individual test results for time-series analysis.
+    # ========================================================================
     if len(jmeter_files_data) > 1:
-        # USE CASE 2: Multiple files - Merge first, then analyze merged file
+        # USE CASE 2: Multiple JMeter files - Concatenate all records
         print(f"\n{'='*60}")
-        print(f"USE CASE 2: Multiple JMeter files detected")
+        print(f"JMETER MERGING: Multiple JMeter files detected")
+        print(f"Strategy: Concatenate all time-series records")
         print(f"Merging {len(jmeter_files_data)} JMeter files for run {run_id}...")
         print(f"{'='*60}\n")
         
@@ -407,9 +443,9 @@ async def upload_files(
                 print(f"    ✗ Error parsing {Path(file_path).name}: {e}")
                 raise HTTPException(status_code=400, detail=f"Error parsing file {Path(file_path).name}: {e}")
         
-        # Merge all data
+        # JMeter merge: Simple concatenation (extend all records)
         merged_data = JTLParserV2.merge_data(all_jmeter_data)
-        print(f"  ✓ Merged {len(merged_data):,} total records")
+        print(f"  ✓ Merged {len(merged_data):,} total records (concatenated)")
         
         # Save merged file as CSV (JTL format)
         MERGED_DIR.mkdir(exist_ok=True)
@@ -421,7 +457,7 @@ async def upload_files(
             df = pd.DataFrame(merged_data)
             df.to_csv(merged_file_path, index=False)
             merged_file_size = merged_file_path.stat().st_size
-            print(f"  ✓ Saved merged file: {merged_file_path} ({merged_file_size:,} bytes)")
+            print(f"  ✓ Saved merged JMeter file: {merged_file_path} ({merged_file_size:,} bytes)")
         except Exception as e:
             print(f"  ✗ Error saving merged file: {e}")
             raise HTTPException(status_code=500, detail=f"Error saving merged file: {e}")
@@ -436,7 +472,7 @@ async def upload_files(
             db_file.record_count = len(merged_data)
         
         db.commit()
-        print(f"✓ Merged file created and linked to {len(jmeter_files_data)} file records")
+        print(f"✓ Merged JMeter file created and linked to {len(jmeter_files_data)} file records")
         print(f"  All files now point to: {merged_file_path}")
         
     elif len(jmeter_files_data) == 1:
@@ -471,6 +507,89 @@ async def upload_files(
         except Exception as e:
             print(f"  ✗ Error parsing file: {e}")
             raise HTTPException(status_code=400, detail=f"Error parsing file: {e}")
+    
+    # ========================================================================
+    # LIGHTHOUSE/WEB VITALS FILES MERGING LOGIC (JSON)
+    # ========================================================================
+    # Lighthouse files contain complete performance reports per page.
+    # Merging strategy: Aggregate metrics (median for numeric, worst for scores).
+    # This creates a consolidated report with aggregated metrics across pages.
+    # DIFFERENT from JMeter: Not concatenation, but statistical aggregation.
+    # ========================================================================
+    if len(lighthouse_files_data) > 1:
+        # USE CASE 2: Multiple Lighthouse files - Aggregate metrics
+        print(f"\n{'='*60}")
+        print(f"LIGHTHOUSE MERGING: Multiple Lighthouse JSON files detected")
+        print(f"Strategy: Aggregate metrics (median for numeric, worst for scores)")
+        print(f"Merging {len(lighthouse_files_data)} Lighthouse files for run {run_id}...")
+        print(f"{'='*60}\n")
+        
+        # Parse all Lighthouse files
+        lighthouse_file_paths = [str(info["file_path"]) for info in lighthouse_files_data]
+        print(f"  Parsing {len(lighthouse_file_paths)} Lighthouse JSON files...")
+        try:
+            # Lighthouse merge: Statistical aggregation (NOT concatenation)
+            merged_lighthouse_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
+            print(f"  ✓ Merged Lighthouse data successfully (aggregated metrics)")
+        except Exception as e:
+            print(f"  ✗ Error merging Lighthouse files: {e}")
+            raise HTTPException(status_code=400, detail=f"Error merging Lighthouse files: {e}")
+        
+        # Save merged file as JSON
+        MERGED_DIR.mkdir(exist_ok=True)
+        merged_file_path = MERGED_DIR / f"{run_id}_merged_lighthouse.json"
+        
+        try:
+            with open(merged_file_path, "w", encoding="utf-8") as f:
+                json.dump(merged_lighthouse_data, f, indent=2)
+            merged_file_size = merged_file_path.stat().st_size
+            print(f"  ✓ Saved merged Lighthouse file: {merged_file_path} ({merged_file_size:,} bytes)")
+        except Exception as e:
+            print(f"  ✗ Error saving merged Lighthouse file: {e}")
+            raise HTTPException(status_code=500, detail=f"Error saving merged Lighthouse file: {e}")
+        
+        # Update all Lighthouse file records to point to merged file
+        merged_filename = f"MERGED_{run_id}_{'+'.join(lighthouse_filenames[:3])}{'...' if len(lighthouse_filenames) > 3 else ''}"
+        for lighthouse_file_info in lighthouse_files_data:
+            db_file = lighthouse_file_info["db_file"]
+            db_file.file_path = str(merged_file_path)
+            db_file.filename = merged_filename
+            db_file.file_size = merged_file_path.stat().st_size
+            db_file.record_count = 1  # Lighthouse JSON is a single consolidated report
+        
+        db.commit()
+        print(f"✓ Merged Lighthouse file created and linked to {len(lighthouse_files_data)} file records")
+        print(f"  All files now point to: {merged_file_path}")
+    
+    elif len(lighthouse_files_data) == 1:
+        # USE CASE 1: Single Lighthouse file - Keep original file
+        print(f"\n{'='*60}")
+        print(f"USE CASE 1: Single Lighthouse file detected")
+        print(f"Processing single file for run {run_id}...")
+        print(f"{'='*60}\n")
+        
+        single_file_info = lighthouse_files_data[0]
+        file_path = single_file_info["file_path"]
+        db_file = single_file_info["db_file"]
+        
+        print(f"  File: {db_file.filename}")
+        print(f"  Path: {file_path}")
+        print(f"  File exists: {os.path.exists(file_path)}")
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Uploaded file not found: {file_path}")
+        
+        # Validate Lighthouse JSON structure
+        try:
+            lighthouse_data = LighthouseParser.parse(str(file_path))
+            db_file.record_count = 1
+            db.commit()
+            print(f"  ✓ Validated Lighthouse JSON structure")
+            print(f"  ✓ File path preserved: {file_path}")
+            print(f"  ✓ Single file ready for analysis")
+        except Exception as e:
+            print(f"  ✗ Error validating Lighthouse file: {e}")
+            raise HTTPException(status_code=400, detail=f"Error validating Lighthouse file: {e}")
     
     return {"message": "Files uploaded successfully", "run_id": run_id, "files": uploaded_files}
 
@@ -1186,8 +1305,157 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     'metrics': metrics
                 })
             
+            elif category == "web_vitals":
+                # ============================================================
+                # LIGHTHOUSE/WEB VITALS ANALYSIS (Separate from JMeter)
+                # ============================================================
+                # Handle Lighthouse files (web_vitals with .json)
+                # Uses statistical aggregation, NOT concatenation like JMeter
+                # ============================================================
+                lighthouse_files = [f for f in category_files if f.file_path.endswith(".json")]
+                
+                if len(lighthouse_files) > 1:
+                    # Multiple Lighthouse files - Aggregate metrics (NOT concatenate)
+                    print(f"\n{'='*60}")
+                    print(f"LIGHTHOUSE ANALYSIS: Multiple Lighthouse files detected")
+                    print(f"Strategy: Aggregate metrics (median/worst score)")
+                    print(f"Merging {len(lighthouse_files)} Lighthouse files for run {run_id}...")
+                    print(f"{'='*60}\n")
+                    
+                    lighthouse_file_paths = [f.file_path for f in lighthouse_files]
+                    print(f"  Parsing {len(lighthouse_file_paths)} Lighthouse JSON files...")
+                    try:
+                        # Lighthouse merge: Statistical aggregation
+                        merged_lighthouse_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
+                        print(f"  ✓ Merged Lighthouse data successfully (aggregated)")
+                    except Exception as e:
+                        print(f"  ✗ Error merging Lighthouse files: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        raise HTTPException(status_code=500, detail=f"Error merging Lighthouse files: {e}")
+                    
+                    # Analyze merged data
+                    print(f"Starting analysis of merged Lighthouse data...")
+                    try:
+                        analysis_result = LighthouseAnalyzer.analyze(merged_lighthouse_data)
+                        metrics = analysis_result
+                        print(f"✓ Lighthouse analysis complete")
+                    except Exception as e:
+                        print(f"✗ Lighthouse analysis failed: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        raise HTTPException(status_code=500, detail=f"Lighthouse analysis failed: {str(e)}")
+                    
+                    # Store analysis for all Lighthouse files
+                    for db_file in lighthouse_files:
+                        existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
+                        if existing_analysis:
+                            existing_analysis.metrics = metrics
+                            existing_analysis.analyzed_at = datetime.utcnow()
+                            existing_analysis.analysis_duration = time.time() - start_time
+                        else:
+                            DatabaseService.create_analysis_result(
+                                db=db,
+                                file_id=db_file.file_id,
+                                category=category,
+                                metrics=metrics,
+                                analysis_duration=time.time() - start_time
+                            )
+                        db_file.record_count = 1
+                    
+                    db.commit()
+                    
+                    all_metrics.append({
+                        'file_id': lighthouse_files[0].file_id,
+                        'filename': f"Merged: {', '.join([f.filename for f in lighthouse_files[:3]])}{'...' if len(lighthouse_files) > 3 else ''}",
+                        'category': category,
+                        'metrics': metrics
+                    })
+                    
+                elif len(lighthouse_files) == 1:
+                    # Single Lighthouse file
+                    db_file = lighthouse_files[0]
+                    existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
+                    
+                    if existing_analysis and not regenerate:
+                        print(f"Reusing existing analysis for {db_file.filename}")
+                        metrics = existing_analysis.metrics
+                    else:
+                        print(f"Analyzing Lighthouse file {db_file.filename}...")
+                        file_path = db_file.file_path
+                        
+                        lighthouse_data = LighthouseParser.parse(file_path)
+                        analysis_result = LighthouseAnalyzer.analyze(lighthouse_data)
+                        metrics = analysis_result
+                        
+                        db_file.record_count = 1
+                        
+                        if existing_analysis:
+                            existing_analysis.metrics = metrics
+                            existing_analysis.analyzed_at = datetime.utcnow()
+                            existing_analysis.analysis_duration = time.time() - start_time
+                            db.commit()
+                        else:
+                            DatabaseService.create_analysis_result(
+                                db=db,
+                                file_id=db_file.file_id,
+                                category=category,
+                                metrics=metrics,
+                                analysis_duration=time.time() - start_time
+                            )
+                    
+                    all_metrics.append({
+                        'file_id': db_file.file_id,
+                        'filename': db_file.filename,
+                        'category': category,
+                        'metrics': metrics
+                    })
+                
+                # Handle non-Lighthouse web_vitals files (CSV)
+                csv_files = [f for f in category_files if not f.file_path.endswith(".json")]
+                for db_file in csv_files:
+                    existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
+                    
+                    if existing_analysis and not regenerate:
+                        print(f"Reusing existing analysis for {db_file.filename}")
+                        metrics = existing_analysis.metrics
+                        record_count = db_file.record_count or 0
+                    else:
+                        print(f"Analyzing {db_file.filename}...")
+                        file_path = db_file.file_path
+                        
+                        data = CSVParser.parse(file_path, category)
+                        metrics_obj = WebVitalsAnalyzer.analyze(data)
+                        metrics = metrics_obj.dict()
+                        
+                        record_count = len(data) if isinstance(data, list) else 1
+                        db_file.record_count = record_count
+                        
+                        if existing_analysis:
+                            existing_analysis.metrics = metrics
+                            existing_analysis.analyzed_at = datetime.utcnow()
+                            existing_analysis.analysis_duration = time.time() - start_time
+                            db.commit()
+                        else:
+                            DatabaseService.create_analysis_result(
+                                db=db,
+                                file_id=db_file.file_id,
+                                category=category,
+                                metrics=metrics,
+                                analysis_duration=time.time() - start_time
+                            )
+                    
+                    total_records += record_count
+                    
+                    all_metrics.append({
+                        'file_id': db_file.file_id,
+                        'filename': db_file.filename,
+                        'category': category,
+                        'metrics': metrics
+                    })
+            
             else:
-                # For other categories, analyze individually
+                # For other categories (ui_performance), analyze individually
                 for db_file in category_files:
                     existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
                     
@@ -1201,11 +1469,15 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         
                         if category == "web_vitals":
                             if file_path.endswith(".json"):
-                                data = JSONParser.parse(file_path, category)
+                                # Use Lighthouse parser and analyzer for Lighthouse JSON files
+                                lighthouse_data = LighthouseParser.parse(file_path)
+                                analysis_result = LighthouseAnalyzer.analyze(lighthouse_data)
+                                metrics = analysis_result  # Lighthouse analyzer returns dict directly
                             else:
+                                # Use old parser for CSV web vitals files
                                 data = CSVParser.parse(file_path, category)
-                            metrics_obj = WebVitalsAnalyzer.analyze(data)
-                            metrics = metrics_obj.dict()
+                                metrics_obj = WebVitalsAnalyzer.analyze(data)
+                                metrics = metrics_obj.dict()
                         elif category == "ui_performance":
                             if file_path.endswith(".json"):
                                 data = JSONParser.parse(file_path, category)
@@ -1274,12 +1546,21 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             primary_category = 'jmeter'
             # For JMeter, we already merged and analyzed, so use the first (and only) metrics
             primary_metrics = next((m['metrics'] for m in all_metrics if m['category'] == 'jmeter'), None)
+        elif 'web_vitals' in categories:
+            primary_category = 'web_vitals'
+            # For Lighthouse, prefer Lighthouse format over old web_vitals format
+            lighthouse_metrics = [m for m in all_metrics if m['category'] == 'web_vitals' and isinstance(m.get('metrics'), dict) and 'metrics' in m.get('metrics', {}) and 'grades' in m.get('metrics', {})]
+            if lighthouse_metrics:
+                primary_metrics = lighthouse_metrics[0]['metrics']
+            else:
+                primary_metrics = next((m['metrics'] for m in all_metrics if m['category'] == 'web_vitals'), None)
         elif 'ui_performance' in categories:
             primary_category = 'ui_performance'
             primary_metrics = next((m['metrics'] for m in all_metrics if m['category'] == 'ui_performance'), None)
         else:
-            primary_category = 'web_vitals'
-            primary_metrics = next((m['metrics'] for m in all_metrics if m['category'] == 'web_vitals'), None)
+            # Fallback
+            primary_category = categories[0] if categories else 'unknown'
+            primary_metrics = all_metrics[0]['metrics'] if all_metrics else None
         
         if not primary_metrics:
             print(f"❌ ERROR: primary_metrics is None!")
@@ -1328,7 +1609,18 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                 html_duration = time.time() - html_start_time
                 print(f"✓ HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
             elif primary_category == "web_vitals":
-                html_content = HTMLReportGenerator.generate_web_vitals_html_report(primary_metrics, primary_file.filename)
+                # Check if this is a Lighthouse JSON file (has lighthouse-specific structure)
+                if isinstance(primary_metrics, dict) and "metrics" in primary_metrics and "grades" in primary_metrics and "overall_grade" in primary_metrics:
+                    # Use Lighthouse HTML generator
+                    print(f"  Calling LighthouseHTMLGenerator.generate_full_report()...")
+                    html_content = LighthouseHTMLGenerator.generate_full_report(primary_metrics, primary_file.filename)
+                    html_duration = time.time() - html_start_time
+                    print(f"✓ Lighthouse HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
+                else:
+                    # Use old Web Vitals HTML generator
+                    html_content = HTMLReportGenerator.generate_web_vitals_html_report(primary_metrics, primary_file.filename)
+                    html_duration = time.time() - html_start_time
+                    print(f"✓ Web Vitals HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
             else:
                 html_content = HTMLReportGenerator.generate_ui_performance_html_report(primary_metrics, primary_file.filename)
             

@@ -158,8 +158,20 @@ class JTLParserV2:
     @staticmethod
     def merge_data(data_lists: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
         """
-        Merge multiple JTL data lists into one
-        Simple concatenation - sorting is optional and can be done later if needed
+        Merge multiple JMeter JTL/CSV data lists using SIMPLE CONCATENATION.
+        
+        This is DIFFERENT from Lighthouse merging:
+        - JMeter: Concatenates all time-series records (preserves all individual results)
+        - Lighthouse: Aggregates metrics statistically (median/worst score)
+        
+        Strategy: Extend all records into a single list. This preserves all
+        individual test results for time-series analysis.
+        
+        Args:
+            data_lists: List of parsed JMeter data (each is a list of records)
+            
+        Returns:
+            Single list containing all records from all files
         """
         if not data_lists:
             return []
