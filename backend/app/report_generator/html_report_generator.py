@@ -388,24 +388,48 @@ class HTMLReportGenerator:
             width: 100%;
             border-collapse: collapse;
             margin: 1rem 0;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
+            background: white;
+            border: 1px solid #e0e0e0;
         }
 
         .endpoint-table th,
         .endpoint-table td {
-            padding: 0.75rem;
+            padding: 1rem;
             text-align: left;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid #e0e0e0;
+            vertical-align: middle;
+        }
+
+        .endpoint-table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
         }
 
         .endpoint-table th {
-            background: var(--background-light);
             font-weight: 600;
-            color: var(--text-primary);
+            color: #666;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0.75rem 1rem;
         }
 
-        .endpoint-table tr:hover {
-            background: var(--background-light);
+        .endpoint-table td {
+            color: #333;
+        }
+
+        .endpoint-table tbody tr {
+            transition: background 0.2s;
+            background: white;
+        }
+
+        .endpoint-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .endpoint-table tbody tr:last-child td {
+            border-bottom: none;
         }
 
         .action-timeline {
@@ -719,60 +743,60 @@ class HTMLReportGenerator:
             <div style="margin: 2rem 0;">
                 <h3>📋 Detailed Performance Metrics</h3>
                 <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
-                        <thead style="background: var(--background-light);">
+                    <table class="endpoint-table">
+                        <thead>
                             <tr>
-                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Metric</th>
-                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Result</th>
-                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Target</th>
-                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Status</th>
-                                <th style="padding: 1rem; text-align: center; border: 1px solid var(--border-color);">Score</th>
+                                <th>Metric</th>
+                                <th>Result</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Score</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Availability</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">{success_rate:.1f}%</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">{targets.get('availability', 99)}%</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">
+                                <td style="font-weight: 600;">Availability</td>
+                                <td style="text-align: center;">{success_rate:.1f}%</td>
+                                <td style="text-align: center;">{targets.get('availability', 99)}%</td>
+                                <td style="text-align: center;">
                                     <span class="status-badge {'badge-success' if success_rate >= 99 else 'badge-warning' if success_rate >= 95 else 'badge-danger'}">
                                         {'✅ PASS' if success_rate >= 99 else '⚠️ MARGINAL' if success_rate >= 95 else '❌ FAIL'}
                                     </span>
                                 </td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">{scores.get('availability', 0):.0f}/100</td>
+                                <td style="text-align: center; font-weight: 600;">{scores.get('availability', 0):.0f}/100</td>
                             </tr>
                             <tr>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Avg Response Time</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">{avg_response:.1f} sec</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&lt;{targets.get('response_time', 2000)/1000:.0f} sec</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">
+                                <td style="font-weight: 600;">Avg Response Time</td>
+                                <td style="text-align: center;">{avg_response:.1f} sec</td>
+                                <td style="text-align: center;">&lt;{targets.get('response_time', 2000)/1000:.0f} sec</td>
+                                <td style="text-align: center;">
                                     <span class="status-badge {'badge-success' if avg_response < 2 else 'badge-warning' if avg_response < 5 else 'badge-danger'}">
                                         {'✅ PASS' if avg_response < 2 else '⚠️ MARGINAL' if avg_response < 5 else '❌ FAIL'}
                                     </span>
                                 </td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">{scores.get('response_time', 0):.0f}/100</td>
+                                <td style="text-align: center; font-weight: 600;">{scores.get('response_time', 0):.0f}/100</td>
                             </tr>
                             <tr>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Error Rate</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">{error_rate:.2f}%</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">&lt;{targets.get('error_rate', 1)}%</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">
+                                <td style="font-weight: 600;">Error Rate</td>
+                                <td style="text-align: center;">{error_rate:.2f}%</td>
+                                <td style="text-align: center;">&lt;{targets.get('error_rate', 1)}%</td>
+                                <td style="text-align: center;">
                                     <span class="status-badge {'badge-success' if error_rate < 1 else 'badge-warning' if error_rate < 3 else 'badge-danger'}">
                                         {'✅ PASS' if error_rate < 1 else '⚠️ MARGINAL' if error_rate < 3 else '❌ FAIL'}
                                     </span>
                                 </td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">{scores.get('error_rate', 0):.0f}/100</td>
+                                <td style="text-align: center; font-weight: 600;">{scores.get('error_rate', 0):.0f}/100</td>
                             </tr>
                             <tr>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">Throughput</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">{throughput:.1f}/s</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">{targets.get('throughput', 100)}/s</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center;">
+                                <td style="font-weight: 600;">Throughput</td>
+                                <td style="text-align: center;">{throughput:.1f}/s</td>
+                                <td style="text-align: center;">{targets.get('throughput', 100)}/s</td>
+                                <td style="text-align: center;">
                                     <span class="status-badge {'badge-success' if throughput >= 100 else 'badge-warning'}">
                                         {'✅ PASS' if throughput >= 100 else '⚠️ ACCEPTABLE'}
                                     </span>
                                 </td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color); text-align: center; font-weight: 600;">{scores.get('throughput', 0):.0f}/100</td>
+                                <td style="text-align: center; font-weight: 600;">{scores.get('throughput', 0):.0f}/100</td>
                             </tr>
                             <tr>
                                 <td style="padding: 1rem; border: 1px solid var(--border-color); font-weight: 600;">95th Percentile</td>
@@ -859,11 +883,11 @@ class HTMLReportGenerator:
             
             files_html += f'''
                     <tr>
-                        <td style="padding: 0.75rem; border-bottom: 1px solid #e2e8f0;">{filename}</td>
-                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{samples:,}</td>
-                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{errors:,}</td>
-                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{error_rate:.2f}%</td>
-                        <td style="padding: 0.75rem; text-align: center; border-bottom: 1px solid #e2e8f0;">{throughput:.2f}</td>
+                        <td>{filename}</td>
+                        <td style="text-align: center;">{samples:,}</td>
+                        <td style="text-align: center;">{errors:,}</td>
+                        <td style="text-align: center;">{error_rate:.2f}%</td>
+                        <td style="text-align: center;">{throughput:.2f}</td>
                     </tr>
             '''
         
@@ -877,14 +901,14 @@ class HTMLReportGenerator:
                 </p>
             </div>
             
-            <table class="endpoint-table" style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <table class="endpoint-table">
                 <thead>
-                    <tr style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white;">
-                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">File Name</th>
-                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Samples</th>
-                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Errors</th>
-                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Error Rate</th>
-                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Throughput (req/s)</th>
+                    <tr>
+                        <th>File Name</th>
+                        <th>Samples</th>
+                        <th>Errors</th>
+                        <th>Error Rate</th>
+                        <th>Throughput (req/s)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1178,13 +1202,13 @@ class HTMLReportGenerator:
         return f'''
             <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
                 <div style="overflow-y: auto; max-height: 500px;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <table class="endpoint-table" style="font-size: 0.85rem;">
                         <thead style="position: sticky; top: 0; z-index: 10;">
-                            <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Time</th>
-                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Avg Response Time (s)</th>
-                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">VUsers</th>
-                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Throughput (req/s)</th>
+                            <tr>
+                                <th>Time</th>
+                                <th>Avg Response Time (s)</th>
+                                <th>VUsers</th>
+                                <th>Throughput (req/s)</th>
                             </tr>
                         </thead>
                         <tbody>

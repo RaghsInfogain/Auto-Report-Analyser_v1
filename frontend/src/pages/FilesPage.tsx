@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FileUpload from '../components/FileUpload';
 import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress } from '../services/api';
 import './FilesPage.css';
@@ -18,6 +19,7 @@ interface ModalContent {
 }
 
 const FilesPage: React.FC = () => {
+  const navigate = useNavigate();
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -316,29 +318,22 @@ const FilesPage: React.FC = () => {
 
   return (
     <div className="files-page">
-      <div className="page-header">
-        <h1>📊 My Files</h1>
-        <p>Upload files and generate comprehensive performance reports</p>
-      </div>
-
-      {/* Upload Section */}
-      <div style={{ marginBottom: '2rem', padding: '20px', border: '1px solid #ddd', borderRadius: '8px', background: '#f9f9f9' }}>
-        <h2 style={{ marginTop: 0 }}>Upload Performance Data Files</h2>
-        <FileUpload onFilesUploaded={handleFilesUploaded} />
-        
-        {recentUploads.length > 0 && (
-          <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f5e9', borderRadius: '4px' }}>
-            <h3 style={{ marginTop: 0 }}>✅ Recently Uploaded</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {recentUploads.map((file) => (
-                <div key={file.file_id} style={{ padding: '0.5rem', background: 'white', borderRadius: '4px' }}>
-                  <strong>{file.filename}</strong> ({file.category}) - {(file.file_size / 1024).toFixed(2)} KB
-                </div>
-              ))}
-            </div>
+      <div className="page-content-wrapper">
+        {/* Page Header */}
+        <div className="page-header">
+          <div className="header-content">
+            <h1>My Files</h1>
+            <p>Upload files and generate comprehensive performance reports</p>
           </div>
-        )}
-      </div>
+        </div>
+
+        {/* Upload Section */}
+        <div className="content-section">
+          <div className="section-header">
+            <h2>Upload Performance Data Files</h2>
+          </div>
+          <FileUpload onFilesUploaded={handleFilesUploaded} />
+        </div>
 
       {progress && (
         <div className={`progress-banner ${progress.stage}`}>
@@ -396,13 +391,19 @@ const FilesPage: React.FC = () => {
         </div>
       )}
 
-      {loading ? (
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Loading runs...</p>
-        </div>
-      ) : runs.length > 0 ? (
-        <div className="files-table-container">
+        {/* Test Runs Table */}
+        <div className="content-section">
+          <div className="section-header">
+            <h2>All Test Runs</h2>
+          </div>
+
+          {loading ? (
+            <div className="loading-state">
+              <div className="spinner"></div>
+              <p>Loading runs...</p>
+            </div>
+          ) : runs.length > 0 ? (
+            <div className="files-table-container">
           <table className="files-table">
             <thead>
               <tr>
@@ -454,79 +455,83 @@ const FilesPage: React.FC = () => {
                     </td>
                     <td>
                       {run.report_status === 'generated' ? (
-                        <div className="report-action">
-                          {getStatusBadge('generated')}
-                          <button
-                            className="generate-btn retry"
-                            onClick={() => handleGenerateReport(run, true)}
-                            disabled={progress?.runId === run.run_id}
-                            title="Regenerate report with latest engine"
-                            style={{ marginLeft: '0.5rem', fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
-                          >
-                            🔄 Regenerate
-                          </button>
-                        </div>
+                        <span className="status-badge status-generated">Generated</span>
                       ) : run.report_status === 'analyzing' || run.report_status === 'generating' ? (
-                        getStatusBadge(run.report_status)
+                        <span className={`status-badge status-${run.report_status === 'analyzing' ? 'processing' : 'processing'}`}>
+                          {run.report_status === 'analyzing' ? 'Analyzing' : 'Generating'}
+                        </span>
                       ) : run.report_status === 'error' ? (
-                        <div className="report-action">
-                          {getStatusBadge('error')}
-                          <button
-                            className="generate-btn retry"
-                            onClick={() => handleGenerateReport(run)}
-                            disabled={progress?.runId === run.run_id}
-                          >
-                            🔄 Retry
-                          </button>
-                        </div>
+                        <span className="status-badge status-error">Error</span>
                       ) : (
                         <button
-                          className="generate-btn"
+                          className="btn-link btn-primary-link"
                           onClick={() => handleGenerateReport(run)}
                           disabled={progress?.runId === run.run_id}
+                          title="Generate Report"
                         >
-                          ⚡ Generate
+                          Generate
                         </button>
                       )}
                     </td>
                     <td>
                       {run.report_status === 'generated' ? (
-                        <div className="view-buttons">
-                          <button
-                            className="view-btn html"
+                        <div className="action-buttons">
+                          <button 
                             onClick={() => handleViewReport(run, 'html')}
+                            className="btn-link"
                             title="View HTML Report"
                           >
-                            📄 HTML
+                            HTML
                           </button>
-                          <button
-                            className="view-btn pdf"
+                          <button 
                             onClick={() => handleViewReport(run, 'pdf')}
+                            className="btn-link"
                             title="View PDF Report"
                           >
-                            📕 PDF
+                            PDF
                           </button>
-                          <button
-                            className="view-btn ppt"
+                          <button 
                             onClick={() => handleViewReport(run, 'ppt')}
+                            className="btn-link"
                             title="View PowerPoint Report"
                           >
-                            📊 PPT
+                            PPT
                           </button>
                         </div>
                       ) : (
-                        <span className="no-reports">-</span>
+                        <span style={{ color: '#999', fontSize: '0.875rem' }}>-</span>
                       )}
                     </td>
                     <td>
-                      <button
-                        className="delete-btn"
-                        onClick={() => handleDeleteRun(run)}
-                        title="Delete run and all files"
-                        disabled={run.report_status === 'analyzing' || run.report_status === 'generating'}
-                      >
-                        🗑️ Delete
-                      </button>
+                      <div className="action-buttons">
+                        {run.report_status === 'generated' && (
+                          <button 
+                            onClick={() => handleGenerateReport(run, true)}
+                            className="btn-link"
+                            title="Regenerate Report"
+                            disabled={progress?.runId === run.run_id}
+                          >
+                            Regenerate
+                          </button>
+                        )}
+                        {run.categories.includes('web_vitals') && (
+                          <button
+                            className="btn-link btn-parsed"
+                            onClick={() => navigate(`/runs/${run.run_id}/parsed-data`)}
+                            title="View parsed data from JSON files"
+                          >
+                            Parsed Data
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => handleDeleteRun(run)}
+                          className="btn-link btn-danger-link"
+                          title="Delete Run"
+                          disabled={run.report_status === 'analyzing' || run.report_status === 'generating'}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   {expandedRuns.has(run.run_id) && (
@@ -561,14 +566,16 @@ const FilesPage: React.FC = () => {
               ))}
             </tbody>
           </table>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">📁</div>
+              <h2>No Runs Found</h2>
+              <p>Upload some files above to get started with performance analysis</p>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="empty-state">
-          <div className="empty-icon">📁</div>
-          <h2>No Runs Found</h2>
-          <p>Upload some files above to get started with performance analysis</p>
-        </div>
-      )}
+      </div>
 
       {modalOpen && modalContent && (
         <div className="modal-overlay" onClick={closeModal}>

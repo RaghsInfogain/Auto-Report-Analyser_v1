@@ -68,10 +68,23 @@ class ReportProgressTracker:
         if message:
             progress["message"] = message
         
-        # Calculate overall progress
-        completed_tasks = sum(1 for t in progress["tasks"].values() if t["status"] == "completed")
-        total_tasks = len(progress["tasks"])
-        progress["overall_progress"] = int((completed_tasks / total_tasks) * 100)
+        # Calculate overall progress based on task progress_percent
+        # Each task contributes its progress_percent to the overall progress
+        total_progress = 0
+        task_weights = {
+            "parsing": 20,      # 20% of total
+            "analysis": 30,     # 30% of total
+            "html_generation": 30,  # 30% of total
+            "pdf_generation": 10,   # 10% of total
+            "ppt_generation": 10    # 10% of total
+        }
+        
+        for task_id, task in progress["tasks"].items():
+            weight = task_weights.get(task_id, 0)
+            task_progress = task.get("progress_percent", 0)
+            total_progress += (weight * task_progress) / 100
+        
+        progress["overall_progress"] = int(total_progress)
         
         return progress
     

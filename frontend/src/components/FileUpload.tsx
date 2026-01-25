@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { uploadFiles, UploadedFile } from '../services/api';
+import './FileUpload.css';
 
 interface FileUploadProps {
   onFilesUploaded: (files: UploadedFile[]) => void;
+  defaultCategory?: string;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded, defaultCategory = 'web_vitals' }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -13,7 +15,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     setSelectedFiles(files);
-    setCategories(files.map(() => 'web_vitals')); // Default category
+    setCategories(files.map(() => defaultCategory)); // Use default category
   };
 
   const handleCategoryChange = (index: number, category: string) => {
@@ -42,7 +44,9 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
       onFilesUploaded(result.files);
       setSelectedFiles([]);
       setCategories([]);
-      alert('Files uploaded successfully!');
+      // Reset file input
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
     } catch (error: any) {
       console.error('Upload error:', error);
       console.error('Error details:', {
@@ -88,38 +92,106 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
     }
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
   return (
-    <div style={{ padding: '20px', border: '1px solid #ddd', borderRadius: '8px', marginBottom: '20px' }}>
-      <h2>Upload Performance Data Files</h2>
-      <input
-        type="file"
-        multiple
-        onChange={handleFileSelect}
-        style={{ marginBottom: '10px' }}
-      />
+    <div className="file-upload-container">
+      <div className="upload-area">
+        <label className="file-input-label">
+          <input
+            type="file"
+            multiple
+            onChange={handleFileSelect}
+            className="file-input"
+            disabled={uploading}
+          />
+          <div className="file-input-content">
+            <span className="upload-icon">📁</span>
+            <span className="upload-text">
+              {selectedFiles.length > 0 
+                ? `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected`
+                : 'Choose files or drag and drop'}
+            </span>
+            <span className="upload-hint">JTL, CSV, or JSON files</span>
+          </div>
+        </label>
+      </div>
+
       {selectedFiles.length > 0 && (
-        <div>
-          <h3>Selected Files:</h3>
-          {selectedFiles.map((file, index) => (
-            <div key={index} style={{ marginBottom: '10px', padding: '10px', background: '#f5f5f5' }}>
-              <p><strong>{file.name}</strong></p>
-              <label>
-                Category:
-                <select
-                  value={categories[index] || 'web_vitals'}
-                  onChange={(e) => handleCategoryChange(index, e.target.value)}
-                  style={{ marginLeft: '10px' }}
-                >
-                  <option value="web_vitals">Web Vitals</option>
-                  <option value="jmeter">JMeter Test Results</option>
-                  <option value="ui_performance">UI Performance</option>
-                </select>
-              </label>
-            </div>
-          ))}
-          <button onClick={handleUpload} disabled={uploading} style={{ padding: '10px 20px', fontSize: '16px' }}>
-            {uploading ? 'Uploading...' : 'Upload Files'}
-          </button>
+        <div className="selected-files">
+          <div className="files-header">
+            <h3>Selected Files ({selectedFiles.length})</h3>
+            <button 
+              className="btn-clear"
+              onClick={() => {
+                setSelectedFiles([]);
+                setCategories([]);
+                const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+                if (fileInput) fileInput.value = '';
+              }}
+            >
+              Clear All
+            </button>
+          </div>
+          
+          <div className="files-list">
+            {selectedFiles.map((file, index) => (
+              <div key={index} className="file-item">
+                <div className="file-info">
+                  <span className="file-icon">📄</span>
+                  <div className="file-details">
+                    <div className="file-name">{file.name}</div>
+                    <div className="file-meta">{formatFileSize(file.size)}</div>
+                  </div>
+                </div>
+                {!defaultCategory && (
+                  <select
+                    value={categories[index] || 'web_vitals'}
+                    onChange={(e) => handleCategoryChange(index, e.target.value)}
+                    className="category-select"
+                    disabled={uploading}
+                  >
+                    <option value="web_vitals">Web Vitals</option>
+                    <option value="jmeter">JMeter Test Results</option>
+                    <option value="ui_performance">UI Performance</option>
+                  </select>
+                )}
+                {defaultCategory && (
+                  <div className="category-display">
+                    <span className="category-badge">
+                      {defaultCategory === 'jmeter' ? 'JMeter Test Results' : 
+                       defaultCategory === 'web_vitals' ? 'Web Vitals' : 
+                       defaultCategory}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="upload-actions">
+            <button 
+              onClick={handleUpload} 
+              disabled={uploading || selectedFiles.length === 0}
+              className="btn-upload"
+            >
+              {uploading ? (
+                <>
+                  <span className="spinner-small"></span>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <span>↑</span>
+                  Upload Files
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -127,14 +199,3 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded }) => {
 };
 
 export default FileUpload;
-
-
-
-
-
-
-
-
-
-
-

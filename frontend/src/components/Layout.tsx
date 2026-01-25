@@ -48,9 +48,19 @@ const Layout: React.FC = () => {
             {isSidebarOpen && <span className="nav-text">Dashboard</span>}
           </NavLink>
 
+          <NavLink to="/jmeter" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">🧪</span>
+            {isSidebarOpen && <span className="nav-text">JMeter Tests</span>}
+          </NavLink>
+
+          <NavLink to="/web-vitals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">⚡</span>
+            {isSidebarOpen && <span className="nav-text">Web-Vitals</span>}
+          </NavLink>
+
           <NavLink to="/files" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">📁</span>
-            {isSidebarOpen && <span className="nav-text">My Files</span>}
+            {isSidebarOpen && <span className="nav-text">All Files</span>}
           </NavLink>
 
           <NavLink to="/ai-chat" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>

@@ -6,7 +6,10 @@ import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import Dashboard from './pages/Dashboard';
 import FilesPage from './pages/FilesPage';
+import JMeterPage from './pages/JMeterPage';
+import WebVitalsPage from './pages/WebVitalsPage';
 import AIChatPage from './pages/AIChatPage';
+import ParsedDataPage from './pages/ParsedDataPage';
 import './App.css';
 
 function App() {
@@ -27,6 +30,9 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="upload" element={<FilesPage />} />
             <Route path="files" element={<FilesPage />} />
+            <Route path="jmeter" element={<JMeterPage />} />
+            <Route path="web-vitals" element={<WebVitalsPage />} />
+            <Route path="runs/:runId/parsed-data" element={<ParsedDataPage />} />
             <Route path="ai-chat" element={<AIChatPage />} />
           </Route>
         </Routes>

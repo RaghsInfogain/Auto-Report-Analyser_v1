@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 import time
 import json
+import statistics
 from datetime import datetime
 import pandas as pd
 import asyncio
@@ -110,9 +111,9 @@ async def generate_complete_report(file_id: str, db: Session = Depends(get_db)):
             else:
                 # Use old parser for CSV web vitals files
                 data = CSVParser.parse(file_path, category)
-                metrics_obj = WebVitalsAnalyzer.analyze(data)
-                metrics = metrics_obj.dict()
-                record_count = len(data) if isinstance(data, list) else 1
+            metrics_obj = WebVitalsAnalyzer.analyze(data)
+            metrics = metrics_obj.dict()
+            record_count = len(data) if isinstance(data, list) else 1
         elif category == "jmeter":
             if file_path.endswith(".jtl") or file_path.endswith(".csv"):
                 data = JTLParserV2.parse(file_path)
@@ -550,12 +551,13 @@ async def upload_files(
         
         # Update all Lighthouse file records to point to merged file
         merged_filename = f"MERGED_{run_id}_{'+'.join(lighthouse_filenames[:3])}{'...' if len(lighthouse_filenames) > 3 else ''}"
+        file_count = len(lighthouse_files_data)
         for lighthouse_file_info in lighthouse_files_data:
             db_file = lighthouse_file_info["db_file"]
             db_file.file_path = str(merged_file_path)
             db_file.filename = merged_filename
             db_file.file_size = merged_file_path.stat().st_size
-            db_file.record_count = 1  # Lighthouse JSON is a single consolidated report
+            db_file.record_count = file_count  # Number of files merged
         
         db.commit()
         print(f"✓ Merged Lighthouse file created and linked to {len(lighthouse_files_data)} file records")
@@ -744,6 +746,83 @@ async def delete_run(run_id: str, db: Session = Depends(get_db)):
     
     return {"message": f"Run {run_id} deleted successfully"}
 
+@router.get("/runs/{run_id}/parsed-data")
+async def get_run_parsed_data(run_id: str, db: Session = Depends(get_db)):
+    """Get parsed data for all files in a run - for debugging/validation"""
+    try:
+        # Get all files for this run
+        files = db.query(UploadedFile).filter(UploadedFile.run_id == run_id).all()
+        
+        if not files:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+        
+        parsed_data_list = []
+        
+        for db_file in files:
+            # Only process Lighthouse JSON files for now
+            if db_file.category == "web_vitals" and db_file.file_path.endswith(".json"):
+                try:
+                    print(f"  Parsing file for parsed-data endpoint: {db_file.filename}")
+                    print(f"    File path: {db_file.file_path}")
+                    
+                    # Parse the file directly - this should use the same logic as parse_multiple
+                    from app.parsers.lighthouse_parser import LighthouseParser
+                    parsed_data = LighthouseParser.parse(db_file.file_path)
+                    
+                    # Get page data
+                    page_data = parsed_data.get("_page_data", [])
+                    print(f"    Found {len(page_data)} page(s) in parsed data")
+                    
+                    for page_idx, page in enumerate(page_data, 1):
+                        # Extract values explicitly to ensure no reference issues
+                        lcp_val = float(page.get("lcp", 0))
+                        fcp_val = float(page.get("fcp", 0))
+                        tbt_val = float(page.get("tbt", 0))
+                        
+                        print(f"    Page {page_idx}: LCP={lcp_val*1000:.0f}ms, FCP={fcp_val*1000:.0f}ms, TBT={tbt_val:.0f}ms")
+                        
+                        parsed_data_list.append({
+                            "run_id": run_id,
+                            "file_id": db_file.file_id,
+                            "filename": db_file.filename,
+                            "file_path": db_file.file_path,
+                            "page_title": str(page.get("page_title", "N/A")),
+                            "url": str(page.get("url", "N/A")),
+                            "fcp": float(page.get("fcp", 0)),
+                            "lcp": float(page.get("lcp", 0)),
+                            "speed_index": float(page.get("speed_index", 0)),
+                            "tbt": float(page.get("tbt", 0)),
+                            "cls": float(page.get("cls", 0)),
+                            "tti": float(page.get("tti", 0)),
+                            "performance_score": float(page.get("performance_score", 0)),
+                            "test_duration": float(page.get("test_duration", 0)),
+                            "total_elements": int(page.get("total_elements", 0)),
+                            "total_bytes": int(page.get("total_bytes", 0)),
+                        })
+                except Exception as e:
+                    print(f"Error parsing file {db_file.filename}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    parsed_data_list.append({
+                        "run_id": run_id,
+                        "file_id": db_file.file_id,
+                        "filename": db_file.filename,
+                        "file_path": db_file.file_path,
+                        "error": str(e),
+                    })
+        
+        return {
+            "run_id": run_id,
+            "total_files": len(files),
+            "parsed_files": len([f for f in files if f.category == "web_vitals" and f.file_path.endswith(".json")]),
+            "parsed_data": parsed_data_list
+        }
+    except Exception as e:
+        print(f"Error getting parsed data for run {run_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/runs/{run_id}/progress")
 async def get_report_progress(run_id: str):
     """Get progress of report generation for a run"""
@@ -845,17 +924,34 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
     
     def run_analysis_with_timeout():
         """Run analysis in a separate thread with timeout"""
+        # CRITICAL: Create a new database session for this thread
+        # SQLAlchemy sessions are not thread-safe
+        from app.database import SessionLocal
+        thread_db = SessionLocal()
         try:
             print(f"\n{'='*60}")
             print(f"Starting report generation thread for {run_id}")
             print(f"{'='*60}\n")
             
-            # Update status for all files
-            for f in files:
-                f.report_status = "analyzing" if not regenerate else "generating"
-            db.commit()
+            # Refresh files from database in this thread's session
+            try:
+                thread_files = DatabaseService.get_files_by_run_id(thread_db, run_id)
+                if not thread_files:
+                    raise ValueError(f"No files found for run {run_id}")
+                
+        # Update status for all files
+                for f in thread_files:
+                    f.report_status = "analyzing" if not regenerate else "generating"
+                thread_db.commit()
+                print(f"✓ Status updated to analyzing/generating for {len(thread_files)} files")
+            except Exception as status_error:
+                print(f"✗ Error updating status: {status_error}")
+                import traceback
+                traceback.print_exc()
+                thread_db.rollback()
+                raise
             
-            result = perform_analysis_and_report_generation(files, db, run_id, regenerate, start_time=time.time())
+            result = perform_analysis_and_report_generation(thread_files, thread_db, run_id, regenerate, start_time=time.time())
             
             print(f"\n{'='*60}")
             print(f"Report generation thread completed for {run_id}")
@@ -884,9 +980,11 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
             traceback.print_exc()
             ReportProgressTracker.fail(run_id, error_msg)
             try:
-                for f in files:
-                    f.report_status = "error"
-                db.commit()
+                thread_files = DatabaseService.get_files_by_run_id(thread_db, run_id)
+                if thread_files:
+                    for f in thread_files:
+                        f.report_status = "error"
+                    thread_db.commit()
             except Exception as db_error:
                 print(f"✗ Error updating database status: {str(db_error)}")
             # Wrap in a dict so it can be returned and checked
@@ -895,6 +993,12 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
                 "error": error_msg,
                 "run_id": run_id
             }
+        finally:
+            # Always close the database session
+            try:
+                thread_db.close()
+            except Exception as close_error:
+                print(f"✗ Error closing database session: {close_error}")
     
     try:
         # Use ThreadPoolExecutor to run with timeout
@@ -935,6 +1039,8 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
 def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_time):
     """Perform the actual analysis and report generation with optimizations"""
     try:
+        print(f"  → perform_analysis_and_report_generation started for {run_id}")
+        print(f"     Files count: {len(files)}, Regenerate: {regenerate}")
         print(f"\n{'='*60}")
         print(f"Starting report generation for {run_id}")
         print(f"Files: {len(files)}, Regenerate: {regenerate}")
@@ -1315,42 +1421,124 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                 lighthouse_files = [f for f in category_files if f.file_path.endswith(".json")]
                 
                 if len(lighthouse_files) > 1:
-                    # Multiple Lighthouse files - Aggregate metrics (NOT concatenate)
+                    # Multiple Lighthouse files - Use new clean implementation
                     print(f"\n{'='*60}")
                     print(f"LIGHTHOUSE ANALYSIS: Multiple Lighthouse files detected")
-                    print(f"Strategy: Aggregate metrics (median/worst score)")
-                    print(f"Merging {len(lighthouse_files)} Lighthouse files for run {run_id}...")
+                    print(f"Regenerate mode: {regenerate}")
+                    print(f"Parsing {len(lighthouse_files)} Lighthouse JSON files...")
                     print(f"{'='*60}\n")
                     
                     lighthouse_file_paths = [f.file_path for f in lighthouse_files]
-                    print(f"  Parsing {len(lighthouse_file_paths)} Lighthouse JSON files...")
-                    try:
-                        # Lighthouse merge: Statistical aggregation
-                        merged_lighthouse_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
-                        print(f"  ✓ Merged Lighthouse data successfully (aggregated)")
-                    except Exception as e:
-                        print(f"  ✗ Error merging Lighthouse files: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        raise HTTPException(status_code=500, detail=f"Error merging Lighthouse files: {e}")
                     
-                    # Analyze merged data
-                    print(f"Starting analysis of merged Lighthouse data...")
-                    try:
-                        analysis_result = LighthouseAnalyzer.analyze(merged_lighthouse_data)
-                        metrics = analysis_result
-                        print(f"✓ Lighthouse analysis complete")
-                    except Exception as e:
-                        print(f"✗ Lighthouse analysis failed: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-                        raise HTTPException(status_code=500, detail=f"Lighthouse analysis failed: {str(e)}")
+                    # CRITICAL: Always re-parse when regenerate=True, or if no existing analysis
+                    should_reparse = regenerate
+                    if not should_reparse:
+                        # Check if all files have analysis
+                        for db_file in lighthouse_files:
+                            existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
+                            if not existing_analysis:
+                                should_reparse = True
+                                break
+                    
+                    lighthouse_file_paths = [f.file_path for f in lighthouse_files]
+                    
+                    # CRITICAL: Always re-parse when regenerate=True, or if no existing analysis
+                    should_reparse = regenerate
+                    if not should_reparse:
+                        # Check if all files have analysis
+                        for db_file in lighthouse_files:
+                            existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
+                            if not existing_analysis:
+                                should_reparse = True
+                                break
+                    
+                    if should_reparse:
+                        print(f"  → Re-parsing {len(lighthouse_files)} files...")
+                        try:
+                            # Update progress: Parsing started
+                            ReportProgressTracker.update_task(run_id, "parsing", "in_progress", 0, f"Parsing {len(lighthouse_files)} Lighthouse files...")
+                            
+                            # Use parse_multiple to get consolidated data with all pages
+                            parsed_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
+                            
+                            # Update progress: Parsing complete
+                            ReportProgressTracker.update_task(run_id, "parsing", "completed", 100, "Parsing complete")
+                            
+                            # Update progress: Analysis started
+                            ReportProgressTracker.update_task(run_id, "analysis", "in_progress", 0, "Analyzing Lighthouse data...")
+                            
+                            # Analyze the consolidated data
+                            metrics = LighthouseAnalyzer.analyze(parsed_data)
+                            
+                            # Update progress: Analysis complete
+                            ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, "Analysis complete")
+                            
+                            print(f"✓ Parsed and analyzed {len(lighthouse_files)} files")
+                            print(f"✓ Report contains {len(metrics.get('page_data', []))} pages")
+                        except Exception as parse_error:
+                            print(f"✗ Error during parsing/analysis: {parse_error}")
+                            import traceback
+                            traceback.print_exc()
+                            # Update status to error
+                            ReportProgressTracker.fail(run_id, f"Error during parsing/analysis: {str(parse_error)}")
+                            for db_file in lighthouse_files:
+                                db_file.report_status = "error"
+                            db.commit()
+                            raise
+                    else:
+                        # Reuse existing analysis from first file
+                        print(f"  → Reusing existing analysis (regenerate=False)")
+                        existing_analysis = DatabaseService.get_analysis_result(db, lighthouse_files[0].file_id)
+                        if existing_analysis:
+                            metrics = existing_analysis.metrics
+                            print(f"✓ Reusing existing analysis for {len(lighthouse_files)} files")
+                            print(f"✓ Report contains {len(metrics.get('page_data', []))} pages")
+                        else:
+                            # Fallback: parse if no analysis exists
+                            print(f"  → No existing analysis found, parsing...")
+                            try:
+                                # Update progress: Parsing started
+                                ReportProgressTracker.update_task(run_id, "parsing", "in_progress", 0, f"Parsing {len(lighthouse_files)} Lighthouse files...")
+                                
+                                parsed_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
+                                
+                                # Update progress: Parsing complete
+                                ReportProgressTracker.update_task(run_id, "parsing", "completed", 100, "Parsing complete")
+                                
+                                # Update progress: Analysis started
+                                ReportProgressTracker.update_task(run_id, "analysis", "in_progress", 0, "Analyzing Lighthouse data...")
+                                
+                                metrics = LighthouseAnalyzer.analyze(parsed_data)
+                                
+                                # Update progress: Analysis complete
+                                ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, "Analysis complete")
+                                
+                                print(f"✓ Parsed and analyzed {len(lighthouse_files)} files")
+                                print(f"✓ Report contains {len(metrics.get('page_data', []))} pages")
+                            except Exception as parse_error:
+                                print(f"✗ Error during parsing/analysis: {parse_error}")
+                                import traceback
+                                traceback.print_exc()
+                                # Update status to error
+                                ReportProgressTracker.fail(run_id, f"Error during parsing/analysis: {str(parse_error)}")
+                                for db_file in lighthouse_files:
+                                    db_file.report_status = "error"
+                                db.commit()
+                                raise
                     
                     # Store analysis for all Lighthouse files
+                    file_count = len(lighthouse_files)
+                    total_records += file_count
+                    
+                    # CRITICAL: Make a deep copy of metrics for each file to avoid shared references
+                    import copy
                     for db_file in lighthouse_files:
+                        # Create a deep copy of metrics for this file to ensure no shared references
+                        file_metrics = copy.deepcopy(metrics)
+                        
                         existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
                         if existing_analysis:
-                            existing_analysis.metrics = metrics
+                            existing_analysis.metrics = file_metrics
                             existing_analysis.analyzed_at = datetime.utcnow()
                             existing_analysis.analysis_duration = time.time() - start_time
                         else:
@@ -1358,22 +1546,33 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 db=db,
                                 file_id=db_file.file_id,
                                 category=category,
-                                metrics=metrics,
+                                metrics=file_metrics,
                                 analysis_duration=time.time() - start_time
                             )
-                        db_file.record_count = 1
+                        db_file.record_count = file_count
                     
                     db.commit()
+                    print(f"  ✓ Updated record_count to {file_count} for all {len(lighthouse_files)} files")
+                    
+                    # Validate metrics before adding to all_metrics
+                    print(f"  🔍 VALIDATION: Checking metrics before adding to all_metrics...")
+                    page_data_in_metrics = metrics.get('page_data', [])
+                    print(f"    Metrics page_data count: {len(page_data_in_metrics)}")
+                    if len(page_data_in_metrics) > 1:
+                        for idx, page in enumerate(page_data_in_metrics[:3], 1):
+                            if isinstance(page, dict):
+                                lcp = page.get('lcp', 0)
+                                print(f"    Metrics Page {idx}: LCP={lcp*1000:.0f}ms")
                     
                     all_metrics.append({
                         'file_id': lighthouse_files[0].file_id,
                         'filename': f"Merged: {', '.join([f.filename for f in lighthouse_files[:3]])}{'...' if len(lighthouse_files) > 3 else ''}",
                         'category': category,
-                        'metrics': metrics
+                        'metrics': metrics  # This should have page_data with all pages
                     })
                     
                 elif len(lighthouse_files) == 1:
-                    # Single Lighthouse file
+                    # Single Lighthouse file - Use new clean implementation
                     db_file = lighthouse_files[0]
                     existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
                     
@@ -1382,13 +1581,32 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         metrics = existing_analysis.metrics
                     else:
                         print(f"Analyzing Lighthouse file {db_file.filename}...")
+                        print(f"  Regenerate mode: {regenerate}")
                         file_path = db_file.file_path
                         
-                        lighthouse_data = LighthouseParser.parse(file_path)
-                        analysis_result = LighthouseAnalyzer.analyze(lighthouse_data)
-                        metrics = analysis_result
+                        # CRITICAL: Always re-parse when regenerate=True
+                        print(f"  → Re-parsing file...")
+                        
+                        # Update progress: Parsing started
+                        ReportProgressTracker.update_task(run_id, "parsing", "in_progress", 0, f"Parsing Lighthouse file: {db_file.filename}")
+                        
+                        # Parse single file
+                        parsed_data = LighthouseParser.parse(file_path)
+                        
+                        # Update progress: Parsing complete
+                        ReportProgressTracker.update_task(run_id, "parsing", "completed", 100, "Parsing complete")
+                        
+                        # Update progress: Analysis started
+                        ReportProgressTracker.update_task(run_id, "analysis", "in_progress", 0, "Analyzing Lighthouse data...")
+                        
+                        # Analyze
+                        metrics = LighthouseAnalyzer.analyze(parsed_data)
+                        
+                        # Update progress: Analysis complete
+                        ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, "Analysis complete")
                         
                         db_file.record_count = 1
+                        total_records += 1
                         
                         if existing_analysis:
                             existing_analysis.metrics = metrics
@@ -1403,6 +1621,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 metrics=metrics,
                                 analysis_duration=time.time() - start_time
                             )
+                        
+                        print(f"✓ Analyzed single file: {len(metrics.get('page_data', []))} page(s)")
                     
                     all_metrics.append({
                         'file_id': db_file.file_id,
@@ -1411,10 +1631,11 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         'metrics': metrics
                     })
                 
-                # Handle non-Lighthouse web_vitals files (CSV)
-                csv_files = [f for f in category_files if not f.file_path.endswith(".json")]
-                for db_file in csv_files:
-                    existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
+                else:
+                    # Handle non-Lighthouse web_vitals files (CSV)
+                    csv_files = [f for f in category_files if not f.file_path.endswith(".json")]
+                    for db_file in csv_files:
+                        existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
                     
                     if existing_analysis and not regenerate:
                         print(f"Reusing existing analysis for {db_file.filename}")
@@ -1444,17 +1665,17 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 metrics=metrics,
                                 analysis_duration=time.time() - start_time
                             )
-                    
-                    total_records += record_count
-                    
-                    all_metrics.append({
-                        'file_id': db_file.file_id,
-                        'filename': db_file.filename,
-                        'category': category,
-                        'metrics': metrics
-                    })
+                        
+                        total_records += record_count
+                        
+                        all_metrics.append({
+                            'file_id': db_file.file_id,
+                            'filename': db_file.filename,
+                            'category': category,
+                            'metrics': metrics
+                        })
             
-            else:
+            elif category == "ui_performance":
                 # For other categories (ui_performance), analyze individually
                 for db_file in category_files:
                     existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
@@ -1504,15 +1725,15 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 metrics=metrics,
                                 analysis_duration=time.time() - start_time
                             )
-                    
+            
                     total_records += record_count
                     
-                    all_metrics.append({
-                        'file_id': db_file.file_id,
-                        'filename': db_file.filename,
-                        'category': category,
-                        'metrics': metrics
-                    })
+            all_metrics.append({
+                'file_id': db_file.file_id,
+                'filename': db_file.filename,
+                'category': category,
+                'metrics': metrics
+            })
         
         analysis_duration = time.time() - start_time
         print(f"\n✓ Analysis phase completed in {analysis_duration:.1f}s")
@@ -1569,6 +1790,31 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         
         print(f"✓ Using primary_category: {primary_category}, metrics keys: {list(primary_metrics.keys())[:5]}...")
         
+        # CRITICAL: Validate page_data is present and has unique metrics
+        if isinstance(primary_metrics, dict) and 'page_data' in primary_metrics:
+            page_data_list = primary_metrics.get('page_data', [])
+            print(f"  🔍 VALIDATION: primary_metrics contains {len(page_data_list)} pages")
+            if len(page_data_list) > 1:
+                print(f"  🔍 VALIDATION: Checking for unique metrics in page_data...")
+                lcp_values = []
+                for idx, page in enumerate(page_data_list, 1):
+                    if isinstance(page, dict):
+                        lcp = page.get('lcp', 0)
+                        fcp = page.get('fcp', 0)
+                        tbt = page.get('tbt', 0)
+                        title = page.get('page_title', 'N/A')
+                        lcp_values.append(lcp)
+                        print(f"    Page {idx}: {title[:40]}... | LCP={lcp*1000:.0f}ms, FCP={fcp*1000:.0f}ms, TBT={tbt:.0f}ms")
+                
+                unique_lcps = len(set([round(v, 2) for v in lcp_values if v > 0]))
+                if unique_lcps < len([v for v in lcp_values if v > 0]):
+                    print(f"  ⚠️  WARNING: Only {unique_lcps} unique LCP values found out of {len([v for v in lcp_values if v > 0])} pages!")
+                    print(f"      LCP values: {[v*1000 for v in lcp_values]}")
+                else:
+                    print(f"  ✅ VALIDATION PASSED: All {unique_lcps} pages have unique LCP values")
+        else:
+            print(f"  ⚠️  WARNING: primary_metrics does not contain 'page_data' key")
+        
         # Use the first file for report generation
         primary_file = files[0]
         
@@ -1593,6 +1839,7 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         print(f"  Total samples: {primary_metrics.get('total_samples', 'N/A')}")
         
         html_start_time = time.time()
+        html_content = None
         try:
             if primary_category == "jmeter":
                 print(f"  Calling HTMLReportGenerator.generate_jmeter_html_report()...")
@@ -1613,6 +1860,23 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                 if isinstance(primary_metrics, dict) and "metrics" in primary_metrics and "grades" in primary_metrics and "overall_grade" in primary_metrics:
                     # Use Lighthouse HTML generator
                     print(f"  Calling LighthouseHTMLGenerator.generate_full_report()...")
+                    print(f"  📊 Routes: primary_metrics keys = {list(primary_metrics.keys())}")
+                    print(f"  📊 Routes: page_data in primary_metrics = {'page_data' in primary_metrics}")
+                    if 'page_data' in primary_metrics:
+                        page_data_list = primary_metrics.get('page_data', [])
+                        print(f"  📊 Routes: page_data count = {len(page_data_list)}")
+                        # Validate each page has unique metrics
+                        for idx, page in enumerate(page_data_list[:3], 1):  # Show first 3
+                            if isinstance(page, dict):
+                                lcp = page.get('lcp', 0)
+                                fcp = page.get('fcp', 0)
+                                title = page.get('page_title', 'N/A')
+                                print(f"    Page {idx}: {title[:40]}... | LCP={lcp*1000:.0f}ms, FCP={fcp*1000:.0f}ms")
+                    
+                    # CRITICAL: Add progress update and timeout protection
+                    ReportProgressTracker.update_task(run_id, "html_generation", "in_progress", 20, "Generating Lighthouse HTML report...")
+                    print(f"  → Starting Lighthouse HTML generation (this may take a moment)...")
+                    
                     html_content = LighthouseHTMLGenerator.generate_full_report(primary_metrics, primary_file.filename)
                     html_duration = time.time() - html_start_time
                     print(f"✓ Lighthouse HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
@@ -1624,14 +1888,24 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             else:
                 html_content = HTMLReportGenerator.generate_ui_performance_html_report(primary_metrics, primary_file.filename)
             
+            if html_content is None:
+                raise ValueError("HTML content is None - generation may have failed silently")
+            
             ReportProgressTracker.update_task(run_id, "html_generation", "completed", 100, f"HTML report generated ({len(html_content):,} chars)")
         except Exception as e:
             html_duration = time.time() - html_start_time
             print(f"✗ HTML report generation failed after {html_duration:.1f}s: {str(e)}")
-            ReportProgressTracker.update_task(run_id, "html_generation", "failed", 0, f"HTML generation failed: {str(e)}")
             import traceback
             traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"HTML report generation failed: {str(e)}")
+            ReportProgressTracker.update_task(run_id, "html_generation", "failed", 0, f"HTML generation failed: {str(e)}")
+            # Update file status to error
+            try:
+                for f in files:
+                    f.report_status = "error"
+                db.commit()
+            except Exception as db_error:
+                print(f"✗ Error updating file status: {db_error}")
+            raise
         
         ReportProgressTracker.update_task(run_id, "pdf_generation", "in_progress", 0, "Generating PDF report...")
         print(f"Generating PDF report...")
@@ -1680,8 +1954,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         try:
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
-            html_size = len(html_content.encode('utf-8'))
-            print(f"  ✓ HTML report saved ({html_size:,} bytes)")
+                html_size = len(html_content.encode('utf-8'))
+                print(f"  ✓ HTML report saved ({html_size:,} bytes)")
             
             DatabaseService.create_generated_report(
                 db=db,
@@ -1705,8 +1979,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         try:
             with open(pdf_path, "wb") as f:
                 f.write(pdf_bytes)
-            pdf_size = len(pdf_bytes)
-            print(f"  ✓ PDF report saved ({pdf_size:,} bytes)")
+                pdf_size = len(pdf_bytes)
+                print(f"  ✓ PDF report saved ({pdf_size:,} bytes)")
             
             DatabaseService.create_generated_report(
                 db=db,
@@ -1729,8 +2003,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         try:
             with open(ppt_path, "wb") as f:
                 f.write(ppt_bytes)
-            ppt_size = len(ppt_bytes)
-            print(f"  ✓ PPT report saved ({ppt_size:,} bytes)")
+                ppt_size = len(ppt_bytes)
+                print(f"  ✓ PPT report saved ({ppt_size:,} bytes)")
             
             DatabaseService.create_generated_report(
                 db=db,

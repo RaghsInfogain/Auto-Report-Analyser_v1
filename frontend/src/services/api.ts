@@ -204,3 +204,35 @@ export const getReportProgress = async (runId: string): Promise<ReportProgress> 
   return response.data;
 };
 
+export interface ParsedDataItem {
+  run_id: string;
+  file_id: string;
+  filename: string;
+  file_path: string;
+  page_title: string;
+  url: string;
+  fcp: number;
+  lcp: number;
+  speed_index: number;
+  tbt: number;
+  cls: number;
+  tti: number;
+  performance_score: number;
+  test_duration: number;
+  total_elements: number;
+  total_bytes: number;
+  error?: string;
+}
+
+export interface ParsedDataResponse {
+  run_id: string;
+  total_files: number;
+  parsed_files: number;
+  parsed_data: ParsedDataItem[];
+}
+
+export const getRunParsedData = async (runId: string): Promise<ParsedDataResponse> => {
+  const response = await api.get(`/api/runs/${runId}/parsed-data`);
+  return response.data;
+};
+

@@ -12,19 +12,118 @@ class LighthouseHTMLGenerator:
     @staticmethod
     def generate_full_report(analysis: Dict[str, Any], filename: str = "lighthouse_report.html") -> str:
         """Generate complete HTML report"""
-        metrics = analysis.get("metrics", {})
-        grades = analysis.get("grades", {})
-        overall_grade = analysis.get("overall_grade", {})
-        issues = analysis.get("issues", [])
-        recommendations = analysis.get("recommendations", {})
-        business_impact = analysis.get("business_impact", {})
-        aiml_results = analysis.get("aiml_results", {})
-        metadata = analysis.get("report_metadata", {})
-        
-        test_overview = analysis.get("test_overview", {})
-        page_data = analysis.get("page_data", [])
-        
-        html = f'''<!DOCTYPE html>
+        try:
+            metrics = analysis.get("metrics", {})
+            grades = analysis.get("grades", {})
+            overall_grade = analysis.get("overall_grade", {})
+            issues = analysis.get("issues", [])
+            recommendations = analysis.get("recommendations", {})
+            business_impact = analysis.get("business_impact", {})
+            aiml_results = analysis.get("aiml_results", {})
+            metadata = analysis.get("report_metadata", {})
+            
+            test_overview = analysis.get("test_overview", {})
+            page_data = analysis.get("page_data", [])
+            
+            # Debug: Log page_data info
+            print(f"  📊 HTML Generator: page_data count = {len(page_data) if page_data else 0}")
+            print(f"  📊 HTML Generator: analysis keys = {list(analysis.keys())}")
+            if page_data and len(page_data) > 0:
+                print(f"  📊 HTML Generator: First page keys = {list(page_data[0].keys()) if isinstance(page_data[0], dict) else 'Not a dict'}")
+                print(f"  📊 HTML Generator: First page data = {page_data[0] if isinstance(page_data[0], dict) else 'Not a dict'}")
+                # Check if metrics are present
+                first_page = page_data[0] if isinstance(page_data[0], dict) else {}
+                print(f"  📊 HTML Generator: First page fcp = {first_page.get('fcp', 'MISSING')}")
+                print(f"  📊 HTML Generator: First page lcp = {first_page.get('lcp', 'MISSING')}")
+                print(f"  📊 HTML Generator: First page page_title = {first_page.get('page_title', 'MISSING')}")
+                print(f"  📊 HTML Generator: First page url = {first_page.get('url', 'MISSING')}")
+            
+            # Ensure page_data is a list
+            if not isinstance(page_data, list):
+                print(f"  ⚠️  Warning: page_data is not a list, converting...")
+                if page_data:
+                    page_data = [page_data]
+                else:
+                    page_data = []
+            
+            # Generate sections with error handling
+            sections = []
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_header(metadata))
+            except Exception as e:
+                print(f"  ✗ Error generating header: {e}")
+                sections.append(f"<div class='section'><h2>Header</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_executive_summary(metrics, grades, overall_grade, issues))
+            except Exception as e:
+                print(f"  ✗ Error generating executive summary: {e}")
+                sections.append(f"<div class='section'><h2>Executive Summary</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_performance_scorecard(metrics, grades, overall_grade))
+            except Exception as e:
+                print(f"  ✗ Error generating performance scorecard: {e}")
+                sections.append(f"<div class='section'><h2>Performance Scorecard</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_test_overview(test_overview, metadata))
+            except Exception as e:
+                print(f"  ✗ Error generating test overview: {e}")
+                sections.append(f"<div class='section'><h2>Test Overview</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_detailed_metrics_table(page_data))
+            except Exception as e:
+                print(f"  ✗ Error generating detailed metrics table: {e}")
+                import traceback
+                traceback.print_exc()
+                sections.append(f"<div class='section'><h2>Detailed Performance Metrics</h2><p>Error generating table: {str(e)}<br>Page data: {len(page_data) if page_data else 0} pages</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_issues_table(issues, page_data))
+            except Exception as e:
+                print(f"  ✗ Error generating issues table: {e}")
+                sections.append(f"<div class='section'><h2>Issues Identified</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_optimization_roadmap(recommendations))
+            except Exception as e:
+                print(f"  ✗ Error generating optimization roadmap: {e}")
+                sections.append(f"<div class='section'><h2>Performance Optimization Roadmap</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_business_impact(business_impact))
+            except Exception as e:
+                print(f"  ✗ Error generating business impact: {e}")
+                sections.append(f"<div class='section'><h2>Business Impact Projections</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_monitoring_maintenance())
+            except Exception as e:
+                print(f"  ✗ Error generating monitoring maintenance: {e}")
+                sections.append(f"<div class='section'><h2>Monitoring and Maintenance</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_aiml_appendix(aiml_results))
+            except Exception as e:
+                print(f"  ✗ Error generating AIML appendix: {e}")
+                sections.append(f"<div class='section'><h2>AIML Modeling Appendix</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_final_conclusion(metrics, grades, overall_grade))
+            except Exception as e:
+                print(f"  ✗ Error generating final conclusion: {e}")
+                sections.append(f"<div class='section'><h2>Final Conclusion</h2><p>Error: {str(e)}</p></div>")
+            
+            try:
+                sections.append(LighthouseHTMLGenerator._generate_report_details(metadata))
+            except Exception as e:
+                print(f"  ✗ Error generating report details: {e}")
+                sections.append(f"<div class='section'><h2>Report Details</h2><p>Error: {str(e)}</p></div>")
+            
+            html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -34,38 +133,44 @@ class LighthouseHTMLGenerator:
 </head>
 <body>
     <div class="container">
-        {LighthouseHTMLGenerator._generate_header(metadata)}
-        {LighthouseHTMLGenerator._generate_executive_summary(metrics, grades, overall_grade, issues)}
-        {LighthouseHTMLGenerator._generate_performance_scorecard(metrics, grades, overall_grade)}
-        {LighthouseHTMLGenerator._generate_test_overview(test_overview, metadata)}
-        {LighthouseHTMLGenerator._generate_detailed_metrics_table(page_data)}
-        {LighthouseHTMLGenerator._generate_issues_table(issues, page_data)}
-        {LighthouseHTMLGenerator._generate_optimization_roadmap(recommendations)}
-        {LighthouseHTMLGenerator._generate_business_impact(business_impact)}
-        {LighthouseHTMLGenerator._generate_monitoring_maintenance()}
-        {LighthouseHTMLGenerator._generate_aiml_appendix(aiml_results)}
-        {LighthouseHTMLGenerator._generate_final_conclusion(metrics, grades, overall_grade)}
-        {LighthouseHTMLGenerator._generate_report_details(metadata)}
+        {''.join(sections)}
     </div>
 </body>
 </html>'''
-        
-        return html
+            
+            return html
+        except Exception as e:
+            print(f"  ✗ Critical error in generate_full_report: {e}")
+            import traceback
+            traceback.print_exc()
+            # Return a minimal error report
+            return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Report Generation Error</title>
+</head>
+<body>
+    <h1>Report Generation Error</h1>
+    <p>An error occurred while generating the report: {str(e)}</p>
+    <pre>{traceback.format_exc()}</pre>
+</body>
+</html>'''
     
     @staticmethod
     def _generate_css() -> str:
         """Generate CSS styles"""
         return '''<style>
         :root {
-            --primary-color: #2563eb;
-            --success-color: #059669;
-            --warning-color: #d97706;
-            --danger-color: #dc2626;
-            --background-light: #f8fafc;
+            --primary-color: #6c5ce7;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --background-light: #f5f5f5;
             --card-background: #ffffff;
-            --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --border-color: #e2e8f0;
+            --text-primary: #333;
+            --text-secondary: #666;
+            --border-color: #e0e0e0;
         }
 
         * {
@@ -105,34 +210,37 @@ class LighthouseHTMLGenerator:
         }
 
         .section {
-            background: var(--card-background);
-            margin: 2rem 0;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            border: 1px solid var(--border-color);
+            background: white;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e0e0e0;
         }
 
         .section h2 {
-            color: var(--primary-color);
-            font-size: 1.8rem;
-            margin-bottom: 1.5rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid var(--primary-color);
+            color: #333;
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin: 0 0 1.5rem 0;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e0e0e0;
         }
 
         .section h3 {
-            color: var(--text-primary);
-            font-size: 1.4rem;
+            color: #333;
+            font-size: 1rem;
+            font-weight: 600;
             margin: 1.5rem 0 1rem 0;
         }
 
         .executive-summary {
-            background: linear-gradient(135deg, #1e40af, #3b82f6);
-            color: white;
-            padding: 2rem;
-            border-radius: 12px;
-            margin: 2rem 0;
+            background: white;
+            color: #333;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1.5rem 0;
+            border: 1px solid #e0e0e0;
         }
 
         .summary-grid {
@@ -145,8 +253,9 @@ class LighthouseHTMLGenerator:
         .summary-item {
             text-align: center;
             padding: 1rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
         }
 
         .summary-value {
@@ -162,32 +271,38 @@ class LighthouseHTMLGenerator:
 
         .grade-badge {
             display: inline-block;
-            padding: 0.5rem 1.5rem;
-            border-radius: 20px;
-            font-weight: 700;
-            font-size: 1.2rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-weight: 500;
+            font-size: 0.75rem;
             margin: 0.5rem;
         }
 
-        .grade-a { background: var(--success-color); color: white; }
-        .grade-b { background: #3b82f6; color: white; }
-        .grade-c { background: var(--warning-color); color: white; }
-        .grade-d { background: #f59e0b; color: white; }
-        .grade-e { background: #ef4444; color: white; }
-        .grade-f { background: var(--danger-color); color: white; }
+        .grade-a { background: #d4edda; color: #155724; }
+        .grade-b { background: #d1ecf1; color: #0c5460; }
+        .grade-c { background: #fff3cd; color: #856404; }
+        .grade-d { background: #f8d7da; color: #721c24; }
+        .grade-e { background: #f8d7da; color: #721c24; }
+        .grade-f { background: #f8d7da; color: #721c24; }
         
         .scorecard-card {
-            background: var(--card-background);
-            border: 2px solid var(--border-color);
-            border-radius: 12px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
             padding: 1.5rem;
             text-align: center;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: box-shadow 0.2s;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            overflow: hidden;
         }
         
         .scorecard-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         
         .scorecard-grid {
@@ -197,48 +312,161 @@ class LighthouseHTMLGenerator:
             margin: 1.5rem 0;
         }
         
+        .card-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            line-height: 1.2;
+            max-width: 100%;
+        }
+        
+        .card-value-large {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            line-height: 1.2;
+            max-width: 100%;
+        }
+        
+        @media (max-width: 768px) {
+            .card-value {
+                font-size: 2rem;
+            }
+            .card-value-large {
+                font-size: 1.4rem;
+            }
+            .scorecard-card {
+                min-height: 120px;
+            }
+            .category-card {
+                min-height: 180px;
+            }
+        }
+        
+        /* Ensure long text values wrap */
+        .scorecard-card > * {
+            max-width: 100%;
+        }
+        
+        .category-card > * {
+            max-width: 100%;
+        }
+        
+        .card-title {
+            margin: 0.5rem 0;
+            color: #333;
+            font-size: 0.875rem;
+            font-weight: 600;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        .card-description {
+            margin: 0;
+            color: #666;
+            font-size: 0.875rem;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .category-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 1.5rem;
+            text-align: center;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            overflow: hidden;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .category-card p {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            line-height: 1.4;
+            max-width: 100%;
+        }
+        
         .grade-card {
-            background: var(--card-background);
-            border: 2px solid var(--border-color);
-            border-radius: 8px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
             padding: 1rem;
             margin: 0.5rem 0;
         }
         
         .risk-card {
             padding: 1.5rem;
-            border-radius: 8px;
+            border-radius: 4px;
             margin: 1.5rem 0;
+            background: white;
+            border: 1px solid #e0e0e0;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
             margin: 1rem 0;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
+            background: white;
+            border: 1px solid #e0e0e0;
         }
 
         table th,
         table td {
-            padding: 0.75rem;
+            padding: 1rem;
             text-align: left;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid #e0e0e0;
+            vertical-align: middle;
+        }
+
+        table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
         }
 
         table th {
-            background: var(--background-light);
             font-weight: 600;
-            color: var(--text-primary);
+            color: #666;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0.75rem 1rem;
         }
 
-        table tr:hover {
-            background: var(--background-light);
+        table td {
+            color: #333;
+            padding: 1rem;
         }
 
-        .status-good { color: var(--success-color); font-weight: 600; }
-        .status-warning { color: var(--warning-color); font-weight: 600; }
-        .status-poor { color: var(--danger-color); font-weight: 600; }
-        .status-critical { color: #991b1b; font-weight: 700; }
+        table tbody tr {
+            transition: background 0.2s;
+            background: white;
+        }
+
+        table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .status-good { color: #10b981; font-weight: 500; }
+        .status-warning { color: #f59e0b; font-weight: 500; }
+        .status-poor { color: #ef4444; font-weight: 500; }
+        .status-critical { color: #dc2626; font-weight: 600; }
 
         .severity-low { background: #d1fae5; color: #065f46; padding: 0.25rem 0.5rem; border-radius: 4px; }
         .severity-medium { background: #fef3c7; color: #92400e; padding: 0.25rem 0.5rem; border-radius: 4px; }
@@ -247,43 +475,57 @@ class LighthouseHTMLGenerator:
 
         .alert {
             padding: 1rem;
-            border-radius: 8px;
+            border-radius: 4px;
             margin: 1rem 0;
             border-left: 4px solid;
         }
 
         .alert-danger {
-            background: #fef2f2;
-            border-color: var(--danger-color);
+            background: #fee2e2;
+            border-color: #ef4444;
             color: #991b1b;
         }
 
         .alert-warning {
-            background: #fffbeb;
-            border-color: var(--warning-color);
+            background: #fef3c7;
+            border-color: #f59e0b;
             color: #92400e;
         }
 
         .phase-section {
             margin: 1.5rem 0;
             padding: 1rem;
-            background: var(--background-light);
-            border-radius: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
         }
 
         .footer {
             margin-top: 3rem;
             padding-top: 2rem;
-            border-top: 2px solid var(--border-color);
+            border-top: 1px solid #e0e0e0;
             text-align: center;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
+            color: #666;
+            font-size: 0.875rem;
         }
 
         @media (max-width: 768px) {
-            .header h1 { font-size: 2rem; }
+            .header h1 { font-size: 1.25rem; }
             .summary-grid { grid-template-columns: 1fr; }
-            table { font-size: 0.8rem; }
+            .scorecard-grid { grid-template-columns: 1fr; }
+            table { font-size: 0.75rem; }
+            .card-value {
+                font-size: 1.25rem;
+            }
+            .card-value-large {
+                font-size: 1rem;
+            }
+            .scorecard-card {
+                min-height: 100px;
+            }
+            .category-card {
+                min-height: 120px;
+            }
         }
     </style>'''
     
@@ -292,7 +534,7 @@ class LighthouseHTMLGenerator:
         """Generate report header"""
         return f'''<div class="header">
             <h1>Performance Test Analysis Report</h1>
-            <p>User Experience Monitoring Analysis</p>
+            <p style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;">User Experience Monitoring Analysis</p>
         </div>'''
     
     @staticmethod
@@ -385,25 +627,25 @@ class LighthouseHTMLGenerator:
             
             <!-- Category Cards -->
             <div class="summary-grid" style="margin-top: 2rem;">
-                <div class="category-card" style="background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 1.5rem; text-align: center;">
+                <div class="category-card">
                     <div class="grade-badge grade-{loading_grade.lower()}" style="font-size: 2rem; margin-bottom: 1rem;">{loading_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: white;">Loading Experience</h3>
+                    <h3 style="margin: 0.5rem 0; color: white; word-wrap: break-word; overflow-wrap: break-word;">Loading Experience</h3>
                     <div style="font-size: 1.5rem; font-weight: 700; color: white; margin: 0.5rem 0;">{loading_score:.0f}/100</div>
-                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.9rem;">{get_grade_explanation(loading_grade, loading_name, loading_metric)}</p>
+                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(loading_grade, loading_name, loading_metric)}</p>
                 </div>
                 
-                <div class="category-card" style="background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 1.5rem; text-align: center;">
+                <div class="category-card">
                     <div class="grade-badge grade-{interactivity_grade.lower()}" style="font-size: 2rem; margin-bottom: 1rem;">{interactivity_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: white;">Interactivity Experience</h3>
+                    <h3 style="margin: 0.5rem 0; color: white; word-wrap: break-word; overflow-wrap: break-word;">Interactivity Experience</h3>
                     <div style="font-size: 1.5rem; font-weight: 700; color: white; margin: 0.5rem 0;">{interactivity_score:.0f}/100</div>
-                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.9rem;">{get_grade_explanation(interactivity_grade, interactivity_name, interactivity_metric)}</p>
+                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(interactivity_grade, interactivity_name, interactivity_metric)}</p>
                 </div>
                 
-                <div class="category-card" style="background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 1.5rem; text-align: center;">
+                <div class="category-card">
                     <div class="grade-badge grade-{visual_grade.lower()}" style="font-size: 2rem; margin-bottom: 1rem;">{visual_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: white;">Visual Stability</h3>
+                    <h3 style="margin: 0.5rem 0; color: white; word-wrap: break-word; overflow-wrap: break-word;">Visual Stability</h3>
                     <div style="font-size: 1.5rem; font-weight: 700; color: white; margin: 0.5rem 0;">{visual_score:.0f}/100</div>
-                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.9rem;">{get_grade_explanation(visual_grade, visual_name, visual_metric)}</p>
+                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(visual_grade, visual_name, visual_metric)}</p>
                 </div>
             </div>
             
@@ -477,11 +719,11 @@ class LighthouseHTMLGenerator:
             <!-- Overall Grade Card -->
             <div class="scorecard-card" style="border: 3px solid {"var(--success-color)" if overall_letter == "A" else "#3b82f6" if overall_letter == "B" else "var(--warning-color)" if overall_letter == "C" else "#f59e0b" if overall_letter == "D" else "#ef4444" if overall_letter == "E" else "var(--danger-color)"}; margin-bottom: 2rem;">
                 <div class="grade-badge grade-{overall_letter.lower()}" style="font-size: 3rem; margin-bottom: 1rem;">{overall_letter}</div>
-                <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Overall Grade</h3>
-                <p style="margin: 0.5rem 0; color: var(--text-secondary);">{get_overall_grade_meaning(overall_letter, overall_score)}</p>
+                <h3 class="card-title">Overall Grade</h3>
+                <p class="card-description" style="margin: 0.5rem 0;">{get_overall_grade_meaning(overall_letter, overall_score)}</p>
                 <div style="margin-top: 1rem;">
-                    <div style="font-size: 2rem; font-weight: 700; color: var(--primary-color);">{overall_score:.1f}/100</div>
-                    <div style="color: var(--text-secondary); margin-top: 0.5rem;">Score Range: {grade_ranges.get(overall_letter, "N/A")}</div>
+                    <div style="font-size: 2rem; font-weight: 700; color: var(--primary-color); word-wrap: break-word;">{overall_score:.1f}/100</div>
+                    <div style="color: var(--text-secondary); margin-top: 0.5rem; word-wrap: break-word;">Score Range: {grade_ranges.get(overall_letter, "N/A")}</div>
                 </div>
             </div>
             
@@ -489,39 +731,42 @@ class LighthouseHTMLGenerator:
             <div class="scorecard-grid">
                 <div class="scorecard-card">
                     <div class="grade-badge grade-{loading_grade.lower()}" style="font-size: 1.5rem; margin-bottom: 1rem;">{loading_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Loading Experience</h3>
-                    <p style="margin: 0.5rem 0; color: var(--text-secondary); font-size: 0.9rem;">{grade_meanings.get(loading_grade, "N/A")}</p>
+                    <h3 class="card-title">Loading Experience</h3>
+                    <p class="card-description">{grade_meanings.get(loading_grade, "N/A")}</p>
                     <div style="margin-top: 1rem;">
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">{loading_score:.0f}/100</div>
-                        <div style="color: var(--text-secondary); margin-top: 0.5rem;">Weightage: {loading_weight}</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color); word-wrap: break-word;">{loading_score:.0f}/100</div>
+                        <div style="color: var(--text-secondary); margin-top: 0.5rem; word-wrap: break-word;">Weightage: {loading_weight}</div>
                     </div>
                 </div>
                 
                 <div class="scorecard-card">
                     <div class="grade-badge grade-{interactivity_grade.lower()}" style="font-size: 1.5rem; margin-bottom: 1rem;">{interactivity_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Interactivity Experience</h3>
-                    <p style="margin: 0.5rem 0; color: var(--text-secondary); font-size: 0.9rem;">{grade_meanings.get(interactivity_grade, "N/A")}</p>
+                    <h3 class="card-title">Interactivity Experience</h3>
+                    <p class="card-description">{grade_meanings.get(interactivity_grade, "N/A")}</p>
                     <div style="margin-top: 1rem;">
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">{interactivity_score:.0f}/100</div>
-                        <div style="color: var(--text-secondary); margin-top: 0.5rem;">Weightage: {interactivity_weight}</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color); word-wrap: break-word;">{interactivity_score:.0f}/100</div>
+                        <div style="color: var(--text-secondary); margin-top: 0.5rem; word-wrap: break-word;">Weightage: {interactivity_weight}</div>
                     </div>
                 </div>
                 
                 <div class="scorecard-card">
                     <div class="grade-badge grade-{visual_grade.lower()}" style="font-size: 1.5rem; margin-bottom: 1rem;">{visual_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Visual Stability</h3>
-                    <p style="margin: 0.5rem 0; color: var(--text-secondary); font-size: 0.9rem;">{grade_meanings.get(visual_grade, "N/A")}</p>
+                    <h3 class="card-title">Visual Stability</h3>
+                    <p class="card-description">{grade_meanings.get(visual_grade, "N/A")}</p>
                     <div style="margin-top: 1rem;">
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color);">{visual_score:.0f}/100</div>
-                        <div style="color: var(--text-secondary); margin-top: 0.5rem;">Weightage: {visual_weight}</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color); word-wrap: break-word;">{visual_score:.0f}/100</div>
+                        <div style="color: var(--text-secondary); margin-top: 0.5rem; word-wrap: break-word;">Weightage: {visual_weight}</div>
                     </div>
                 </div>
                 
                 <div class="scorecard-card">
-                    <div style="font-size: 2rem; font-weight: 700; color: var(--primary-color); margin-bottom: 1rem;">{perf_score:.0f}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Performance Score</h3>
-                    <p style="margin: 0.5rem 0; color: var(--text-secondary); font-size: 0.9rem;">Lighthouse Performance Score</p>
-                    <div style="color: var(--text-secondary); margin-top: 1rem;">Range: 0-100</div>
+                    <div class="grade-badge grade-{"a" if perf_score >= 90 else "b" if perf_score >= 80 else "c" if perf_score >= 70 else "d" if perf_score >= 60 else "e" if perf_score >= 40 else "f"}" style="font-size: 1.5rem; margin-bottom: 1rem;">{"A" if perf_score >= 90 else "B" if perf_score >= 80 else "C" if perf_score >= 70 else "D" if perf_score >= 60 else "E" if perf_score >= 40 else "F"}</div>
+                    <h3 class="card-title">Performance Score</h3>
+                    <p class="card-description">{grade_meanings.get("A" if perf_score >= 90 else "B" if perf_score >= 80 else "C" if perf_score >= 70 else "D" if perf_score >= 60 else "E" if perf_score >= 40 else "F", "N/A")}</p>
+                    <div style="margin-top: 1rem;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary-color); word-wrap: break-word;">{perf_score:.0f}/100</div>
+                        <div style="color: var(--text-secondary); margin-top: 0.5rem; word-wrap: break-word;">Range: 0-100</div>
+                    </div>
                 </div>
             </div>
             
@@ -576,8 +821,8 @@ class LighthouseHTMLGenerator:
         """Generate Test Overview section with cards"""
         total_pages = test_overview.get("total_pages", 1)
         test_duration = test_overview.get("test_duration", "N/A")
-        avg_page_components = test_overview.get("avg_page_components", "N/A")
-        avg_data_processed = test_overview.get("avg_data_processed", "N/A")
+        page_components = test_overview.get("page_components", "N/A")
+        data_processed = test_overview.get("data_processed", "N/A")
         test_config = test_overview.get("test_config", [])
         test_objectives = test_overview.get("test_objectives", [])
         
@@ -587,27 +832,27 @@ class LighthouseHTMLGenerator:
             <!-- Overview Cards -->
             <div class="scorecard-grid">
                 <div class="scorecard-card">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary-color); margin-bottom: 0.5rem;">{total_pages}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Total Pages</h3>
-                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">Pages analyzed</p>
+                    <div class="card-value">{total_pages}</div>
+                    <h3 class="card-title">Total Pages</h3>
+                    <p class="card-description">Pages analyzed</p>
                 </div>
                 
                 <div class="scorecard-card">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary-color); margin-bottom: 0.5rem;">{test_duration}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Test Duration</h3>
-                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">Time taken for analysis</p>
+                    <div class="card-value-large">{test_duration}</div>
+                    <h3 class="card-title">Test Duration</h3>
+                    <p class="card-description">Time taken for analysis</p>
                 </div>
                 
                 <div class="scorecard-card">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary-color); margin-bottom: 0.5rem;">{avg_page_components}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Average Page Components</h3>
-                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">Average DOM elements per page</p>
+                    <div class="card-value-large">{page_components}</div>
+                    <h3 class="card-title">Page Components</h3>
+                    <p class="card-description">Total page components across all pages</p>
                 </div>
                 
                 <div class="scorecard-card">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary-color); margin-bottom: 0.5rem;">{avg_data_processed}</div>
-                    <h3 style="margin: 0.5rem 0; color: var(--text-primary);">Average Data Processed</h3>
-                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">Average data size per page</p>
+                    <div class="card-value-large">{data_processed}</div>
+                    <h3 class="card-title">Data Processed</h3>
+                    <p class="card-description">Total data size across all pages</p>
                 </div>
             </div>
             
@@ -729,68 +974,121 @@ class LighthouseHTMLGenerator:
                 <p>No page data available.</p>
             </div>'''
         
+        # Ensure page_data is a list
+        if not isinstance(page_data, list):
+            print(f"  ⚠️  Warning: page_data is not a list in _generate_detailed_metrics_table")
+            if page_data:
+                page_data = [page_data]
+            else:
+                return '''<div class="section">
+                    <h2>Detailed Performance Metrics</h2>
+                    <p>No page data available.</p>
+                </div>'''
+        
         rows = ""
-        for page in page_data:
-            url = page.get("url", "Unknown Page")
-            # Shorten URL for display
-            display_url = url if len(url) <= 50 else url[:47] + "..."
-            
-            fcp = page.get("fcp", 0)
-            lcp = page.get("lcp", 0)
-            speed_index = page.get("speed_index", 0)
-            tbt = page.get("tbt", 0)
-            cls = page.get("cls", 0)
-            tti = page.get("tti", 0)
-            
-            # Get colors
-            fcp_color = LighthouseHTMLGenerator._get_metric_color(fcp, "fcp")
-            lcp_color = LighthouseHTMLGenerator._get_metric_color(lcp, "lcp")
-            si_color = LighthouseHTMLGenerator._get_metric_color(speed_index, "speed_index")
-            tbt_color = LighthouseHTMLGenerator._get_metric_color(tbt, "tbt")
-            cls_color = LighthouseHTMLGenerator._get_metric_color(cls, "cls")
-            tti_color = LighthouseHTMLGenerator._get_metric_color(tti, "tti")
-            
-            # Get status
-            from app.analyzers.lighthouse_analyzer import LighthouseAnalyzer
-            overall_status = LighthouseAnalyzer._get_metric_status(lcp, "lcp")
-            status_text = overall_status['status']
-            
-            # Calculate overall score (average of all metrics)
-            fcp_score = get_metric_score("fcp", fcp)
-            lcp_score = get_metric_score("lcp", lcp)
-            si_score = get_metric_score("speed_index", speed_index)
-            tbt_score = get_metric_score("tbt", tbt)
-            cls_score = get_metric_score("cls", cls)
-            tti_score = get_metric_score("tti", tti)
-            avg_score = (fcp_score + lcp_score + si_score + tbt_score + cls_score + tti_score) / 6
-            
-            # Color mapping
-            color_map = {
-                "green": "var(--success-color)",
-                "amber": "var(--warning-color)",
-                "red": "var(--danger-color)",
-                "gray": "var(--text-secondary)"
-            }
-            
-            rows += f'''
-                <tr>
-                    <td><strong title="{url}">{display_url}</strong></td>
-                    <td style="color: {color_map.get(fcp_color, 'black')}; font-weight: 600;">{fcp:.1f}s</td>
-                    <td style="color: {color_map.get(lcp_color, 'black')}; font-weight: 600;">{lcp:.1f}s</td>
-                    <td style="color: {color_map.get(si_color, 'black')}; font-weight: 600;">{speed_index:.1f}s</td>
-                    <td style="color: {color_map.get(tbt_color, 'black')}; font-weight: 600;">{tbt:.0f}ms</td>
-                    <td style="color: {color_map.get(cls_color, 'black')}; font-weight: 600;">{cls:.3f}</td>
-                    <td style="color: {color_map.get(tti_color, 'black')}; font-weight: 600;">{tti:.1f}s</td>
-                    <td class="status-{status_text.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', '').lower().replace(' ', '-')}">{status_text}</td>
-                    <td style="color: {"var(--success-color)" if avg_score >= 80 else "var(--warning-color)" if avg_score >= 60 else "var(--danger-color)"}; font-weight: 700;">{avg_score:.0f}/100</td>
-                </tr>'''
+        print(f"  📊 Generating table for {len(page_data)} pages")
+        for idx, page in enumerate(page_data, 1):
+            try:
+                # Debug: Log each page's metrics
+                if isinstance(page, dict):
+                    print(f"    Page {idx}: URL={page.get('url', 'N/A')[:50]}..., LCP={page.get('lcp', 0)*1000:.0f}ms, FCP={page.get('fcp', 0)*1000:.0f}ms, TBT={page.get('tbt', 0):.0f}ms, Title={page.get('page_title', 'N/A')[:30]}")
+                
+                # Safely get values with defaults
+                url = page.get("url", f"Page {idx}") if isinstance(page, dict) else f"Page {idx}"
+                page_title = page.get("page_title", "") if isinstance(page, dict) else ""
+                
+                # Use run number if available for better identification
+                run_number = page.get("_run_number", "") if isinstance(page, dict) else ""
+                if run_number and run_number not in url:
+                    display_url = f"{url} ({run_number})"
+                else:
+                    display_url = url
+                
+                # Shorten URL for display but preserve uniqueness
+                if len(display_url) > 50:
+                    # Show first part and last part to preserve uniqueness
+                    display_url = display_url[:30] + "..." + display_url[-17:] if len(display_url) > 47 else display_url[:47] + "..."
+                
+                # Use page title if available and valid, otherwise use URL
+                # Clean page_title - remove any problematic characters
+                if page_title:
+                    page_title = str(page_title).strip()
+                    # Remove trailing backticks, quotes, or incomplete strings
+                    page_title = page_title.rstrip("`'\"")
+                    # If title looks incomplete or problematic, use URL instead
+                    if len(page_title) < 3 or page_title.endswith(" a`") or "`" in page_title:
+                        page_title = ""
+                
+                page_name_display = page_title if page_title and len(page_title) > 2 else display_url
+                if len(page_name_display) > 50:
+                    page_name_display = page_name_display[:47] + "..."
+                
+                # Safely extract metrics with type checking
+                fcp = float(page.get("fcp", 0)) if isinstance(page, dict) else 0
+                lcp = float(page.get("lcp", 0)) if isinstance(page, dict) else 0
+                speed_index = float(page.get("speed_index", 0)) if isinstance(page, dict) else 0
+                tbt = float(page.get("tbt", 0)) if isinstance(page, dict) else 0
+                cls = float(page.get("cls", 0)) if isinstance(page, dict) else 0
+                tti = float(page.get("tti", 0)) if isinstance(page, dict) else 0
+                
+                # Get colors
+                fcp_color = LighthouseHTMLGenerator._get_metric_color(fcp, "fcp")
+                lcp_color = LighthouseHTMLGenerator._get_metric_color(lcp, "lcp")
+                si_color = LighthouseHTMLGenerator._get_metric_color(speed_index, "speed_index")
+                tbt_color = LighthouseHTMLGenerator._get_metric_color(tbt, "tbt")
+                cls_color = LighthouseHTMLGenerator._get_metric_color(cls, "cls")
+                tti_color = LighthouseHTMLGenerator._get_metric_color(tti, "tti")
+                
+                # Get status
+                from app.analyzers.lighthouse_analyzer import LighthouseAnalyzer
+                overall_status = LighthouseAnalyzer._get_metric_status(lcp, "lcp")
+                status_text = overall_status['status']
+                
+                # Calculate overall score (average of all metrics)
+                fcp_score = get_metric_score("fcp", fcp)
+                lcp_score = get_metric_score("lcp", lcp)
+                si_score = get_metric_score("speed_index", speed_index)
+                tbt_score = get_metric_score("tbt", tbt)
+                cls_score = get_metric_score("cls", cls)
+                tti_score = get_metric_score("tti", tti)
+                avg_score = (fcp_score + lcp_score + si_score + tbt_score + cls_score + tti_score) / 6
+                
+                # Color mapping
+                color_map = {
+                    "green": "var(--success-color)",
+                    "amber": "var(--warning-color)",
+                    "red": "var(--danger-color)",
+                    "gray": "var(--text-secondary)"
+                }
+                
+                rows += f'''
+                    <tr>
+                        <td><strong title="{url}">{page_name_display}</strong><br><small style="color: var(--text-secondary);">{display_url}</small></td>
+                        <td style="color: {color_map.get(fcp_color, 'black')}; font-weight: 600;">{fcp:.1f}s</td>
+                        <td style="color: {color_map.get(lcp_color, 'black')}; font-weight: 600;">{lcp:.1f}s</td>
+                        <td style="color: {color_map.get(si_color, 'black')}; font-weight: 600;">{speed_index:.1f}s</td>
+                        <td style="color: {color_map.get(tbt_color, 'black')}; font-weight: 600;">{tbt:.0f}ms</td>
+                        <td style="color: {color_map.get(cls_color, 'black')}; font-weight: 600;">{cls:.3f}</td>
+                        <td style="color: {color_map.get(tti_color, 'black')}; font-weight: 600;">{tti:.1f}s</td>
+                        <td class="status-{status_text.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', '').lower().replace(' ', '-')}">{status_text}</td>
+                        <td style="color: {"var(--success-color)" if avg_score >= 80 else "var(--warning-color)" if avg_score >= 60 else "var(--danger-color)"}; font-weight: 700;">{avg_score:.0f}/100</td>
+                    </tr>'''
+            except Exception as e:
+                print(f"  ✗ Error processing page {idx} in detailed metrics table: {e}")
+                import traceback
+                traceback.print_exc()
+                # Add error row
+                rows += f'''
+                    <tr>
+                        <td colspan="9" style="color: var(--danger-color);">Error processing page {idx}: {str(e)}</td>
+                    </tr>'''
         
         return f'''<div class="section">
             <h2>Detailed Performance Metrics</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Page</th>
+                        <th>Page Name</th>
                         <th>FCP</th>
                         <th>LCP</th>
                         <th>Speed Index</th>
@@ -901,42 +1199,74 @@ class LighthouseHTMLGenerator:
         
         rows = ""
         for issue in issues:
-            # Determine impacted pages based on issue type
+            # Determine impacted pages based on issue type and actual page metrics
             impacted_pages = []
             issue_name = issue.get('issue', '').lower()
             
-            # Map issues to pages based on metrics
-            for page in page_data:
-                page_url = page.get("url", "Unknown")
+            # Map issues to pages based on actual metrics from each page
+            for idx, page in enumerate(page_data):
+                page_url = page.get("url", f"Page {idx + 1}")
                 should_include = False
                 
-                if "lcp" in issue_name or "loading" in issue_name:
+                # Check actual page metrics to determine if this page is impacted
+                if "lcp" in issue_name or "loading" in issue_name or "largest contentful" in issue_name:
                     if page.get("lcp", 0) > 4.0:
                         should_include = True
                 elif "tbt" in issue_name or "blocking" in issue_name or "interactivity" in issue_name:
                     if page.get("tbt", 0) > 600:
                         should_include = True
-                elif "cls" in issue_name or "layout" in issue_name or "visual" in issue_name:
+                elif "cls" in issue_name or "layout" in issue_name or "visual" in issue_name or "cumulative layout" in issue_name:
                     if page.get("cls", 0) > 0.25:
                         should_include = True
-                elif "speed" in issue_name:
+                elif "speed" in issue_name or "speed index" in issue_name:
                     if page.get("speed_index", 0) > 5.8:
                         should_include = True
+                elif "fcp" in issue_name or "first contentful" in issue_name:
+                    if page.get("fcp", 0) > 3.0:
+                        should_include = True
+                elif "tti" in issue_name or "time to interactive" in issue_name:
+                    if page.get("tti", 0) > 7.3:
+                        should_include = True
                 else:
-                    # General issue - include all pages
-                    should_include = True
+                    # General issue - check if any metric is poor
+                    if (page.get("lcp", 0) > 4.0 or 
+                        page.get("tbt", 0) > 600 or 
+                        page.get("cls", 0) > 0.25 or 
+                        page.get("speed_index", 0) > 5.8):
+                        should_include = True
                 
                 if should_include:
-                    short_url = page_url if len(page_url) <= 40 else page_url[:37] + "..."
+                    # Shorten URL but preserve uniqueness
+                    if len(page_url) <= 40:
+                        short_url = page_url
+                    else:
+                        short_url = page_url[:25] + "..." + page_url[-12:] if len(page_url) > 37 else page_url[:37] + "..."
                     impacted_pages.append(short_url)
             
-            # If no specific pages, show "All Pages"
+            # If no specific pages match, show all pages that have any issues
             if not impacted_pages:
-                impacted_pages = ["All Pages"]
+                # Include all pages that have at least one poor metric
+                for idx, page in enumerate(page_data):
+                    page_url = page.get("url", f"Page {idx + 1}")
+                    if (page.get("lcp", 0) > 4.0 or 
+                        page.get("tbt", 0) > 600 or 
+                        page.get("cls", 0) > 0.25 or 
+                        page.get("speed_index", 0) > 5.8):
+                        if len(page_url) <= 40:
+                            short_url = page_url
+                        else:
+                            short_url = page_url[:25] + "..." + page_url[-12:] if len(page_url) > 37 else page_url[:37] + "..."
+                        impacted_pages.append(short_url)
             
-            impacted_pages_str = ", ".join(impacted_pages[:3])
-            if len(impacted_pages) > 3:
-                impacted_pages_str += f" (+{len(impacted_pages) - 3} more)"
+            # If still no pages, show "All Pages" as fallback
+            if not impacted_pages:
+                impacted_pages = [f"All {len(page_data)} Pages"]
+            
+            # Format impacted pages list
+            unique_pages = list(dict.fromkeys(impacted_pages))  # Remove duplicates while preserving order
+            impacted_pages_str = ", ".join(unique_pages[:3])
+            if len(unique_pages) > 3:
+                impacted_pages_str += f" (+{len(unique_pages) - 3} more)"
             
             rows += f'''
                 <tr>
@@ -1300,16 +1630,17 @@ class LighthouseHTMLGenerator:
                         <th>Model Name</th>
                         <th>Metric</th>
                         <th>Value</th>
+                        <th>Understanding</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td rowspan="2">Classification</td><td>Logistic Regression</td><td>Accuracy</td><td>{models.get('classification', {}).get('logistic_regression', {}).get('accuracy', 'N/A')}</td></tr>
+                    <tr><td rowspan="2">Classification</td><td>Logistic Regression</td><td>Accuracy</td><td>{models.get('classification', {}).get('logistic_regression', {}).get('accuracy', 'N/A')}</td><td rowspan="2">Accuracy measures how often the model correctly predicts performance grades. F1 Score balances precision and recall, providing a single metric that considers both false positives and false negatives. Higher values (closer to 1.0) indicate better model performance.</td></tr>
                     <tr><td>Logistic Regression</td><td>F1 Score</td><td>{models.get('classification', {}).get('logistic_regression', {}).get('f1_score', 'N/A')}</td></tr>
-                    <tr><td rowspan="2">Classification</td><td>Random Forest</td><td>Accuracy</td><td>{models.get('classification', {}).get('random_forest', {}).get('accuracy', 'N/A')}</td></tr>
+                    <tr><td rowspan="2">Classification</td><td>Random Forest</td><td>Accuracy</td><td>{models.get('classification', {}).get('random_forest', {}).get('accuracy', 'N/A')}</td><td rowspan="2">Random Forest uses multiple decision trees to make predictions, often providing better accuracy than single models. Higher accuracy and F1 scores indicate the model can reliably predict performance grades from metrics.</td></tr>
                     <tr><td>Random Forest</td><td>F1 Score</td><td>{models.get('classification', {}).get('random_forest', {}).get('f1_score', 'N/A')}</td></tr>
-                    <tr><td>Regression</td><td>Ridge</td><td>RMSE</td><td>{models.get('regression', {}).get('ridge', {}).get('rmse', 'N/A')}</td></tr>
-                    <tr><td>Regression</td><td>Gradient Boosting</td><td>RMSE</td><td>{models.get('regression', {}).get('gradient_boosting', {}).get('rmse', 'N/A')}</td></tr>
-                    <tr><td rowspan="2">Neural Network</td><td>MLP Regressor</td><td>Architecture</td><td>{models.get('neural_network', {}).get('architecture', 'N/A')}</td></tr>
+                    <tr><td>Regression</td><td>Ridge</td><td>RMSE</td><td>{models.get('regression', {}).get('ridge', {}).get('rmse', 'N/A')}</td><td>RMSE (Root Mean Squared Error) measures prediction error. Lower RMSE values indicate more accurate predictions. Ridge regression prevents overfitting by penalizing large coefficients, making it robust for performance score predictions.</td></tr>
+                    <tr><td>Regression</td><td>Gradient Boosting</td><td>RMSE</td><td>{models.get('regression', {}).get('gradient_boosting', {}).get('rmse', 'N/A')}</td><td>Gradient Boosting builds models sequentially, learning from previous errors. Lower RMSE indicates the model can accurately predict continuous values like performance scores. This method often provides better accuracy than linear models.</td></tr>
+                    <tr><td rowspan="2">Neural Network</td><td>MLP Regressor</td><td>Architecture</td><td>{models.get('neural_network', {}).get('architecture', 'N/A')}</td><td rowspan="2">Neural Network architecture shows the number of hidden layers and neurons. RMSE measures how well the network predicts performance scores. Lower RMSE indicates the network has learned complex patterns in the data to make accurate predictions.</td></tr>
                     <tr><td>MLP Regressor</td><td>RMSE</td><td>{models.get('neural_network', {}).get('rmse', 'N/A')}</td></tr>
                 </tbody>
             </table>
@@ -1320,13 +1651,14 @@ class LighthouseHTMLGenerator:
                     <tr>
                         <th>Metric</th>
                         <th>Predicted Value</th>
+                        <th>Understanding</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>Predicted Grade</td><td>{predictions.get('predicted_grade', 'N/A')}</td></tr>
-                    <tr><td>NN Predicted Score</td><td>{predictions.get('predicted_score_nn', 'N/A')}</td></tr>
-                    <tr><td>Predicted Bounce Rate</td><td>{predictions.get('predicted_bounce_rate', 'N/A')}%</td></tr>
-                    <tr><td>Predicted Conversion Lift</td><td>{predictions.get('predicted_conversion_lift', 'N/A')}%</td></tr>
+                    <tr><td>Predicted Grade</td><td>{predictions.get('predicted_grade', 'N/A')}</td><td>The AI model's prediction of the overall performance grade (A-F) based on current metrics. This helps validate the rule-based grading system and provides a data-driven perspective on performance classification.</td></tr>
+                    <tr><td>NN Predicted Score</td><td>{predictions.get('predicted_score_nn', 'N/A')}</td><td>The Neural Network's predicted overall performance score (0-100). This represents the model's learned understanding of how metrics combine to create an overall score, potentially capturing non-linear relationships.</td></tr>
+                    <tr><td>Predicted Bounce Rate</td><td>{predictions.get('predicted_bounce_rate', 'N/A')}%</td><td>Estimated percentage of users who leave the site immediately. Higher bounce rates indicate poor user experience. This prediction helps quantify the business impact of current performance issues.</td></tr>
+                    <tr><td>Predicted Conversion Lift</td><td>{predictions.get('predicted_conversion_lift', 'N/A')}%</td><td>Expected improvement in conversion rate if performance is optimized. Positive values indicate potential revenue gains. This metric helps prioritize optimization efforts based on expected business impact.</td></tr>
                 </tbody>
             </table>
             
@@ -1336,12 +1668,13 @@ class LighthouseHTMLGenerator:
                     <tr>
                         <th>Method</th>
                         <th>Score</th>
+                        <th>Understanding</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>Weighted Formula</td><td>{comparison.get('weighted_formula_score', 'N/A')}</td></tr>
-                    <tr><td>Neural Network Prediction</td><td>{comparison.get('nn_predicted_score', 'N/A')}</td></tr>
-                    <tr><td>Difference</td><td>{comparison.get('difference', 'N/A')}</td></tr>
+                    <tr><td>Weighted Formula</td><td>{comparison.get('weighted_formula_score', 'N/A')}</td><td>Rule-based calculation using predefined weights (Loading 50%, Interactivity 30%, Visual Stability 20%). This method is transparent, interpretable, and based on industry standards. It provides a consistent, explainable score.</td></tr>
+                    <tr><td>Neural Network Prediction</td><td>{comparison.get('nn_predicted_score', 'N/A')}</td><td>AI model's learned prediction based on patterns in training data. The neural network can capture complex, non-linear relationships between metrics that the formula might miss. This provides a data-driven alternative perspective.</td></tr>
+                    <tr><td>Difference</td><td>{comparison.get('difference', 'N/A')}</td><td>The difference between the two methods. Small differences (&lt;5 points) indicate agreement. Larger differences suggest the neural network has identified patterns not captured by the weighted formula, which may warrant further investigation.</td></tr>
                 </tbody>
             </table>
             
