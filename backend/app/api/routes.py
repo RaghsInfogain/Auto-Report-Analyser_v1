@@ -280,14 +280,27 @@ async def get_file_report(file_id: str, report_type: str, db: Session = Depends(
         raise HTTPException(status_code=404, detail=f"{report_type.upper()} report not found")
     
     if report_type == "html":
-        # Return HTML content
+        # CRITICAL: Always serve from file if it exists (file is source of truth)
+        # Database report_content may be truncated or incomplete
+        if report.report_path and os.path.exists(report.report_path):
+            try:
+                with open(report.report_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+                    # Verify file is complete (ends with </html>)
+                    if file_content.strip().endswith("</html>"):
+                        print(f"  ✓ Serving HTML from file: {len(file_content):,} characters")
+                        return HTMLResponse(content=file_content)
+                    else:
+                        print(f"  ⚠️  HTML file appears incomplete, trying database content")
+            except Exception as e:
+                print(f"  ⚠️  Error reading HTML file: {e}, trying database content")
+        
+        # Fallback to database content if file doesn't exist or is incomplete
         if report.report_content:
+            print(f"  ✓ Serving HTML from database: {len(report.report_content):,} characters")
             return HTMLResponse(content=report.report_content)
-        elif report.report_path and os.path.exists(report.report_path):
-            with open(report.report_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-        else:
-            raise HTTPException(status_code=404, detail="HTML report content not found")
+        
+        raise HTTPException(status_code=404, detail="HTML report content not found")
     
     elif report_type == "pdf":
         # Return PDF file
@@ -351,9 +364,7 @@ async def upload_files(
     uploaded_files = []
     jmeter_files_data = []  # Store JMeter files for merging
     jmeter_filenames = []
-    lighthouse_files_data = []  # Store Lighthouse files for merging
-    lighthouse_filenames = []
-    other_files = []  # Store non-JMeter, non-Lighthouse files
+    other_files = []  # Store all other files (including web_vitals - no merging)
     
     # First pass: Save all files and group by category
     for file, category in zip(files, categories):
@@ -401,13 +412,9 @@ async def upload_files(
             })
             jmeter_filenames.append(file.filename)
         elif category == "web_vitals" and file_extension == ".json":
-            # Group Lighthouse JSON files for merging
-            lighthouse_files_data.append({
-                "db_file": db_file,
-                "file_path": file_path,
-                "file_id": file_id
-            })
-            lighthouse_filenames.append(file.filename)
+            # Web Vitals/Lighthouse files - NO MERGING, keep each file separate
+            # Files will be parsed separately during analysis
+            other_files.append(db_file)
         else:
             other_files.append(db_file)
         
@@ -510,88 +517,14 @@ async def upload_files(
             raise HTTPException(status_code=400, detail=f"Error parsing file: {e}")
     
     # ========================================================================
-    # LIGHTHOUSE/WEB VITALS FILES MERGING LOGIC (JSON)
+    # WEB VITALS/LIGHTHOUSE FILES - NO MERGING DURING UPLOAD
     # ========================================================================
-    # Lighthouse files contain complete performance reports per page.
-    # Merging strategy: Aggregate metrics (median for numeric, worst for scores).
-    # This creates a consolidated report with aggregated metrics across pages.
-    # DIFFERENT from JMeter: Not concatenation, but statistical aggregation.
+    # Web Vitals/Lighthouse files are kept separate - no merged files created during upload
+    # Each file is stored individually with its original filename
+    # Files will be parsed separately during analysis and consolidated for reporting
     # ========================================================================
-    if len(lighthouse_files_data) > 1:
-        # USE CASE 2: Multiple Lighthouse files - Aggregate metrics
-        print(f"\n{'='*60}")
-        print(f"LIGHTHOUSE MERGING: Multiple Lighthouse JSON files detected")
-        print(f"Strategy: Aggregate metrics (median for numeric, worst for scores)")
-        print(f"Merging {len(lighthouse_files_data)} Lighthouse files for run {run_id}...")
-        print(f"{'='*60}\n")
-        
-        # Parse all Lighthouse files
-        lighthouse_file_paths = [str(info["file_path"]) for info in lighthouse_files_data]
-        print(f"  Parsing {len(lighthouse_file_paths)} Lighthouse JSON files...")
-        try:
-            # Lighthouse merge: Statistical aggregation (NOT concatenation)
-            merged_lighthouse_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
-            print(f"  ✓ Merged Lighthouse data successfully (aggregated metrics)")
-        except Exception as e:
-            print(f"  ✗ Error merging Lighthouse files: {e}")
-            raise HTTPException(status_code=400, detail=f"Error merging Lighthouse files: {e}")
-        
-        # Save merged file as JSON
-        MERGED_DIR.mkdir(exist_ok=True)
-        merged_file_path = MERGED_DIR / f"{run_id}_merged_lighthouse.json"
-        
-        try:
-            with open(merged_file_path, "w", encoding="utf-8") as f:
-                json.dump(merged_lighthouse_data, f, indent=2)
-            merged_file_size = merged_file_path.stat().st_size
-            print(f"  ✓ Saved merged Lighthouse file: {merged_file_path} ({merged_file_size:,} bytes)")
-        except Exception as e:
-            print(f"  ✗ Error saving merged Lighthouse file: {e}")
-            raise HTTPException(status_code=500, detail=f"Error saving merged Lighthouse file: {e}")
-        
-        # Update all Lighthouse file records to point to merged file
-        merged_filename = f"MERGED_{run_id}_{'+'.join(lighthouse_filenames[:3])}{'...' if len(lighthouse_filenames) > 3 else ''}"
-        file_count = len(lighthouse_files_data)
-        for lighthouse_file_info in lighthouse_files_data:
-            db_file = lighthouse_file_info["db_file"]
-            db_file.file_path = str(merged_file_path)
-            db_file.filename = merged_filename
-            db_file.file_size = merged_file_path.stat().st_size
-            db_file.record_count = file_count  # Number of files merged
-        
-        db.commit()
-        print(f"✓ Merged Lighthouse file created and linked to {len(lighthouse_files_data)} file records")
-        print(f"  All files now point to: {merged_file_path}")
-    
-    elif len(lighthouse_files_data) == 1:
-        # USE CASE 1: Single Lighthouse file - Keep original file
-        print(f"\n{'='*60}")
-        print(f"USE CASE 1: Single Lighthouse file detected")
-        print(f"Processing single file for run {run_id}...")
-        print(f"{'='*60}\n")
-        
-        single_file_info = lighthouse_files_data[0]
-        file_path = single_file_info["file_path"]
-        db_file = single_file_info["db_file"]
-        
-        print(f"  File: {db_file.filename}")
-        print(f"  Path: {file_path}")
-        print(f"  File exists: {os.path.exists(file_path)}")
-        
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail=f"Uploaded file not found: {file_path}")
-        
-        # Validate Lighthouse JSON structure
-        try:
-            lighthouse_data = LighthouseParser.parse(str(file_path))
-            db_file.record_count = 1
-            db.commit()
-            print(f"  ✓ Validated Lighthouse JSON structure")
-            print(f"  ✓ File path preserved: {file_path}")
-            print(f"  ✓ Single file ready for analysis")
-        except Exception as e:
-            print(f"  ✗ Error validating Lighthouse file: {e}")
-            raise HTTPException(status_code=400, detail=f"Error validating Lighthouse file: {e}")
+    # No special handling needed - files are already saved individually above
+    # Each file keeps its original path and filename
     
     return {"message": "Files uploaded successfully", "run_id": run_id, "files": uploaded_files}
 
@@ -890,33 +823,57 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
     # Set maximum timeout (3 minutes)
     MAX_TIMEOUT = 180  # 3 minutes in seconds
     
-    # Check if already in progress
-    existing_progress = ReportProgressTracker.get_progress(run_id)
-    if existing_progress and existing_progress["status"] == "in_progress":
-        # ALWAYS check for stuck status in database first - reset if found
-        stuck_in_db = any(f.report_status in ["analyzing", "generating"] for f in files)
-        if stuck_in_db:
-            print(f"⚠️  Run {run_id} has stuck status in database, resetting to pending...")
-            for f in files:
-                if f.report_status in ["analyzing", "generating"]:
-                    f.report_status = "pending"
-            db.commit()
-            ReportProgressTracker.clear_progress(run_id)  # Clear old progress
-        
-        # Check if stuck in progress tracker
-        if ReportProgressTracker.is_stuck(run_id, timeout_minutes=5):
-            # Reset stuck status
-            print(f"⚠️  Run {run_id} appears stuck in progress tracker, resetting...")
-            for f in files:
-                if f.report_status in ["analyzing", "generating"]:
-                    f.report_status = "pending"
-            db.commit()
-            ReportProgressTracker.clear_progress(run_id)  # Clear old progress
-            ReportProgressTracker.initialize(run_id)  # Re-initialize
-        elif existing_progress and existing_progress.get("status") == "in_progress":
-            # Already in progress, return current progress (don't start new generation)
-            print(f"ℹ️  Run {run_id} already in progress, returning current progress")
-            return existing_progress
+    # CRITICAL: If regenerate=True, ALWAYS clear existing progress and start fresh
+    print(f"\n{'='*60}")
+    print(f"REPORT GENERATION REQUEST")
+    print(f"  Run ID: {run_id}")
+    print(f"  Regenerate: {regenerate}")
+    print(f"  Files: {len(files)}")
+    print(f"{'='*60}\n")
+    
+    if regenerate:
+        print(f"🔄 REGENERATE MODE: Clearing ALL existing progress and forcing fresh generation...")
+        # Clear progress tracker
+        ReportProgressTracker.clear_progress(run_id)
+        # Clear any existing analysis results to force re-analysis
+        for f in files:
+            existing_analysis = DatabaseService.get_analysis_result(db, f.file_id)
+            if existing_analysis:
+                print(f"  → Deleting existing analysis for {f.filename}")
+                db.delete(existing_analysis)
+            # Reset file statuses to pending
+            if f.report_status in ["analyzing", "generating", "generated"]:
+                f.report_status = "pending"
+        db.commit()
+        print(f"✓ Cleared progress, analysis results, and reset file statuses for regenerate")
+    else:
+        # Check if already in progress (only for non-regenerate requests)
+        existing_progress = ReportProgressTracker.get_progress(run_id)
+        if existing_progress and existing_progress["status"] == "in_progress":
+            # ALWAYS check for stuck status in database first - reset if found
+            stuck_in_db = any(f.report_status in ["analyzing", "generating"] for f in files)
+            if stuck_in_db:
+                print(f"⚠️  Run {run_id} has stuck status in database, resetting to pending...")
+                for f in files:
+                    if f.report_status in ["analyzing", "generating"]:
+                        f.report_status = "pending"
+                db.commit()
+                ReportProgressTracker.clear_progress(run_id)  # Clear old progress
+            
+            # Check if stuck in progress tracker
+            if ReportProgressTracker.is_stuck(run_id, timeout_minutes=5):
+                # Reset stuck status
+                print(f"⚠️  Run {run_id} appears stuck in progress tracker, resetting...")
+                for f in files:
+                    if f.report_status in ["analyzing", "generating"]:
+                        f.report_status = "pending"
+                db.commit()
+                ReportProgressTracker.clear_progress(run_id)  # Clear old progress
+                ReportProgressTracker.initialize(run_id)  # Re-initialize
+            elif existing_progress and existing_progress.get("status") == "in_progress":
+                # Already in progress, return current progress (don't start new generation)
+                print(f"ℹ️  Run {run_id} already in progress, returning current progress")
+                return existing_progress
     
     # Initialize progress tracking for new generation
     ReportProgressTracker.initialize(run_id)
@@ -940,10 +897,13 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
                     raise ValueError(f"No files found for run {run_id}")
                 
         # Update status for all files
+                # CRITICAL: When regenerate=True, we still need to analyze, so set to "analyzing"
+                # The status will be updated to "generating" later during report generation phase
                 for f in thread_files:
-                    f.report_status = "analyzing" if not regenerate else "generating"
+                    f.report_status = "analyzing"  # Always start with analyzing, even for regenerate
                 thread_db.commit()
-                print(f"✓ Status updated to analyzing/generating for {len(thread_files)} files")
+                print(f"✓ Status updated to 'analyzing' for {len(thread_files)} files")
+                print(f"  Regenerate mode: {regenerate} (will force re-parsing and re-analysis)")
             except Exception as status_error:
                 print(f"✗ Error updating status: {status_error}")
                 import traceback
@@ -1430,19 +1390,18 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     
                     lighthouse_file_paths = [f.file_path for f in lighthouse_files]
                     
-                    # CRITICAL: Always re-parse when regenerate=True, or if no existing analysis
-                    should_reparse = regenerate
-                    if not should_reparse:
-                        # Check if all files have analysis
-                        for db_file in lighthouse_files:
-                            existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
-                            if not existing_analysis:
-                                should_reparse = True
-                                break
-                    
+                    # CRITICAL: Always re-parse when regenerate=True
+                    # When regenerate=True, we MUST re-parse and re-analyze to ensure fresh data
                     lighthouse_file_paths = [f.file_path for f in lighthouse_files]
                     
-                    # CRITICAL: Always re-parse when regenerate=True, or if no existing analysis
+                    print(f"\n{'='*60}")
+                    print(f"LIGHTHOUSE MULTI-FILE PROCESSING")
+                    print(f"  Regenerate flag: {regenerate}")
+                    print(f"  Files to process: {len(lighthouse_files)}")
+                    print(f"  File paths: {[Path(p).name for p in lighthouse_file_paths]}")
+                    print(f"{'='*60}\n")
+                    
+                    # ALWAYS re-parse when regenerate=True, otherwise check if analysis exists
                     should_reparse = regenerate
                     if not should_reparse:
                         # Check if all files have analysis
@@ -1450,33 +1409,77 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                             existing_analysis = DatabaseService.get_analysis_result(db, db_file.file_id)
                             if not existing_analysis:
                                 should_reparse = True
+                                print(f"  → No existing analysis for {db_file.filename}, will re-parse")
                                 break
                     
+                    # ALWAYS re-parse when regenerate=True
+                    if regenerate:
+                        print(f"  🔄 REGENERATE MODE: Forcing re-parsing and re-analysis of all files...")
+                        should_reparse = True
+                    elif should_reparse:
+                        print(f"  → Re-parsing required (no existing analysis found)")
+                    else:
+                        print(f"  → Checking for existing analysis...")
+                        existing_analysis = DatabaseService.get_analysis_result(db, lighthouse_files[0].file_id)
+                        if existing_analysis:
+                            print(f"  ✓ Found existing analysis, reusing...")
+                            metrics = existing_analysis.metrics
+                            print(f"  ✓ Reusing existing analysis for {len(lighthouse_files)} files")
+                            print(f"  ✓ Report contains {len(metrics.get('page_data', []))} pages")
+                            should_reparse = False
+                        else:
+                            print(f"  → No existing analysis found, will re-parse")
+                            should_reparse = True
+                    
                     if should_reparse:
-                        print(f"  → Re-parsing {len(lighthouse_files)} files...")
+                        print(f"\n  📊 STEP 1: PARSING {len(lighthouse_files)} FILES...")
+                        print(f"  {'='*60}")
+                        parse_start_time = time.time()
+                        
                         try:
                             # Update progress: Parsing started
                             ReportProgressTracker.update_task(run_id, "parsing", "in_progress", 0, f"Parsing {len(lighthouse_files)} Lighthouse files...")
                             
                             # Use parse_multiple to get consolidated data with all pages
+                            print(f"  → Calling LighthouseParser.parse_multiple()...")
                             parsed_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
                             
+                            parse_duration = time.time() - parse_start_time
+                            print(f"  ✓ Parsing completed in {parse_duration:.2f}s")
+                            print(f"  ✓ Parsed data keys: {list(parsed_data.keys())}")
+                            page_data_count = len(parsed_data.get('_page_data', []))
+                            print(f"  ✓ Page data count: {page_data_count}")
+                            
                             # Update progress: Parsing complete
-                            ReportProgressTracker.update_task(run_id, "parsing", "completed", 100, "Parsing complete")
+                            ReportProgressTracker.update_task(run_id, "parsing", "completed", 100, f"Parsed {page_data_count} pages from {len(lighthouse_files)} files")
+                            
+                            print(f"\n  📊 STEP 2: ANALYZING DATA...")
+                            print(f"  {'='*60}")
+                            analysis_start_time = time.time()
                             
                             # Update progress: Analysis started
                             ReportProgressTracker.update_task(run_id, "analysis", "in_progress", 0, "Analyzing Lighthouse data...")
                             
                             # Analyze the consolidated data
+                            print(f"  → Calling LighthouseAnalyzer.analyze()...")
                             metrics = LighthouseAnalyzer.analyze(parsed_data)
                             
-                            # Update progress: Analysis complete
-                            ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, "Analysis complete")
+                            analysis_duration = time.time() - analysis_start_time
+                            print(f"  ✓ Analysis completed in {analysis_duration:.2f}s")
+                            print(f"  ✓ Metrics keys: {list(metrics.keys())}")
+                            metrics_page_data = metrics.get('page_data', [])
+                            print(f"  ✓ Metrics page_data count: {len(metrics_page_data)}")
                             
-                            print(f"✓ Parsed and analyzed {len(lighthouse_files)} files")
-                            print(f"✓ Report contains {len(metrics.get('page_data', []))} pages")
+                            # Update progress: Analysis complete
+                            ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, f"Analysis complete: {len(metrics_page_data)} pages")
+                            
+                            print(f"\n  ✓ Total time: Parsing {parse_duration:.2f}s + Analysis {analysis_duration:.2f}s = {parse_duration + analysis_duration:.2f}s")
+                            print(f"  ✓ Successfully parsed and analyzed {len(lighthouse_files)} files")
+                            print(f"  ✓ Report contains {len(metrics_page_data)} pages")
+                            
                         except Exception as parse_error:
-                            print(f"✗ Error during parsing/analysis: {parse_error}")
+                            print(f"\n  ✗ ERROR during parsing/analysis:")
+                            print(f"  {str(parse_error)}")
                             import traceback
                             traceback.print_exc()
                             # Update status to error
@@ -1485,46 +1488,6 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 db_file.report_status = "error"
                             db.commit()
                             raise
-                    else:
-                        # Reuse existing analysis from first file
-                        print(f"  → Reusing existing analysis (regenerate=False)")
-                        existing_analysis = DatabaseService.get_analysis_result(db, lighthouse_files[0].file_id)
-                        if existing_analysis:
-                            metrics = existing_analysis.metrics
-                            print(f"✓ Reusing existing analysis for {len(lighthouse_files)} files")
-                            print(f"✓ Report contains {len(metrics.get('page_data', []))} pages")
-                        else:
-                            # Fallback: parse if no analysis exists
-                            print(f"  → No existing analysis found, parsing...")
-                            try:
-                                # Update progress: Parsing started
-                                ReportProgressTracker.update_task(run_id, "parsing", "in_progress", 0, f"Parsing {len(lighthouse_files)} Lighthouse files...")
-                                
-                                parsed_data = LighthouseParser.parse_multiple(lighthouse_file_paths)
-                                
-                                # Update progress: Parsing complete
-                                ReportProgressTracker.update_task(run_id, "parsing", "completed", 100, "Parsing complete")
-                                
-                                # Update progress: Analysis started
-                                ReportProgressTracker.update_task(run_id, "analysis", "in_progress", 0, "Analyzing Lighthouse data...")
-                                
-                                metrics = LighthouseAnalyzer.analyze(parsed_data)
-                                
-                                # Update progress: Analysis complete
-                                ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, "Analysis complete")
-                                
-                                print(f"✓ Parsed and analyzed {len(lighthouse_files)} files")
-                                print(f"✓ Report contains {len(metrics.get('page_data', []))} pages")
-                            except Exception as parse_error:
-                                print(f"✗ Error during parsing/analysis: {parse_error}")
-                                import traceback
-                                traceback.print_exc()
-                                # Update status to error
-                                ReportProgressTracker.fail(run_id, f"Error during parsing/analysis: {str(parse_error)}")
-                                for db_file in lighthouse_files:
-                                    db_file.report_status = "error"
-                                db.commit()
-                                raise
                     
                     # Store analysis for all Lighthouse files
                     file_count = len(lighthouse_files)
@@ -1875,11 +1838,65 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     
                     # CRITICAL: Add progress update and timeout protection
                     ReportProgressTracker.update_task(run_id, "html_generation", "in_progress", 20, "Generating Lighthouse HTML report...")
-                    print(f"  → Starting Lighthouse HTML generation (this may take a moment)...")
+                    print(f"\n  📄 HTML REPORT GENERATION")
+                    print(f"  {'='*60}")
+                    print(f"  → Starting Lighthouse HTML generation...")
+                    print(f"  → Metrics keys available: {list(primary_metrics.keys())}")
+                    print(f"  → Page data count: {len(primary_metrics.get('page_data', []))}")
+                    print(f"  → Issues count: {len(primary_metrics.get('issues', []))}")
+                    print(f"  → Recommendations: {bool(primary_metrics.get('recommendations'))}")
+                    print(f"  → Business Impact: {bool(primary_metrics.get('business_impact'))}")
+                    print(f"  → AIML Results: {bool(primary_metrics.get('aiml_results'))}")
+                    print(f"  {'='*60}\n")
                     
                     html_content = LighthouseHTMLGenerator.generate_full_report(primary_metrics, primary_file.filename)
                     html_duration = time.time() - html_start_time
-                    print(f"✓ Lighthouse HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
+                    print(f"\n  ✓ Lighthouse HTML report generated in {html_duration:.1f}s")
+                    print(f"  ✓ Report size: {len(html_content):,} characters ({len(html_content) / 1024:.1f} KB)")
+                    
+                    # CRITICAL: Verify all sections are in the HTML before proceeding
+                    # Note: Check for section headers in HTML (h2 tags)
+                    required_sections = [
+                        "Issues Identified",
+                        "Performance Optimization Roadmap",
+                        "Business Impact Projections",
+                        "Next Steps for Monitoring and Maintenance",
+                        "AIML Modeling Appendix",
+                        "Final Conclusion"
+                    ]
+                    print(f"\n  🔍 Verifying all sections are present in HTML:")
+                    missing_sections = []
+                    for section in required_sections:
+                        # Check for section header (h2 tag) or section div
+                        if f"<h2>{section}</h2>" in html_content or f'<h2>{section}</h2>' in html_content or section in html_content:
+                            print(f"      ✓ {section} found")
+                        else:
+                            print(f"      ✗ {section} MISSING!")
+                            missing_sections.append(section)
+                    
+                    if missing_sections:
+                        # Log more details for debugging
+                        print(f"\n  ⚠️  Some sections may be missing. Checking HTML content...")
+                        print(f"  → HTML content length: {len(html_content):,} characters")
+                        # Check if sections exist with different formatting
+                        for section in missing_sections:
+                            # Try variations
+                            if section.replace(" ", "") in html_content.replace(" ", ""):
+                                print(f"  → Found '{section}' with different formatting")
+                                missing_sections.remove(section)
+                            elif section.split()[0] in html_content:
+                                print(f"  → Found partial match for '{section}'")
+                        
+                        if missing_sections:
+                            error_msg = f"HTML report is incomplete. Missing sections: {', '.join(missing_sections)}"
+                            print(f"\n  ✗ {error_msg}")
+                            print(f"  → HTML preview (last 1000 chars): {html_content[-1000:]}")
+                            ReportProgressTracker.fail(run_id, error_msg)
+                            raise HTTPException(status_code=500, detail=error_msg)
+                        else:
+                            print(f"\n  ✓ All required sections verified (with formatting variations)")
+                    else:
+                        print(f"\n  ✓ All required sections verified in HTML report")
                 else:
                     # Use old Web Vitals HTML generator
                     html_content = HTMLReportGenerator.generate_web_vitals_html_report(primary_metrics, primary_file.filename)
@@ -2077,7 +2094,62 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             db.commit()
             raise HTTPException(status_code=500, detail=error_msg)
         
+        # CRITICAL: Verify HTML report contains all sections before marking as complete
+        # NOTE: Section verification is category-specific
+        html_report = next((r for r in saved_reports if r.report_type == "html"), None)
+        if html_report and html_report.report_path and os.path.exists(html_report.report_path):
+            print(f"\n  🔍 Final Verification: Checking saved HTML report for required sections...")
+            with open(html_report.report_path, 'r', encoding='utf-8') as f:
+                html_content_check = f.read()
+            
+            # Category-specific section requirements
+            if primary_category == "web_vitals":
+                # Lighthouse/Web Vitals specific sections
+                required_sections = [
+                    "Issues Identified",
+                    "Performance Optimization Roadmap", 
+                    "Business Impact Projections",
+                    "Next Steps for Monitoring and Maintenance",  # Full section name
+                    "AIML Modeling Appendix",
+                    "Final Conclusion"
+                ]
+            elif primary_category == "jmeter":
+                # JMeter specific sections (actual section headers from HTML generator)
+                # Note: JMeter uses emoji prefixes in section headers
+                required_sections = [
+                    "⚠️ Issues",  # Actual header: "⚠️ Issues"
+                    "🚀 Recommended Action Plan",  # Actual header: "🚀 Recommended Action Plan"
+                    "💰 Business Impact Assessment",  # Actual header: "💰 Business Impact Assessment"
+                    "🎯 Success Metrics & Targets"  # Actual header: "🎯 Success Metrics & Targets"
+                ]
+            else:
+                # For other categories, skip section verification
+                required_sections = []
+                print(f"  ℹ️  Skipping section verification for category: {primary_category}")
+            
+            if required_sections:
+                missing = [s for s in required_sections if s not in html_content_check]
+                if missing:
+                    error_msg = f"Report saved but missing sections: {', '.join(missing)}"
+                    print(f"\n  ✗ {error_msg}")
+                    print(f"  → HTML file size: {len(html_content_check):,} characters")
+                    print(f"  → Category: {primary_category}")
+                    print(f"  → Required sections: {required_sections}")
+                    ReportProgressTracker.fail(run_id, error_msg)
+                    raise HTTPException(status_code=500, detail=error_msg)
+                else:
+                    print(f"  ✓ All {len(required_sections)} required sections verified in saved HTML report")
+            else:
+                print(f"  ✓ Section verification skipped for category: {primary_category}")
+        
         # Mark progress as completed (will validate internally)
+        print(f"\n  📊 Final Progress Check Before Completion:")
+        progress_before = ReportProgressTracker.get_progress(run_id)
+        if progress_before:
+            tasks_status = {tid: task.get("status") for tid, task in progress_before.get("tasks", {}).items()}
+            print(f"    Task statuses: {tasks_status}")
+            print(f"    Overall progress: {progress_before.get('overall_progress', 0)}%")
+        
         ReportProgressTracker.complete(run_id, "All reports generated successfully!")
         
         # Double-check completion status
@@ -2085,7 +2157,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         if final_progress and final_progress.get("status") != "completed":
             print(f"⚠️  Report generation not marked as completed. Status: {final_progress.get('status')}")
             print(f"   Message: {final_progress.get('message')}")
-            # Force completion since reports are saved
+            print(f"   Task statuses: {[(tid, task.get('status')) for tid, task in final_progress.get('tasks', {}).items()]}")
+            # Force completion since reports are saved and verified
             ReportProgressTracker.complete(run_id, "All reports generated and verified successfully!")
         
         # Update status to generated for all files
@@ -2150,11 +2223,27 @@ async def get_run_report(run_id: str, report_type: str, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail=f"{report_type.upper()} report not found")
     
     if report_type == "html":
+        # CRITICAL: Always serve from file if it exists (file is source of truth)
+        # Database report_content may be truncated or incomplete
+        if report.report_path and os.path.exists(report.report_path):
+            try:
+                with open(report.report_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+                    # Verify file is complete (ends with </html>)
+                    if file_content.strip().endswith("</html>"):
+                        print(f"  ✓ Serving HTML from file: {len(file_content):,} characters")
+                        return HTMLResponse(content=file_content)
+                    else:
+                        print(f"  ⚠️  HTML file appears incomplete, trying database content")
+            except Exception as e:
+                print(f"  ⚠️  Error reading HTML file: {e}, trying database content")
+        
+        # Fallback to database content if file doesn't exist or is incomplete
         if report.report_content:
+            print(f"  ✓ Serving HTML from database: {len(report.report_content):,} characters")
             return HTMLResponse(content=report.report_content)
-        elif report.report_path and os.path.exists(report.report_path):
-            with open(report.report_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
+        
+        raise HTTPException(status_code=404, detail="HTML report content not found")
     elif report_type == "pdf":
         if report.report_path and os.path.exists(report.report_path):
             with open(report.report_path, "rb") as f:

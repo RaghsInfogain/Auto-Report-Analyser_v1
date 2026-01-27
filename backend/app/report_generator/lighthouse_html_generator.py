@@ -4,6 +4,7 @@ Generates comprehensive HTML reports for Lighthouse performance analysis
 """
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
+import html
 
 
 class LighthouseHTMLGenerator:
@@ -46,83 +47,181 @@ class LighthouseHTMLGenerator:
                 else:
                     page_data = []
             
-            # Generate sections with error handling
+            # Generate sections with error handling and logging
             sections = []
+            section_names = []
+            
+            print(f"\n  📄 HTML REPORT GENERATION: Starting section generation...")
+            print(f"  {'='*60}")
             
             try:
+                print(f"  [1/12] Generating Header...")
                 sections.append(LighthouseHTMLGenerator._generate_header(metadata))
+                section_names.append("Header")
+                print(f"      ✓ Header generated")
             except Exception as e:
-                print(f"  ✗ Error generating header: {e}")
+                print(f"      ✗ Error generating header: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Header</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Header (Error)")
             
             try:
+                print(f"  [2/12] Generating Executive Summary...")
                 sections.append(LighthouseHTMLGenerator._generate_executive_summary(metrics, grades, overall_grade, issues))
+                section_names.append("Executive Summary")
+                print(f"      ✓ Executive Summary generated")
             except Exception as e:
-                print(f"  ✗ Error generating executive summary: {e}")
+                print(f"      ✗ Error generating executive summary: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Executive Summary</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Executive Summary (Error)")
             
             try:
+                print(f"  [3/12] Generating Performance Scorecard...")
                 sections.append(LighthouseHTMLGenerator._generate_performance_scorecard(metrics, grades, overall_grade))
+                section_names.append("Performance Scorecard")
+                print(f"      ✓ Performance Scorecard generated")
             except Exception as e:
-                print(f"  ✗ Error generating performance scorecard: {e}")
+                print(f"      ✗ Error generating performance scorecard: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Performance Scorecard</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Performance Scorecard (Error)")
             
             try:
+                print(f"  [4/12] Generating Test Overview...")
                 sections.append(LighthouseHTMLGenerator._generate_test_overview(test_overview, metadata))
+                section_names.append("Test Overview")
+                print(f"      ✓ Test Overview generated")
             except Exception as e:
-                print(f"  ✗ Error generating test overview: {e}")
+                print(f"      ✗ Error generating test overview: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Test Overview</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Test Overview (Error)")
             
             try:
+                print(f"  [5/12] Generating Detailed Performance Metrics...")
                 sections.append(LighthouseHTMLGenerator._generate_detailed_metrics_table(page_data))
+                section_names.append("Detailed Performance Metrics")
+                print(f"      ✓ Detailed Performance Metrics generated ({len(page_data)} pages)")
             except Exception as e:
-                print(f"  ✗ Error generating detailed metrics table: {e}")
+                print(f"      ✗ Error generating detailed metrics table: {e}")
                 import traceback
                 traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Detailed Performance Metrics</h2><p>Error generating table: {str(e)}<br>Page data: {len(page_data) if page_data else 0} pages</p></div>")
+                section_names.append("Detailed Performance Metrics (Error)")
             
             try:
+                print(f"  [6/12] Generating Issues Identified...")
                 sections.append(LighthouseHTMLGenerator._generate_issues_table(issues, page_data))
+                section_names.append("Issues Identified")
+                print(f"      ✓ Issues Identified generated ({len(issues)} issues)")
             except Exception as e:
-                print(f"  ✗ Error generating issues table: {e}")
+                print(f"      ✗ Error generating issues table: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Issues Identified</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Issues Identified (Error)")
             
             try:
+                print(f"  [7/12] Generating Performance Optimization Roadmap...")
                 sections.append(LighthouseHTMLGenerator._generate_optimization_roadmap(recommendations))
+                section_names.append("Performance Optimization Roadmap")
+                print(f"      ✓ Performance Optimization Roadmap generated")
             except Exception as e:
-                print(f"  ✗ Error generating optimization roadmap: {e}")
+                print(f"      ✗ Error generating optimization roadmap: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Performance Optimization Roadmap</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Performance Optimization Roadmap (Error)")
             
             try:
+                print(f"  [8/12] Generating Business Impact Projections...")
                 sections.append(LighthouseHTMLGenerator._generate_business_impact(business_impact))
+                section_names.append("Business Impact Projections")
+                print(f"      ✓ Business Impact Projections generated")
             except Exception as e:
-                print(f"  ✗ Error generating business impact: {e}")
+                print(f"      ✗ Error generating business impact: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Business Impact Projections</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Business Impact Projections (Error)")
             
             try:
+                print(f"  [9/12] Generating Monitoring and Maintenance...")
                 sections.append(LighthouseHTMLGenerator._generate_monitoring_maintenance())
+                section_names.append("Monitoring and Maintenance")
+                print(f"      ✓ Monitoring and Maintenance generated")
             except Exception as e:
-                print(f"  ✗ Error generating monitoring maintenance: {e}")
+                print(f"      ✗ Error generating monitoring maintenance: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Monitoring and Maintenance</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Monitoring and Maintenance (Error)")
             
             try:
+                print(f"  [10/12] Generating AIML Modeling Appendix...")
                 sections.append(LighthouseHTMLGenerator._generate_aiml_appendix(aiml_results))
+                section_names.append("AIML Modeling Appendix")
+                print(f"      ✓ AIML Modeling Appendix generated")
             except Exception as e:
-                print(f"  ✗ Error generating AIML appendix: {e}")
+                print(f"      ✗ Error generating AIML appendix: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>AIML Modeling Appendix</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("AIML Modeling Appendix (Error)")
             
             try:
+                print(f"  [11/12] Generating Final Conclusion...")
                 sections.append(LighthouseHTMLGenerator._generate_final_conclusion(metrics, grades, overall_grade))
+                section_names.append("Final Conclusion")
+                print(f"      ✓ Final Conclusion generated")
             except Exception as e:
-                print(f"  ✗ Error generating final conclusion: {e}")
+                print(f"      ✗ Error generating final conclusion: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Final Conclusion</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Final Conclusion (Error)")
             
             try:
+                print(f"  [12/12] Generating Report Details...")
                 sections.append(LighthouseHTMLGenerator._generate_report_details(metadata))
+                section_names.append("Report Details")
+                print(f"      ✓ Report Details generated")
             except Exception as e:
-                print(f"  ✗ Error generating report details: {e}")
+                print(f"      ✗ Error generating report details: {e}")
+                import traceback
+                traceback.print_exc()
                 sections.append(f"<div class='section'><h2>Report Details</h2><p>Error: {str(e)}</p></div>")
+                section_names.append("Report Details (Error)")
             
+            print(f"\n  ✓ All sections generated: {len(sections)} sections")
+            print(f"  Sections: {', '.join(section_names)}")
+            
+            # Verify all critical sections are present
+            critical_sections = [
+                "Issues Identified",
+                "Performance Optimization Roadmap",
+                "Business Impact Projections",
+                "Next Steps for Monitoring and Maintenance",
+                "AIML Modeling Appendix",
+                "Final Conclusion"
+            ]
+            
+            print(f"\n  🔍 Verifying critical sections in generated HTML:")
+            all_sections_html = ''.join(sections)
+            for section_name in critical_sections:
+                if section_name in all_sections_html:
+                    print(f"      ✓ {section_name} present")
+                else:
+                    print(f"      ⚠️  {section_name} not found in HTML (may be in error state)")
+            
+            print(f"  {'='*60}\n")
+            
+            # Combine all sections
             html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -133,10 +232,14 @@ class LighthouseHTMLGenerator:
 </head>
 <body>
     <div class="container">
-        {''.join(sections)}
+        {all_sections_html}
     </div>
 </body>
 </html>'''
+            
+            # Final verification
+            print(f"  📊 Final HTML size: {len(html):,} characters")
+            print(f"  📊 Sections count: {len(sections)}")
             
             return html
         except Exception as e:
@@ -298,7 +401,7 @@ class LighthouseHTMLGenerator:
             justify-content: center;
             word-wrap: break-word;
             overflow-wrap: break-word;
-            overflow: hidden;
+            /* Removed overflow: hidden to prevent content from being cut off */
         }
         
         .scorecard-card:hover {
@@ -463,10 +566,38 @@ class LighthouseHTMLGenerator:
             border-bottom: none;
         }
 
-        .status-good { color: #10b981; font-weight: 500; }
-        .status-warning { color: #f59e0b; font-weight: 500; }
-        .status-poor { color: #ef4444; font-weight: 500; }
-        .status-critical { color: #dc2626; font-weight: 600; }
+        .status-good { 
+            color: #059669; 
+            font-weight: 600; 
+            background: #d1fae5; 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 4px; 
+            display: inline-block;
+        }
+        .status-warning { 
+            color: #d97706; 
+            font-weight: 600; 
+            background: #fef3c7; 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 4px; 
+            display: inline-block;
+        }
+        .status-poor { 
+            color: #dc2626; 
+            font-weight: 600; 
+            background: #fee2e2; 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 4px; 
+            display: inline-block;
+        }
+        .status-critical { 
+            color: #991b1b; 
+            font-weight: 700; 
+            background: #fecaca; 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 4px; 
+            display: inline-block;
+        }
 
         .severity-low { background: #d1fae5; color: #065f46; padding: 0.25rem 0.5rem; border-radius: 4px; }
         .severity-medium { background: #fef3c7; color: #92400e; padding: 0.25rem 0.5rem; border-radius: 4px; }
@@ -561,18 +692,21 @@ class LighthouseHTMLGenerator:
             risk_level = "LOW"
             risk_message = "Performance is acceptable but can be optimized further."
         
-        # Get detailed grade info
-        loading_score = grades.get("loading", {}).get("score", 0)
-        loading_metric = grades.get("loading", {}).get("metric", 0)
-        loading_name = grades.get("loading", {}).get("metric_name", "LCP")
+        # Get detailed grade info - FIXED: Use score_value for scores, score for metric values
+        loading_info = grades.get("loading", {})
+        loading_score = loading_info.get("score_value", 0)  # This is the 0-100 score
+        loading_metric = loading_info.get("score", 0)  # This is the actual LCP value in seconds
+        loading_name = "LCP"
         
-        interactivity_score = grades.get("interactivity", {}).get("score", 0)
-        interactivity_metric = grades.get("interactivity", {}).get("metric", 0)
-        interactivity_name = grades.get("interactivity", {}).get("metric_name", "TBT")
+        interactivity_info = grades.get("interactivity", {})
+        interactivity_score = interactivity_info.get("score_value", 0)  # This is the 0-100 score
+        interactivity_metric = interactivity_info.get("score", 0)  # This is the actual TBT value in milliseconds
+        interactivity_name = "TBT"
         
-        visual_score = grades.get("visual_stability", {}).get("score", 0)
-        visual_metric = grades.get("visual_stability", {}).get("metric", 0)
-        visual_name = grades.get("visual_stability", {}).get("metric_name", "CLS")
+        visual_info = grades.get("visual_stability", {})
+        visual_score = visual_info.get("score_value", 0)  # This is the 0-100 score
+        visual_metric = visual_info.get("score", 0)  # This is the actual CLS value
+        visual_name = "CLS"
         
         # Enhanced risk messages
         if overall_score < 20:
@@ -625,34 +759,34 @@ class LighthouseHTMLGenerator:
                 <p style="margin: 0.5rem 0 0 0; font-size: 1.1rem; color: {"#991b1b" if risk_level in ["CRITICAL", "HIGH"] else "#92400e" if risk_level == "MEDIUM" else "#166534"};">{risk_message}</p>
             </div>
             
-            <!-- Category Cards -->
+            <!-- Category Cards - FIXED: Dark text on light backgrounds for visibility -->
             <div class="summary-grid" style="margin-top: 2rem;">
-                <div class="category-card">
+                <div class="category-card" style="background: white; border: 1px solid #e0e0e0; padding: 1.5rem; border-radius: 8px;">
                     <div class="grade-badge grade-{loading_grade.lower()}" style="font-size: 2rem; margin-bottom: 1rem;">{loading_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: white; word-wrap: break-word; overflow-wrap: break-word;">Loading Experience</h3>
-                    <div style="font-size: 1.5rem; font-weight: 700; color: white; margin: 0.5rem 0;">{loading_score:.0f}/100</div>
-                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(loading_grade, loading_name, loading_metric)}</p>
+                    <h3 style="margin: 0.5rem 0; color: #333; font-weight: 600; word-wrap: break-word; overflow-wrap: break-word;">Loading Experience</h3>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: #6c5ce7; margin: 0.5rem 0;">{loading_score:.0f}/100</div>
+                    <p style="margin: 0.5rem 0 0 0; color: #666; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(loading_grade, loading_name, loading_metric)}</p>
                 </div>
                 
-                <div class="category-card">
+                <div class="category-card" style="background: white; border: 1px solid #e0e0e0; padding: 1.5rem; border-radius: 8px;">
                     <div class="grade-badge grade-{interactivity_grade.lower()}" style="font-size: 2rem; margin-bottom: 1rem;">{interactivity_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: white; word-wrap: break-word; overflow-wrap: break-word;">Interactivity Experience</h3>
-                    <div style="font-size: 1.5rem; font-weight: 700; color: white; margin: 0.5rem 0;">{interactivity_score:.0f}/100</div>
-                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(interactivity_grade, interactivity_name, interactivity_metric)}</p>
+                    <h3 style="margin: 0.5rem 0; color: #333; font-weight: 600; word-wrap: break-word; overflow-wrap: break-word;">Interactivity Experience</h3>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: #6c5ce7; margin: 0.5rem 0;">{interactivity_score:.0f}/100</div>
+                    <p style="margin: 0.5rem 0 0 0; color: #666; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(interactivity_grade, interactivity_name, interactivity_metric)}</p>
                 </div>
                 
-                <div class="category-card">
+                <div class="category-card" style="background: white; border: 1px solid #e0e0e0; padding: 1.5rem; border-radius: 8px;">
                     <div class="grade-badge grade-{visual_grade.lower()}" style="font-size: 2rem; margin-bottom: 1rem;">{visual_grade}</div>
-                    <h3 style="margin: 0.5rem 0; color: white; word-wrap: break-word; overflow-wrap: break-word;">Visual Stability</h3>
-                    <div style="font-size: 1.5rem; font-weight: 700; color: white; margin: 0.5rem 0;">{visual_score:.0f}/100</div>
-                    <p style="margin: 0.5rem 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(visual_grade, visual_name, visual_metric)}</p>
+                    <h3 style="margin: 0.5rem 0; color: #333; font-weight: 600; word-wrap: break-word; overflow-wrap: break-word;">Visual Stability</h3>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: #6c5ce7; margin: 0.5rem 0;">{visual_score:.0f}/100</div>
+                    <p style="margin: 0.5rem 0 0 0; color: #666; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">{get_grade_explanation(visual_grade, visual_name, visual_metric)}</p>
                 </div>
             </div>
             
-            <!-- Key Findings -->
-            <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.15); border-radius: 8px;">
-                <h3 style="margin-top: 0; color: white;">Key Findings</h3>
-                <ul style="margin: 1rem 0 0 0; padding-left: 1.5rem; color: rgba(255, 255, 255, 0.95);">
+            <!-- Key Findings - FIXED: Dark text on light background -->
+            <div style="margin-top: 2rem; padding: 1.5rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #333; font-weight: 600;">Key Findings</h3>
+                <ul style="margin: 1rem 0 0 0; padding-left: 1.5rem; color: #666;">
                     {''.join(f'<li style="margin: 0.5rem 0;">{finding}</li>' for finding in key_findings)}
                 </ul>
             </div>
@@ -690,17 +824,17 @@ class LighthouseHTMLGenerator:
             "F": "0-39"
         }
         
-        # Get category details
+        # Get category details - FIXED: Use score_value for scores (0-100)
         loading_grade = grades.get("loading", {}).get("grade", "N/A")
-        loading_score = grades.get("loading", {}).get("score", 0)
+        loading_score = grades.get("loading", {}).get("score_value", 0)  # 0-100 score
         loading_weight = "50%"
         
         interactivity_grade = grades.get("interactivity", {}).get("grade", "N/A")
-        interactivity_score = grades.get("interactivity", {}).get("score", 0)
+        interactivity_score = grades.get("interactivity", {}).get("score_value", 0)  # 0-100 score
         interactivity_weight = "30%"
         
         visual_grade = grades.get("visual_stability", {}).get("grade", "N/A")
-        visual_score = grades.get("visual_stability", {}).get("score", 0)
+        visual_score = grades.get("visual_stability", {}).get("score_value", 0)  # 0-100 score
         visual_weight = "20%"
         
         # Grade meanings
@@ -1053,25 +1187,48 @@ class LighthouseHTMLGenerator:
                 tti_score = get_metric_score("tti", tti)
                 avg_score = (fcp_score + lcp_score + si_score + tbt_score + cls_score + tti_score) / 6
                 
-                # Color mapping
-                color_map = {
-                    "green": "var(--success-color)",
-                    "amber": "var(--warning-color)",
-                    "red": "var(--danger-color)",
-                    "gray": "var(--text-secondary)"
-                }
+                # Color mapping with proper contrast
+                def get_metric_style(color_name, value):
+                    """Get styled metric with proper contrast"""
+                    if color_name == "green":
+                        return f'<span style="color: #059669; font-weight: 600; background: #d1fae5; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;">{value}</span>'
+                    elif color_name == "amber":
+                        return f'<span style="color: #d97706; font-weight: 600; background: #fef3c7; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;">{value}</span>'
+                    elif color_name == "red":
+                        return f'<span style="color: #dc2626; font-weight: 600; background: #fee2e2; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;">{value}</span>'
+                    else:
+                        return f'<span style="color: #666; font-weight: 500;">{value}</span>'
+                
+                # Format values correctly
+                fcp_display = f"{fcp:.2f}s" if fcp > 0 else "N/A"
+                lcp_display = f"{lcp:.2f}s" if lcp > 0 else "N/A"
+                si_display = f"{speed_index:.2f}s" if speed_index > 0 else "N/A"
+                tbt_display = f"{tbt:.0f}ms" if tbt > 0 else "N/A"
+                cls_display = f"{cls:.3f}" if cls >= 0 else "N/A"
+                tti_display = f"{tti:.2f}s" if tti > 0 else "N/A"
+                
+                # Status class
+                status_class = "good" if lcp <= 2.5 and tbt <= 200 and cls <= 0.10 else "warning" if lcp <= 4.0 and tbt <= 600 and cls <= 0.25 else "poor"
+                
+                # Score color
+                if avg_score >= 80:
+                    score_style = 'color: #059669; font-weight: 700; background: #d1fae5; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;'
+                elif avg_score >= 60:
+                    score_style = 'color: #d97706; font-weight: 700; background: #fef3c7; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;'
+                else:
+                    score_style = 'color: #dc2626; font-weight: 700; background: #fee2e2; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;'
                 
                 rows += f'''
                     <tr>
-                        <td><strong title="{url}">{page_name_display}</strong><br><small style="color: var(--text-secondary);">{display_url}</small></td>
-                        <td style="color: {color_map.get(fcp_color, 'black')}; font-weight: 600;">{fcp:.1f}s</td>
-                        <td style="color: {color_map.get(lcp_color, 'black')}; font-weight: 600;">{lcp:.1f}s</td>
-                        <td style="color: {color_map.get(si_color, 'black')}; font-weight: 600;">{speed_index:.1f}s</td>
-                        <td style="color: {color_map.get(tbt_color, 'black')}; font-weight: 600;">{tbt:.0f}ms</td>
-                        <td style="color: {color_map.get(cls_color, 'black')}; font-weight: 600;">{cls:.3f}</td>
-                        <td style="color: {color_map.get(tti_color, 'black')}; font-weight: 600;">{tti:.1f}s</td>
-                        <td class="status-{status_text.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', '').lower().replace(' ', '-')}">{status_text}</td>
-                        <td style="color: {"var(--success-color)" if avg_score >= 80 else "var(--warning-color)" if avg_score >= 60 else "var(--danger-color)"}; font-weight: 700;">{avg_score:.0f}/100</td>
+                        <td><strong style="color: #333;" title="{url}">{page_name_display}</strong><br><small style="color: #666; font-size: 0.75rem;">{display_url}</small></td>
+                        <td>{get_metric_style(fcp_color, fcp_display)}</td>
+                        <td>{get_metric_style(lcp_color, lcp_display)}</td>
+                        <td>{get_metric_style(si_color, si_display)}</td>
+                        <td>{get_metric_style(tbt_color, tbt_display)}</td>
+                        <td>{get_metric_style(cls_color, cls_display)}</td>
+                        <td>{get_metric_style(tti_color, tti_display)}</td>
+                        <td><span class="status-{status_class}">{status_text}</span></td>
+                        <td><span style="{score_style}">{avg_score:.0f}/100</span></td>
                     </tr>'''
             except Exception as e:
                 print(f"  ✗ Error processing page {idx} in detailed metrics table: {e}")
@@ -1191,110 +1348,135 @@ class LighthouseHTMLGenerator:
     @staticmethod
     def _generate_issues_table(issues: List[Dict[str, Any]], page_data: List[Dict[str, Any]]) -> str:
         """Generate critical issues table with Impacted Pages column"""
-        if not issues:
-            return '''<div class="section">
+        try:
+            # Ensure issues is a list
+            if not isinstance(issues, list):
+                issues = []
+            
+            if not issues:
+                return '''<div class="section">
                 <h2>Issues Identified</h2>
                 <p>✅ No critical issues identified. Performance metrics are within acceptable ranges.</p>
             </div>'''
-        
-        rows = ""
-        for issue in issues:
-            # Determine impacted pages based on issue type and actual page metrics
-            impacted_pages = []
-            issue_name = issue.get('issue', '').lower()
             
-            # Map issues to pages based on actual metrics from each page
-            for idx, page in enumerate(page_data):
-                page_url = page.get("url", f"Page {idx + 1}")
-                should_include = False
-                
-                # Check actual page metrics to determine if this page is impacted
-                if "lcp" in issue_name or "loading" in issue_name or "largest contentful" in issue_name:
-                    if page.get("lcp", 0) > 4.0:
-                        should_include = True
-                elif "tbt" in issue_name or "blocking" in issue_name or "interactivity" in issue_name:
-                    if page.get("tbt", 0) > 600:
-                        should_include = True
-                elif "cls" in issue_name or "layout" in issue_name or "visual" in issue_name or "cumulative layout" in issue_name:
-                    if page.get("cls", 0) > 0.25:
-                        should_include = True
-                elif "speed" in issue_name or "speed index" in issue_name:
-                    if page.get("speed_index", 0) > 5.8:
-                        should_include = True
-                elif "fcp" in issue_name or "first contentful" in issue_name:
-                    if page.get("fcp", 0) > 3.0:
-                        should_include = True
-                elif "tti" in issue_name or "time to interactive" in issue_name:
-                    if page.get("tti", 0) > 7.3:
-                        should_include = True
-                else:
-                    # General issue - check if any metric is poor
-                    if (page.get("lcp", 0) > 4.0 or 
-                        page.get("tbt", 0) > 600 or 
-                        page.get("cls", 0) > 0.25 or 
-                        page.get("speed_index", 0) > 5.8):
-                        should_include = True
-                
-                if should_include:
-                    # Shorten URL but preserve uniqueness
-                    if len(page_url) <= 40:
-                        short_url = page_url
+            # Ensure page_data is a list
+            if not isinstance(page_data, list):
+                page_data = []
+            
+            rows = ""
+            for idx, issue in enumerate(issues, 1):
+                try:
+                    # Use impacted_pages from analyzer if available (already calculated correctly)
+                    impacted_pages_list = issue.get("impacted_pages", [])
+                    
+                    if not isinstance(impacted_pages_list, list):
+                        impacted_pages_list = []
+                    
+                    if not impacted_pages_list:
+                        # Fallback: calculate from page data based on issue type
+                        issue_name = str(issue.get('issue', '')).lower()
+                        for page in page_data:
+                            try:
+                                page_title = page.get("page_title", "") or page.get("url", "Unknown")
+                                if not page_title:
+                                    page_title = "Unknown"
+                                
+                                should_include = False
+                                
+                                # Check metrics based on issue type
+                                if "lcp" in issue_name or "loading" in issue_name or "largest contentful" in issue_name:
+                                    lcp_val = float(page.get("lcp", 0) or 0)
+                                    if lcp_val > 4.0:
+                                        should_include = True
+                                elif "tbt" in issue_name or "blocking" in issue_name or "interactivity" in issue_name:
+                                    tbt_val = float(page.get("tbt", 0) or 0)
+                                    if tbt_val > 600:
+                                        should_include = True
+                                elif "cls" in issue_name or "layout" in issue_name or "visual" in issue_name:
+                                    cls_val = float(page.get("cls", 0) or 0)
+                                    if cls_val > 0.25:
+                                        should_include = True
+                                elif "speed" in issue_name or "speed index" in issue_name:
+                                    si_val = float(page.get("speed_index", 0) or 0)
+                                    if si_val > 5.8:
+                                        should_include = True
+                                
+                                if should_include and page_title not in impacted_pages_list:
+                                    impacted_pages_list.append(str(page_title))
+                            except Exception as page_error:
+                                print(f"      ⚠️  Error processing page in issue {idx}: {page_error}")
+                                continue
+                    
+                    # Format impacted pages for display
+                    if not impacted_pages_list:
+                        impacted_pages_str = f"All {len(page_data)} Pages" if page_data else "All Pages"
                     else:
-                        short_url = page_url[:25] + "..." + page_url[-12:] if len(page_url) > 37 else page_url[:37] + "..."
-                    impacted_pages.append(short_url)
-            
-            # If no specific pages match, show all pages that have any issues
-            if not impacted_pages:
-                # Include all pages that have at least one poor metric
-                for idx, page in enumerate(page_data):
-                    page_url = page.get("url", f"Page {idx + 1}")
-                    if (page.get("lcp", 0) > 4.0 or 
-                        page.get("tbt", 0) > 600 or 
-                        page.get("cls", 0) > 0.25 or 
-                        page.get("speed_index", 0) > 5.8):
-                        if len(page_url) <= 40:
-                            short_url = page_url
-                        else:
-                            short_url = page_url[:25] + "..." + page_url[-12:] if len(page_url) > 37 else page_url[:37] + "..."
-                        impacted_pages.append(short_url)
-            
-            # If still no pages, show "All Pages" as fallback
-            if not impacted_pages:
-                impacted_pages = [f"All {len(page_data)} Pages"]
-            
-            # Format impacted pages list
-            unique_pages = list(dict.fromkeys(impacted_pages))  # Remove duplicates while preserving order
-            impacted_pages_str = ", ".join(unique_pages[:3])
-            if len(unique_pages) > 3:
-                impacted_pages_str += f" (+{len(unique_pages) - 3} more)"
-            
-            rows += f'''
+                        unique_pages = list(dict.fromkeys([str(p) for p in impacted_pages_list]))
+                        displayed = unique_pages[:3]
+                        impacted_pages_str = ", ".join([p[:40] + "..." if len(p) > 40 else p for p in displayed])
+                        if len(unique_pages) > 3:
+                            impacted_pages_str += f" (+{len(unique_pages) - 3} more)"
+                    
+                    # Get severity for styling
+                    severity = str(issue.get('severity', 'Medium')).lower()
+                    severity_class = f"severity-{severity}"
+                    
+                    # Escape HTML in text fields to prevent issues
+                    import html
+                    issue_text = html.escape(str(issue.get('issue', 'N/A')))
+                    impact_text = html.escape(str(issue.get('impact', 'N/A')))
+                    recommendation_text = html.escape(str(issue.get('recommendation', 'N/A')))
+                    # Also escape impacted_pages_str
+                    impacted_pages_str = html.escape(impacted_pages_str)
+                    
+                    rows += f'''
                 <tr>
-                    <td><strong>{issue.get('issue', 'N/A')}</strong></td>
-                    <td>{impacted_pages_str}</td>
-                    <td>{issue.get('example', 'N/A')}</td>
-                    <td>{issue.get('impact', 'N/A')}</td>
-                    <td>{issue.get('recommendation', 'N/A')}</td>
-                    <td>{issue.get('business_benefit', 'N/A')}</td>
+                    <td style="color: #333; font-weight: 600;">{issue_text}</td>
+                    <td style="color: #666; font-size: 0.875rem;">{impacted_pages_str}</td>
+                    <td style="color: #666;">{impact_text}</td>
+                    <td style="color: #666;">{recommendation_text}</td>
+                    <td><span class="{severity_class}">{severity.title()}</span></td>
                 </tr>'''
-        
-        return f'''<div class="section">
+                except Exception as issue_error:
+                    print(f"      ⚠️  Error processing issue {idx}: {issue_error}")
+                    import traceback
+                    traceback.print_exc()
+                    # Add error row instead of failing
+                    rows += f'''
+                <tr>
+                    <td colspan="5" style="color: #dc2626;">Error processing issue: {str(issue_error)}</td>
+                </tr>'''
+                    continue
+            
+            return f'''<div class="section">
             <h2>Issues Identified</h2>
             <table>
                 <thead>
                     <tr>
                         <th>Issue</th>
                         <th>Impacted Pages</th>
-                        <th>Example</th>
                         <th>Impact</th>
                         <th>Recommendation</th>
-                        <th>Business Benefit</th>
+                        <th>Severity</th>
                     </tr>
                 </thead>
                 <tbody>
                     {rows}
                 </tbody>
             </table>
+            <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-secondary);">
+                <strong>Total Issues:</strong> {len(issues)}
+            </p>
+        </div>'''
+        except Exception as e:
+            print(f"      ✗ Critical error in _generate_issues_table: {e}")
+            import traceback
+            traceback.print_exc()
+            # Return a minimal issues section instead of failing completely
+            return f'''<div class="section">
+            <h2>Issues Identified</h2>
+            <p style="color: #dc2626;">Error generating issues table: {str(e)}</p>
+            <p>Please check the backend logs for more details.</p>
         </div>'''
     
     @staticmethod
@@ -1607,10 +1789,33 @@ class LighthouseHTMLGenerator:
         
         data_sources = aiml_results.get("data_sources", "N/A")
         features = aiml_results.get("features_used", [])
+        if not isinstance(features, list):
+            features = []
         models = aiml_results.get("models", {})
         predictions = aiml_results.get("predictions", {})
         comparison = aiml_results.get("comparison", {})
-        assumptions = aiml_results.get("assumptions", [])
+        
+        # Default assumptions if not provided - ensure it's always a list
+        assumptions_raw = aiml_results.get("assumptions", [
+            "Models trained on synthetic data based on Lighthouse thresholds",
+            "Predictions are estimates and should be validated with real-world data",
+            "Performance may vary based on actual user behavior and network conditions"
+        ])
+        
+        # Convert assumptions to list if it's a string
+        if isinstance(assumptions_raw, str):
+            # If it's a string, split by newlines or make it a single-item list
+            if '\n' in assumptions_raw:
+                assumptions = [line.strip() for line in assumptions_raw.split('\n') if line.strip()]
+            else:
+                assumptions = [assumptions_raw]
+        elif isinstance(assumptions_raw, list):
+            assumptions = assumptions_raw
+        else:
+            assumptions = [str(assumptions_raw)]
+        
+        # Format assumptions as paragraphs instead of bullet points
+        assumptions_html = ''.join(f'<p style="margin-bottom: 0.75rem; line-height: 1.6;">{html.escape(str(assumption))}</p>' for assumption in assumptions)
         
         return f'''<div class="section">
             <h2>AIML Modeling Appendix</h2>
@@ -1634,14 +1839,34 @@ class LighthouseHTMLGenerator:
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td rowspan="2">Classification</td><td>Logistic Regression</td><td>Accuracy</td><td>{models.get('classification', {}).get('logistic_regression', {}).get('accuracy', 'N/A')}</td><td rowspan="2">Accuracy measures how often the model correctly predicts performance grades. F1 Score balances precision and recall, providing a single metric that considers both false positives and false negatives. Higher values (closer to 1.0) indicate better model performance.</td></tr>
-                    <tr><td>Logistic Regression</td><td>F1 Score</td><td>{models.get('classification', {}).get('logistic_regression', {}).get('f1_score', 'N/A')}</td></tr>
-                    <tr><td rowspan="2">Classification</td><td>Random Forest</td><td>Accuracy</td><td>{models.get('classification', {}).get('random_forest', {}).get('accuracy', 'N/A')}</td><td rowspan="2">Random Forest uses multiple decision trees to make predictions, often providing better accuracy than single models. Higher accuracy and F1 scores indicate the model can reliably predict performance grades from metrics.</td></tr>
-                    <tr><td>Random Forest</td><td>F1 Score</td><td>{models.get('classification', {}).get('random_forest', {}).get('f1_score', 'N/A')}</td></tr>
-                    <tr><td>Regression</td><td>Ridge</td><td>RMSE</td><td>{models.get('regression', {}).get('ridge', {}).get('rmse', 'N/A')}</td><td>RMSE (Root Mean Squared Error) measures prediction error. Lower RMSE values indicate more accurate predictions. Ridge regression prevents overfitting by penalizing large coefficients, making it robust for performance score predictions.</td></tr>
-                    <tr><td>Regression</td><td>Gradient Boosting</td><td>RMSE</td><td>{models.get('regression', {}).get('gradient_boosting', {}).get('rmse', 'N/A')}</td><td>Gradient Boosting builds models sequentially, learning from previous errors. Lower RMSE indicates the model can accurately predict continuous values like performance scores. This method often provides better accuracy than linear models.</td></tr>
-                    <tr><td rowspan="2">Neural Network</td><td>MLP Regressor</td><td>Architecture</td><td>{models.get('neural_network', {}).get('architecture', 'N/A')}</td><td rowspan="2">Neural Network architecture shows the number of hidden layers and neurons. RMSE measures how well the network predicts performance scores. Lower RMSE indicates the network has learned complex patterns in the data to make accurate predictions.</td></tr>
-                    <tr><td>MLP Regressor</td><td>RMSE</td><td>{models.get('neural_network', {}).get('rmse', 'N/A')}</td></tr>
+                    <tr>
+                        <td>Classification</td>
+                        <td>Logistic Regression</td>
+                        <td>Accuracy</td>
+                        <td>{models.get('classification', {}).get('accuracy', 'N/A') if isinstance(models.get('classification', {}), dict) else 'N/A'}</td>
+                        <td>Accuracy measures how often the model correctly predicts performance grades. Higher values (closer to 1.0) indicate better model performance.</td>
+                    </tr>
+                    <tr>
+                        <td>Classification</td>
+                        <td>Logistic Regression</td>
+                        <td>F1 Score</td>
+                        <td>{models.get('classification', {}).get('f1_score', 'N/A') if isinstance(models.get('classification', {}), dict) else 'N/A'}</td>
+                        <td>F1 Score balances precision and recall, providing a single metric that considers both false positives and false negatives.</td>
+                    </tr>
+                    <tr>
+                        <td>Regression</td>
+                        <td>Ridge</td>
+                        <td>RMSE</td>
+                        <td>{models.get('regression', {}).get('rmse', 'N/A') if isinstance(models.get('regression', {}), dict) else 'N/A'}</td>
+                        <td>RMSE (Root Mean Squared Error) measures prediction error. Lower RMSE values indicate more accurate predictions. Ridge regression prevents overfitting by penalizing large coefficients.</td>
+                    </tr>
+                    <tr>
+                        <td>Neural Network</td>
+                        <td>MLP Regressor</td>
+                        <td>Architecture</td>
+                        <td>{models.get('neural_network', {}).get('architecture', 'N/A') if isinstance(models.get('neural_network', {}), dict) else 'N/A'}</td>
+                        <td>Neural Network architecture shows the number of hidden layers and neurons. Lower RMSE indicates the network has learned complex patterns in the data.</td>
+                    </tr>
                 </tbody>
             </table>
             
@@ -1656,9 +1881,9 @@ class LighthouseHTMLGenerator:
                 </thead>
                 <tbody>
                     <tr><td>Predicted Grade</td><td>{predictions.get('predicted_grade', 'N/A')}</td><td>The AI model's prediction of the overall performance grade (A-F) based on current metrics. This helps validate the rule-based grading system and provides a data-driven perspective on performance classification.</td></tr>
-                    <tr><td>NN Predicted Score</td><td>{predictions.get('predicted_score_nn', 'N/A')}</td><td>The Neural Network's predicted overall performance score (0-100). This represents the model's learned understanding of how metrics combine to create an overall score, potentially capturing non-linear relationships.</td></tr>
-                    <tr><td>Predicted Bounce Rate</td><td>{predictions.get('predicted_bounce_rate', 'N/A')}%</td><td>Estimated percentage of users who leave the site immediately. Higher bounce rates indicate poor user experience. This prediction helps quantify the business impact of current performance issues.</td></tr>
-                    <tr><td>Predicted Conversion Lift</td><td>{predictions.get('predicted_conversion_lift', 'N/A')}%</td><td>Expected improvement in conversion rate if performance is optimized. Positive values indicate potential revenue gains. This metric helps prioritize optimization efforts based on expected business impact.</td></tr>
+                    <tr><td>Predicted Score</td><td>{predictions.get('predicted_score', 'N/A')}</td><td>The model's predicted overall performance score (0-100). This represents the model's learned understanding of how metrics combine to create an overall score, potentially capturing non-linear relationships.</td></tr>
+                    <tr><td>Predicted Bounce Rate</td><td>{predictions.get('bounce_rate', 'N/A')}%</td><td>Estimated percentage of users who leave the site immediately. Higher bounce rates indicate poor user experience. This prediction helps quantify the business impact of current performance issues.</td></tr>
+                    <tr><td>Predicted Conversion Lift</td><td>{predictions.get('conversion_lift', 'N/A')}%</td><td>Expected improvement in conversion rate if performance is optimized. Positive values indicate potential revenue gains. This metric helps prioritize optimization efforts based on expected business impact.</td></tr>
                 </tbody>
             </table>
             
@@ -1672,16 +1897,16 @@ class LighthouseHTMLGenerator:
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>Weighted Formula</td><td>{comparison.get('weighted_formula_score', 'N/A')}</td><td>Rule-based calculation using predefined weights (Loading 50%, Interactivity 30%, Visual Stability 20%). This method is transparent, interpretable, and based on industry standards. It provides a consistent, explainable score.</td></tr>
-                    <tr><td>Neural Network Prediction</td><td>{comparison.get('nn_predicted_score', 'N/A')}</td><td>AI model's learned prediction based on patterns in training data. The neural network can capture complex, non-linear relationships between metrics that the formula might miss. This provides a data-driven alternative perspective.</td></tr>
+                    <tr><td>Weighted Formula</td><td>{comparison.get('weighted_formula', 'N/A')}</td><td>Rule-based calculation using predefined weights (Loading 50%, Interactivity 30%, Visual Stability 20%). This method is transparent, interpretable, and based on industry standards. It provides a consistent, explainable score.</td></tr>
+                    <tr><td>Neural Network Prediction</td><td>{comparison.get('neural_network', 'N/A')}</td><td>AI model's learned prediction based on patterns in training data. The neural network can capture complex, non-linear relationships between metrics that the formula might miss. This provides a data-driven alternative perspective.</td></tr>
                     <tr><td>Difference</td><td>{comparison.get('difference', 'N/A')}</td><td>The difference between the two methods. Small differences (&lt;5 points) indicate agreement. Larger differences suggest the neural network has identified patterns not captured by the weighted formula, which may warrant further investigation.</td></tr>
                 </tbody>
             </table>
             
             <h3>Assumptions and Limitations</h3>
-            <ul style="margin-left: 2rem; margin-top: 1rem;">
-                {''.join(f'<li>{assumption}</li>' for assumption in assumptions)}
-            </ul>
+            <div style="margin-top: 1rem;">
+                {assumptions_html}
+            </div>
         </div>'''
     
     @staticmethod
