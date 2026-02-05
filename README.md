@@ -77,7 +77,23 @@ npm install
 npm start
 ```
 
-The frontend will be available at `http://localhost:3000`
+The frontend will be available at `http://localhost:3020`
+
+### Running on Windows
+
+Use the provided `.bat` scripts (equivalent to the `.sh` scripts on macOS/Linux):
+
+| Script | Description |
+|--------|-------------|
+| `run_server.bat` | Start both backend and frontend (opens two windows). Backend: http://localhost:8000, Frontend: http://localhost:3020 |
+| `start_backend.bat` | Backend only (FastAPI on port 8000) |
+| `start_frontend.bat` | Frontend only (React on port 3020) |
+| `run_backend.bat` | Backend only, with venv setup and dependency check |
+| `run_frontend.bat` | Frontend only, with npm install if needed |
+| `restart_standard_ports.bat` | Stop processes on ports 6000, 7001, 8000, 3000, 3020 and restart backend and frontend |
+| `migrate_to_sequential_runs.bat` | Run the Run ID migration script (requires backend venv) |
+
+**Prerequisites on Windows:** Python 3 (or `py -3`), Node.js/npm. Double-click a `.bat` file or run it from Command Prompt.
 
 ## Usage
 
