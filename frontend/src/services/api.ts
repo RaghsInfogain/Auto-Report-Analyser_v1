@@ -235,4 +235,3 @@ export const getRunParsedData = async (runId: string): Promise<ParsedDataRespons
   const response = await api.get(`/api/runs/${runId}/parsed-data`);
   return response.data;
 };
-

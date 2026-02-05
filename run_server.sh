@@ -56,8 +56,8 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-echo "🚀 Starting Frontend Server on http://localhost:3000"
-npm start > "$PROJECT_ROOT/frontend.log" 2>&1 &
+echo "🚀 Starting Frontend Server on http://localhost:3020"
+PORT=3020 npm start > "$PROJECT_ROOT/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 
 # Display status
@@ -72,7 +72,7 @@ echo "  - API Docs: http://localhost:8000/docs"
 echo "  - Logs: $PROJECT_ROOT/backend.log"
 echo ""
 echo "Frontend:"
-echo "  - Web App: http://localhost:3000"
+echo "  - Web App: http://localhost:3020"
 echo "  - Logs: $PROJECT_ROOT/frontend.log"
 echo ""
 echo "Press CTRL+C to stop both servers"

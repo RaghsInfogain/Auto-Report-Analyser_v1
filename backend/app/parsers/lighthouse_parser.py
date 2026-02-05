@@ -202,12 +202,27 @@ class LighthouseParser:
                     if display_value and "Document has a" not in display_value and len(display_value) < 100:
                         title = display_value
         
-        # Fallback to URL
+        # Fallback to URL - extract path only (remove hostname)
         if not title:
-            url_parts = str(page_url).split("/")
+            # Remove protocol and hostname, keep only path
+            url_str = str(page_url)
+            if "://" in url_str:
+                # Extract path after domain
+                path_part = url_str.split("://", 1)[1]
+                if "/" in path_part:
+                    path_part = "/" + path_part.split("/", 1)[1]
+                else:
+                    path_part = "/"
+            else:
+                path_part = url_str
+            
+            # Extract filename or last path segment
+            url_parts = path_part.rstrip("/").split("/")
             title = url_parts[-1] if url_parts[-1] else (url_parts[-2] if len(url_parts) > 1 else f"Page {file_index}")
             if "?" in title:
                 title = title.split("?")[0]
+            if not title or title == "/":
+                title = f"Page {file_index}"
         
         # Clean title - remove problematic text
         title = str(title).strip().rstrip("`'\"")

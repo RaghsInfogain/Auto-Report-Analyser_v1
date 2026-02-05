@@ -3145,22 +3145,170 @@ class HTMLReportGenerator:
             </div>
         </div>'''
         
-        # Categorize issues by priority
-        critical_issues = [i for i in issues if i.get('priority', '').startswith('P0')]
-        high_issues = [i for i in issues if i.get('priority', '').startswith('P1')]
-        moderate_issues = [i for i in issues if i.get('priority', '').startswith('P2')]
-        other_issues = [i for i in issues if not i.get('priority', '').startswith(('P0', 'P1', 'P2'))]
+        # Consolidate similar issues
+        def normalize_issue_title(title: str) -> str:
+            """Normalize issue titles to group similar issues together"""
+            title_lower = title.lower()
+            import re
+            # Group slow transactions by response time ranges
+            if "slow transaction" in title_lower or "very slow transaction" in title_lower:
+                # Extract response time from title (format: "Slow Transaction: NAME - X.Xs")
+                # Look for pattern like "16.0s" or "18.0s" in the title
+                time_match = re.search(r'(\d+\.?\d*)\s*s', title)
+                if time_match:
+                    response_time = float(time_match.group(1))
+                    # Group into ranges: 0-5s, 5-10s, 10-15s, 15-20s, 20-25s, 25-30s, 30+
+                    if response_time < 5:
+                        return "Slow Transaction Between 0s-5s"
+                    elif response_time < 10:
+                        return "Slow Transaction Between 5s-10s"
+                    elif response_time < 15:
+                        return "Slow Transaction Between 10s-15s"
+                    elif response_time < 20:
+                        return "Slow Transaction Between 15s-20s"
+                    elif response_time < 25:
+                        return "Slow Transaction Between 20s-25s"
+                    elif response_time < 30:
+                        return "Slow Transaction Between 25s-30s"
+                    else:
+                        return "Slow Transaction Above 30s"
+                # Fallback: if no time found, group all together
+                return "Slow Transaction"
+            # Group high error rate issues by error rate ranges
+            elif "high error rate" in title_lower or "elevated error rate" in title_lower:
+                # Extract error rate from title (format: "High Error Rate for NAME - X.X%")
+                # Look for pattern like "83.4%" in the title
+                error_rate_match = re.search(r'(\d+\.?\d*)\s*%', title)
+                if error_rate_match:
+                    error_rate = float(error_rate_match.group(1))
+                    # Group into ranges: 0-20%, 20-50%, 50-80%, 80-90%, 90-100%
+                    if error_rate < 20:
+                        return "High Error Rate 0-20%"
+                    elif error_rate < 50:
+                        return "High Error Rate 20-50%"
+                    elif error_rate < 80:
+                        return "High Error Rate 50-80%"
+                    elif error_rate < 90:
+                        return "High Error Rate 80-90%"
+                    else:
+                        return "High Error Rate 90-100%"
+                # Fallback: if no percentage found, group all together
+                return "High Error Rate"
+            return title
+        
+        # Group issues by normalized title
+        consolidated_issues = {}
+        for issue in issues:
+            normalized_title = normalize_issue_title(issue.get('title', 'Unknown Issue'))
+            if normalized_title not in consolidated_issues:
+                consolidated_issues[normalized_title] = {
+                    'title': normalized_title,
+                    'issues': [],
+                    'priority': issue.get('priority', 'UNKNOWN'),
+                    'impact': issue.get('impact', 'N/A'),
+                    'recommendation': issue.get('recommendation', issue.get('fix', 'Review and address the issue')),
+                    'business_benefit': issue.get('business_benefit', 'Improved system reliability and user experience')
+                }
+            consolidated_issues[normalized_title]['issues'].append(issue)
+        
+        # Determine highest priority for consolidated issue
+        priority_order = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}
+        for normalized_title, consolidated in consolidated_issues.items():
+            priorities = [i.get('priority', 'UNKNOWN') for i in consolidated['issues']]
+            # Get highest priority (lowest number)
+            highest_priority = min(priorities, key=lambda p: priority_order.get(p[:2], 999))
+            consolidated['priority'] = highest_priority
+        
+        # Categorize consolidated issues by priority
+        critical_issues = [c for c in consolidated_issues.values() if c['priority'].startswith('P0')]
+        high_issues = [c for c in consolidated_issues.values() if c['priority'].startswith('P1')]
+        moderate_issues = [c for c in consolidated_issues.values() if c['priority'].startswith('P2')]
+        other_issues = [c for c in consolidated_issues.values() if not c['priority'].startswith(('P0', 'P1', 'P2'))]
         
         # Generate table rows with priority-based styling
         table_rows = ""
-        for i, issue in enumerate(issues, 1):
-            title = issue.get('title', 'Unknown Issue')
-            impact = issue.get('impact', 'N/A')
-            affected = issue.get('affected', 'N/A')
-            priority = issue.get('priority', 'UNKNOWN')
-            example = issue.get('example', affected)
-            recommendation = issue.get('recommendation', issue.get('fix', 'Review and address the issue'))
-            business_benefit = issue.get('business_benefit', 'Improved system reliability and user experience')
+        for consolidated in consolidated_issues.values():
+            title = consolidated['title']
+            impact = consolidated['impact']
+            priority = consolidated['priority']
+            recommendation = consolidated['recommendation']
+            business_benefit = consolidated['business_benefit']
+            occurrences = len(consolidated['issues'])
+            
+            # Build example text showing occurrences
+            if occurrences == 1:
+                example_text = consolidated['issues'][0].get('example', consolidated['issues'][0].get('affected', 'N/A'))
+            else:
+                import re
+                # For slow transactions, extract transaction name and time from title
+                if "Slow Transaction" in title or "Very Slow Transaction" in title:
+                    # Extract transaction details from titles (format: "Slow Transaction: NAME - X.Xs")
+                    transaction_examples = []
+                    for issue in consolidated['issues']:
+                        issue_title = issue.get('title', '')
+                        # Extract transaction name and time (e.g., "TC06_CE_08_Logout - 16.0s")
+                        if ":" in issue_title and "-" in issue_title:
+                            # Get part after colon and before end
+                            transaction_part = issue_title.split(":", 1)[1].strip()
+                            transaction_examples.append(transaction_part)
+                        else:
+                            # Fallback to example or affected
+                            transaction_examples.append(issue.get('example', issue.get('affected', '')))
+                    
+                    # Remove empty items and join
+                    transaction_examples = [t for t in transaction_examples if t]
+                    if transaction_examples:
+                        example_text = ", ".join(transaction_examples)
+                    else:
+                        example_text = f"Occurred {occurrences} time(s)"
+                # For high error rate issues, extract transaction name and error rate, sort by worst first
+                elif "High Error Rate" in title or "Elevated Error Rate" in title:
+                    transaction_examples_with_rate = []
+                    for issue in consolidated['issues']:
+                        issue_title = issue.get('title', '')
+                        # Extract transaction name and error rate (e.g., "TC03_AC_02_R03_Login_UTILITY.ROUTINE_Menu-2 - 83.4%")
+                        if "for" in issue_title and "-" in issue_title:
+                            # Format: "High Error Rate for NAME - X.X%"
+                            parts = issue_title.split("for", 1)
+                            if len(parts) > 1:
+                                transaction_part = parts[1].strip()
+                                transaction_examples_with_rate.append((transaction_part, issue_title))
+                        elif ":" in issue_title and "-" in issue_title:
+                            # Alternative format: "High Error Rate: NAME - X.X%"
+                            transaction_part = issue_title.split(":", 1)[1].strip()
+                            transaction_examples_with_rate.append((transaction_part, issue_title))
+                        else:
+                            # Fallback
+                            transaction_examples_with_rate.append((issue.get('example', issue.get('affected', '')), issue_title))
+                    
+                    # Sort by error rate (extract percentage and sort descending - worst first)
+                    def extract_error_rate(item):
+                        title_text = item[1] if isinstance(item, tuple) else item
+                        error_match = re.search(r'(\d+\.?\d*)\s*%', title_text)
+                        return float(error_match.group(1)) if error_match else 0.0
+                    
+                    transaction_examples_with_rate.sort(key=extract_error_rate, reverse=True)
+                    
+                    # Take only the transaction part (first element of tuple) and limit to 5-6 worst
+                    transaction_examples = [item[0] if isinstance(item, tuple) else item for item in transaction_examples_with_rate[:6]]
+                    
+                    # Remove empty items and join
+                    transaction_examples = [t for t in transaction_examples if t]
+                    if transaction_examples:
+                        example_text = ", ".join(transaction_examples)
+                    else:
+                        example_text = f"Occurred {occurrences} time(s)"
+                else:
+                    # For other issues, show count and list of affected items
+                    affected_items = [i.get('affected', i.get('example', '')) for i in consolidated['issues']]
+                    unique_items = list(dict.fromkeys([item for item in affected_items if item]))  # Preserve order, remove duplicates
+                    if unique_items:
+                        if len(unique_items) <= 3:
+                            example_text = f"Occurred {occurrences} time(s): {', '.join(unique_items)}"
+                        else:
+                            example_text = f"Occurred {occurrences} time(s): {', '.join(unique_items[:3])} (+{len(unique_items)-3} more)"
+                    else:
+                        example_text = f"Occurred {occurrences} time(s)"
             
             # Color code based on priority
             if priority.startswith('P0'):
@@ -3174,15 +3322,17 @@ class HTMLReportGenerator:
             
             table_rows += f'''
             <tr>
-                <td style="padding: 1rem; font-weight: 600; color: var(--text-primary);">{title}</td>
-                <td style="padding: 1rem; color: var(--text-secondary);">{example}</td>
-                <td style="padding: 1rem; color: var(--text-secondary);">{impact}</td>
-                <td style="padding: 1rem; color: var(--text-secondary);">{recommendation}</td>
-                <td style="padding: 1rem; color: var(--text-secondary);">{business_benefit}</td>
+                <td style="padding: 1rem; font-weight: 600; color: var(--text-primary); word-wrap: break-word; max-width: 200px;">{title}</td>
+                <td style="padding: 1rem; color: var(--text-secondary); word-wrap: break-word; max-width: 250px;">{example_text}</td>
+                <td style="padding: 1rem; color: var(--text-secondary); word-wrap: break-word; max-width: 200px;">{impact}</td>
+                <td style="padding: 1rem; color: var(--text-secondary); word-wrap: break-word; max-width: 250px;">{recommendation}</td>
+                <td style="padding: 1rem; color: var(--text-secondary); word-wrap: break-word; max-width: 200px;">{business_benefit}</td>
                 <td style="padding: 1rem; color: {priority_color}; font-weight: 600;">{priority}</td>
             </tr>'''
         
         # Generate alert message based on issue severity
+        total_original_issues = len(issues)
+        total_consolidated = len(consolidated_issues)
         if critical_issues:
             alert_class = "alert-danger"
             alert_text = f"<strong>IMMEDIATE ACTION REQUIRED:</strong> {len(critical_issues)} critical issue{'s' if len(critical_issues) > 1 else ''} identified. "
@@ -3191,10 +3341,10 @@ class HTMLReportGenerator:
             alert_text = f"<strong>HIGH PRIORITY:</strong> {len(high_issues)} high priority issue{'s' if len(high_issues) > 1 else ''} identified. "
         else:
             alert_class = "alert-info"
-            alert_text = f"<strong>ISSUES IDENTIFIED:</strong> {len(issues)} issue{'s' if len(issues) > 1 else ''} identified for review. "
+            alert_text = f"<strong>ISSUES IDENTIFIED:</strong> {total_consolidated} issue{'s' if total_consolidated > 1 else ''} identified for review. "
         
-        if len(issues) > len(critical_issues) + len(high_issues):
-            alert_text += f"Total of {len(issues)} issue{'s' if len(issues) > 1 else ''} across all severity levels."
+        if total_original_issues > total_consolidated:
+            alert_text += f"({total_original_issues} total occurrence{'s' if total_original_issues > 1 else ''} consolidated into {total_consolidated} unique issue{'s' if total_consolidated > 1 else ''})"
         
         return f'''
         <div class="section">
@@ -3204,14 +3354,14 @@ class HTMLReportGenerator:
             </div>
             
             <div style="overflow-x: auto; margin-top: 1.5rem;">
-                <table class="endpoint-table" style="width: 100%; border-collapse: collapse;">
+                <table class="endpoint-table" style="width: 100%; max-width: 100%; border-collapse: collapse; table-layout: auto; word-wrap: break-word; overflow-wrap: break-word;">
                     <thead>
                         <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Issue</th>
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Example of Issue</th>
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Impact</th>
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Recommendation</th>
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Business Benefit</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; word-wrap: break-word; max-width: 200px;">Issue</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; word-wrap: break-word; max-width: 250px;">Example of Issue</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; word-wrap: break-word; max-width: 200px;">Impact</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; word-wrap: break-word; max-width: 250px;">Recommendation</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; word-wrap: break-word; max-width: 200px;">Business Benefit</th>
                             <th style="padding: 1rem; text-align: left; font-weight: 600;">Priority</th>
                         </tr>
                     </thead>

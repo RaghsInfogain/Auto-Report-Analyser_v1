@@ -11,8 +11,8 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start the development server
-echo "Starting React development server on http://localhost:3000"
-npm start
+echo "Starting React development server on http://localhost:3020"
+PORT=3020 npm start
 
 
 
