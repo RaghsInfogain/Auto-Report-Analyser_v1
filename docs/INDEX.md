@@ -39,6 +39,7 @@ Start here if you're new to the platform:
 | [SKEWNESS_BUSINESS_GRADING.md](./SKEWNESS_BUSINESS_GRADING.md) | Statistical skewness & business-focused grading (v3.0.2) |
 | [REPORT_LAYOUT_PDF_UPDATE.md](./REPORT_LAYOUT_PDF_UPDATE.md) | Report layout reorganization & PDF export (v3.0.3) |
 | [DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md](./DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md) | Dynamic root cause analysis & phased improvement plans (v3.0.4) |
+| [INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md](../INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md) | Infrastructure-level root cause analysis (v3.0.5) ⭐ |
 
 ---
 
@@ -186,8 +187,10 @@ docs/
 
 ---
 
-## 🚀 Latest Features (v3.0.4)
+## 🚀 Latest Features (v3.0.5)
 
+- ✅ **Infrastructure-Level Root Cause Analysis** - Comprehensive system-level recommendations (CPU/Memory, Network, DB, Config) (v3.0.5)
+- ✅ **7 Root Cause Categories** - Resource capacity, network, code, system config, database, infrastructure, scalability (v3.0.5)
 - ✅ **Dynamic Root Cause Analysis** - Evidence-based issue detection from actual data (v3.0.4)
 - ✅ **Phased Improvement Plans** - Customized 3-phase roadmap to A+ grade (v3.0.4)
 - ✅ **Horizontal Card Layout** - Business Impact & Distribution Analysis in responsive cards (v3.0.3)
