@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 from datetime import datetime
+import html
 import json
 import numpy as np
 from app.report_generator.graph_analyzer import GraphAnalyzer
@@ -549,44 +550,49 @@ class HTMLReportGenerator:
         @media (max-width: 600px) {
             .metrics-grid { grid-template-columns: 1fr; }
         }
-        
+
         /* Print styles for PDF generation */
         @media print {
             .no-print {
                 display: none !important;
             }
-            
+
             .pdf-button {
                 display: none !important;
             }
-            
+
             body {
                 margin: 0;
                 padding: 0;
             }
-            
+
             .container {
                 max-width: 100%;
                 padding: 1rem;
             }
-            
+
             /* Ensure page breaks work properly */
             .section {
                 page-break-inside: avoid;
+                max-width: 100%;
+                overflow: hidden;
             }
-            
+
             /* Remove box shadows for print */
             .card, .alert, .summary-item {
                 box-shadow: none;
             }
+
+            .endpoint-table { font-size: 0.7rem; }
+            .endpoint-table th, .endpoint-table td { padding: 0.4rem 0.5rem; }
         }
-        
+
         /* PDF Button Styles */
         .pdf-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5) !important;
         }
-        
+
         .pdf-button:active {
             transform: translateY(0);
         }
@@ -1189,12 +1195,14 @@ class HTMLReportGenerator:
     
     @staticmethod
     def _generate_performance_tables(transaction_stats: dict, request_stats: dict) -> str:
-        """Generate performance summary tables for transactions and requests"""
-        
+        """Generate performance summary table for transactions only (all labels in one table)."""
+        # Merge transaction and request stats so all labels appear in one table (fixes missing transactions)
+        all_stats = {**transaction_stats, **request_stats}
+
         def generate_table(stats: dict, title: str) -> str:
             if not stats:
                 return f"<p><em>No {title.lower()} data available</em></p>"
-            
+
             # Natural sort by transaction/endpoint name (handles T100, T200, "1 Request", etc.)
             import re
             def natural_sort_key(item):
@@ -1206,20 +1214,20 @@ class HTMLReportGenerator:
                     prefix = match.group(1)
                     number = int(match.group(2))
                     return (0, prefix, number, name)
-                
+
                 # Pattern 2: Just Numbers at start ("1 HTTP Request", "25 /Home", etc.)
                 match = re.match(r'^(\d+)', name)
                 if match:
                     number = int(match.group(1))
                     return (1, '', number, name)
-                
+
                 # Pattern 3: No numeric prefix - sort alphabetically last
                 return (2, '', 0, name)
-            
+
             sorted_stats = sorted(stats.items(), key=natural_sort_key)
-            
+
             rows = ""
-            for label, data in sorted_stats[:50]:  # Top 50 to show complete flow sequence
+            for label, data in sorted_stats:
                 min_resp = data.get('min', 0) or 0
                 avg_resp = data.get('avg_response', 0) or 0
                 median = data.get('median', 0) or 0
@@ -1271,8 +1279,8 @@ class HTMLReportGenerator:
                 <span style="color: #d97706;">Yellow</span> = Warning (Response Time 2-5s, Error Rate 1-5%), 
                 <span style="color: #dc2626;">Red</span> = Violating SLA (Response Time &gt; 5s, Error Rate &gt; 5%)
             </div>
-            <div style="overflow-x: auto;">
-                <table class="endpoint-table">
+            <div style="overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;">
+                <table class="endpoint-table" style="width: 100%; max-width: 100%; table-layout: auto; font-size: 0.8rem;">
                     <thead>
                         <tr>
                             <th>Endpoint/Transaction</th>
@@ -1294,11 +1302,9 @@ class HTMLReportGenerator:
             </div>'''
         
         return f'''
-        <div class="section">
+        <div class="section" style="max-width: 100%; overflow: hidden;">
             <h2>📊 Performance Summary</h2>
-            {generate_table(transaction_stats, "📋 Transaction Performance")}
-            <div style="margin-top: 2rem;"></div>
-            {generate_table(request_stats, "🔗 API Request Performance")}
+            {generate_table(all_stats, "📋 Transaction Performance")}
         </div>'''
     
     @staticmethod
@@ -2478,12 +2484,25 @@ class HTMLReportGenerator:
     
     @staticmethod
     def _generate_error_analysis_graph(metrics: Dict[str, Any]) -> str:
-        """Graph 5: Error Analysis By Description over time and on threads with 50/50 layout"""
-        # Extract error information from metrics
+        """Graph 5: Error Analysis By Description - uses error_by_description (failed samples) or HTTP 4xx/5xx."""
         response_codes = metrics.get('response_codes', {})
         error_codes = {k: v for k, v in response_codes.items() if str(k).startswith(('4', '5'))}
-        
-        if not error_codes:
+        summary = metrics.get('summary', {})
+        error_by_description = summary.get('error_by_description') or {}
+
+        # Prefer error_by_description (all failed samples with message/code); fallback to HTTP 4xx/5xx only
+        if error_by_description:
+            # Sort by count descending; use description as label
+            sorted_errors = sorted(error_by_description.items(), key=lambda x: x[1], reverse=True)
+            error_labels = [desc for desc, _ in sorted_errors]
+            error_counts = [count for _, count in sorted_errors]
+            use_description_table = True
+        elif error_codes:
+            error_labels = list(error_codes.keys())
+            error_counts = list(error_codes.values())
+            use_description_table = False
+        else:
+            # No errors at all
             return f'''
         <div class="section">
             <h2>📈 Error Analysis By Description</h2>
@@ -2506,52 +2525,60 @@ class HTMLReportGenerator:
             </div>
         </div>
         '''
-        
-        error_labels = list(error_codes.keys())
-        error_counts = list(error_codes.values())
-        
-        # Prepare data for table
-        table_rows = ''.join([f'''
+
+        if use_description_table:
+            table_rows = ''.join([f'''
+            <tr>
+                <td style="padding: 0.5rem; max-width: 320px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word;">{html.escape(desc)}</td>
+                <td style="padding: 0.5rem; text-align: center;">{count}</td>
+            </tr>''' for desc, count in sorted_errors])
+            table_header = '''
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                        <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Description</th>
+                                        <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Count</th>
+                                    </tr>
+                                </thead>'''
+        else:
+            table_rows = ''.join([f'''
             <tr>
                 <td style="padding: 0.5rem; text-align: center;">{code}</td>
                 <td style="padding: 0.5rem; text-align: center;">{count}</td>
                 <td style="padding: 0.5rem; text-align: center;">{"Client Error" if str(code).startswith("4") else "Server Error"}</td>
             </tr>''' for code, count in zip(error_labels, error_counts)])
-        
-        # Generate observation
-        table_data = [{'code': code, 'count': count} for code, count in zip(error_labels, error_counts)]
-        observation = HTMLReportGenerator._generate_graph_observation(table_data, "error_analysis")
-        
-        error_labels_json = json.dumps([f"Error {code}" for code in error_labels])
-        error_counts_json = json.dumps(error_counts)
-        
-        return f'''
-        <div class="section">
-            <h2>📈 Error Analysis By Description</h2>
-            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
-                Error distribution by response code showing frequency of different error types.
-            </p>
-            
-            <!-- Graph and Data Table Side by Side (50/50) -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-                <!-- Left: Graph (50%) -->
-                <div class="chart-container" style="height: 400px;">
-                    <canvas id="errorAnalysisChart"></canvas>
-                </div>
-                
-                <!-- Right: Graph Data Table (50%) -->
-                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
-                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
-                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
-                        <div style="overflow-y: auto; max-height: 350px;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+            table_header = '''
                                 <thead style="position: sticky; top: 0; z-index: 10;">
                                     <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
                                         <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Error Code</th>
                                         <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Count</th>
                                         <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Type</th>
                                     </tr>
-                                </thead>
+                                </thead>'''
+
+        table_data = [{'code': d if not use_description_table else d, 'count': c} for d, c in (zip(error_labels, error_counts) if not use_description_table else sorted_errors)]
+        observation = HTMLReportGenerator._generate_graph_observation(table_data, "error_analysis")
+        # Chart labels: truncate long descriptions for display
+        chart_labels = [f"{d[:30]}..." if len(str(d)) > 30 else str(d) for d in error_labels]
+        error_labels_json = json.dumps(chart_labels)
+        error_counts_json = json.dumps(error_counts)
+
+        return f'''
+        <div class="section">
+            <h2>📈 Error Analysis By Description</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+                Error distribution by description (failure message / response code) showing frequency of different error types.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <div class="chart-container" style="height: 400px;">
+                    <canvas id="errorAnalysisChart"></canvas>
+                </div>
+                <div style="padding: 1rem; background: var(--background-light); border-radius: 8px;">
+                    <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">📊 Graph Data</h4>
+                    <div style="background: white; border-radius: 6px; overflow: hidden; position: relative;">
+                        <div style="overflow-y: auto; max-height: 350px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                                {table_header}
                                 <tbody>
                                     {table_rows}
                                 </tbody>
@@ -2560,8 +2587,7 @@ class HTMLReportGenerator:
                     </div>
                 </div>
             </div>
-            
-            <!-- Graph Observation -->
+
             <div style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border-left: 4px solid #2563eb;">
                 <h4 style="margin: 0 0 1rem 0; color: var(--text-primary); font-size: 1.1rem;">🔍 Graph Observation</h4>
                 {observation}

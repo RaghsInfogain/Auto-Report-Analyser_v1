@@ -209,21 +209,32 @@ const FilesPage: React.FC = () => {
     }
   };
 
+  const handleDownloadHtml = async (run: RunInfo) => {
+    try {
+      const reportData = await getRunReport(run.run_id, 'html');
+      const blob = new Blob([reportData as string], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${run.run_id}_report.html`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Failed to download HTML report:', error);
+      alert(`Failed to download HTML report: ${error.response?.data?.detail || error.message}`);
+    }
+  };
+
   const handleViewReport = async (run: RunInfo, reportType: 'html' | 'pdf' | 'ppt') => {
     try {
       const reportData = await getRunReport(run.run_id, reportType);
 
       if (reportType === 'html') {
-        // Open HTML report in a new tab
-        const htmlContent = reportData as string;
-        const newWindow = window.open('', '_blank');
-        if (newWindow) {
-          newWindow.document.write(htmlContent);
-          newWindow.document.close();
-          newWindow.document.title = `${run.run_id} - Performance Report`;
-        } else {
-          alert('Please allow pop-ups to view the report in a new tab');
-        }
+        const blob = new Blob([reportData as string], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
       } else if (reportType === 'pdf') {
         const blob = reportData as Blob;
         const url = URL.createObjectURL(blob);
@@ -484,9 +495,16 @@ const FilesPage: React.FC = () => {
                           <button 
                             onClick={() => handleViewReport(run, 'html')}
                             className="btn-link"
-                            title="View HTML Report"
+                            title="View HTML Report in new tab"
                           >
                             HTML
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadHtml(run)}
+                            className="btn-link"
+                            title="Download HTML Report"
+                          >
+                            Download
                           </button>
                           <button 
                             onClick={() => handleViewReport(run, 'pdf')}

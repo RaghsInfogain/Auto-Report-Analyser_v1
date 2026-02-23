@@ -38,12 +38,6 @@ const Dashboard: React.FC = () => {
     { title: 'UI Performance', value: stats.uiPerformanceFiles, icon: '🎯', color: '#f39c12', link: '/files' },
   ];
 
-  const quickActions = [
-    { title: 'Upload New Files', icon: '⬆️', link: '/upload', color: '#3498db' },
-    { title: 'Manage Files', icon: '📁', link: '/files', color: '#f39c12' },
-    { title: 'AI Assistant', icon: '🤖', link: '/ai-chat', color: '#9b59b6' },
-  ];
-
   return (
     <div className="dashboard">
       <div className="dashboard-header">
@@ -61,20 +55,6 @@ const Dashboard: React.FC = () => {
             </div>
           </Link>
         ))}
-      </div>
-
-      <div className="quick-actions">
-        <h2>Quick Actions</h2>
-        <div className="actions-grid">
-          {quickActions.map((action, index) => (
-            <Link to={action.link} key={index} className="action-card">
-              <div className="action-icon" style={{ background: action.color }}>
-                {action.icon}
-              </div>
-              <h3>{action.title}</h3>
-            </Link>
-          ))}
-        </div>
       </div>
 
       <div className="recent-activity">

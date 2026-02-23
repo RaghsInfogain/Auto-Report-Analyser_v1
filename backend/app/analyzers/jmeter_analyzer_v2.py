@@ -46,7 +46,23 @@ class JMeterAnalyzerV2:
         
         # Response codes
         response_codes = Counter([str(d.get("response_code", "")) for d in data if d.get("response_code")])
-        
+
+        # Error breakdown by description (for failed samples: success=False or 4xx/5xx)
+        error_by_description = defaultdict(int)
+        for d in data:
+            success = d.get("success", True)
+            rc = str(d.get("response_code", "") or "")
+            is_http_error = rc.startswith("4") or rc.startswith("5")
+            if success is False or is_http_error:
+                desc = (d.get("failure_message") or d.get("response_message") or "").strip()
+                if not desc:
+                    desc = f"HTTP {rc}" if rc else "Failed"
+                # Truncate long messages for grouping
+                if len(desc) > 200:
+                    desc = desc[:197] + "..."
+                error_by_description[desc] += 1
+        error_by_description = dict(error_by_description)
+
         # Calculate percentiles efficiently
         sample_time_stats = JMeterAnalyzerV2._calculate_stats(sample_times)
         latency_stats = JMeterAnalyzerV2._calculate_stats(latencies)
@@ -152,6 +168,7 @@ class JMeterAnalyzerV2:
             "time_series_data": time_series_data,
             "transaction_stats": transaction_stats,
             "request_stats": request_stats,
+            "error_by_description": error_by_description,
             "critical_issues": critical_issues,
             "recommendations": recommendations,
             "improvement_roadmap": improvement_roadmap,
