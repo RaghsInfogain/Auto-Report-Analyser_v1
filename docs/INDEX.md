@@ -39,7 +39,8 @@ Start here if you're new to the platform:
 | [SKEWNESS_BUSINESS_GRADING.md](./SKEWNESS_BUSINESS_GRADING.md) | Statistical skewness & business-focused grading (v3.0.2) |
 | [REPORT_LAYOUT_PDF_UPDATE.md](./REPORT_LAYOUT_PDF_UPDATE.md) | Report layout reorganization & PDF export (v3.0.3) |
 | [DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md](./DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md) | Dynamic root cause analysis & phased improvement plans (v3.0.4) |
-| [INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md](../INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md) | Infrastructure-level root cause analysis (v3.0.5) ⭐ |
+| [INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md](../INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md) | Infrastructure-level root cause analysis (v3.0.5) |
+| [SYMPTOM_BASED_ROOT_CAUSE_v3.0.6.md](../SYMPTOM_BASED_ROOT_CAUSE_v3.0.6.md) | Symptom-based pattern matching with real-world expertise (v3.0.6) ⭐ |
 
 ---
 
@@ -187,8 +188,11 @@ docs/
 
 ---
 
-## 🚀 Latest Features (v3.0.5)
+## 🚀 Latest Features (v3.0.6)
 
+- ✅ **Symptom-Based Root Cause Analysis** - Real-world pattern matching (8 categories, 5-8 targeted issues) (v3.0.6) ⭐
+- ✅ **Expert-Level Diagnosis** - Professional diagnosis statements with symptom analysis (v3.0.6)
+- ✅ **Smart Prioritization** - Database (60-70%) → External → App Server → Infrastructure (v3.0.6)
 - ✅ **Infrastructure-Level Root Cause Analysis** - Comprehensive system-level recommendations (CPU/Memory, Network, DB, Config) (v3.0.5)
 - ✅ **7 Root Cause Categories** - Resource capacity, network, code, system config, database, infrastructure, scalability (v3.0.5)
 - ✅ **Dynamic Root Cause Analysis** - Evidence-based issue detection from actual data (v3.0.4)
