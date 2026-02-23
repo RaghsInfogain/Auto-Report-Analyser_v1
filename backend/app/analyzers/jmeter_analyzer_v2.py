@@ -534,38 +534,35 @@ class JMeterAnalyzerV2:
                 ]
             })
         
-        # ========== FORMAT OUTPUT (TOP 5-8 MOST RELEVANT) ==========
-        output = []
+        # ========== EXTRACT TOP 5-8 ROOT CAUSES (NO CATEGORIES) ==========
+        # Silently analyze all detected issues and extract most relevant root causes
+        
+        all_causes = []
         
         # Sort by priority (Database and External Deps usually first)
         priority_order = ["Database", "External", "Application Server", "Infrastructure", "Caching", "Memory", "Load Balancer", "Configuration"]
         detected_issues.sort(key=lambda x: next((i for i, p in enumerate(priority_order) if p in x["category"]), 99))
         
-        # Take top 5-8 issues (but at least database if detected)
-        selected_issues = detected_issues[:min(6, len(detected_issues))]
-        
-        for issue in selected_issues:
-            output.append(f"\n{issue['category']}")
-            output.append(f"   📋 **Diagnosis**: {issue['diagnosis']}")
-            output.append(f"   🔍 **Symptoms**: {issue['symptoms']}")
-            output.append(f"   🔧 **Root Causes**:")
+        # Extract root causes from all detected issues
+        for issue in detected_issues:
             for cause in issue['causes']:
-                output.append(f"      • {cause}")
+                all_causes.append(cause)
         
         # If no specific issues detected, provide general guidance
-        if not output:
-            output = [
-                "\n⚙️ **General Performance Optimization**",
-                "   📋 **Diagnosis**: System requires standard performance tuning",
-                "   🔧 **Root Causes**:",
-                "      • **Database Optimization**: Review slow queries and add missing indexes",
-                "      • **Connection Pooling**: Tune database and HTTP connection pools",
-                "      • **Caching Strategy**: Implement Redis/Memcached for read-heavy operations",
-                "      • **Thread Pool Sizing**: Increase application server thread pool",
-                "      • **Resource Monitoring**: Enable APM to identify specific bottlenecks"
+        if not all_causes:
+            all_causes = [
+                "**Database Optimization**: Review slow query logs and add missing indexes on frequently queried columns",
+                "**Connection Pool Tuning**: Increase database connection pool size (min: 10-20, max: 50-100)",
+                "**Thread Pool Configuration**: Increase application server thread pool to handle concurrent requests",
+                "**Caching Strategy**: Implement Redis/Memcached for read-heavy operations to reduce database load",
+                "**Query Optimization**: Optimize complex queries with JOINs, subqueries, and use EXPLAIN PLAN to identify table scans",
+                "**Resource Monitoring**: Enable APM tools to identify CPU, memory, and I/O bottlenecks"
             ]
         
-        return output
+        # Return top 5-8 most relevant root causes (prioritized by detection order)
+        top_causes = all_causes[:min(8, len(all_causes))]
+        
+        return top_causes
     
     @staticmethod
     def _analyze_by_label(data: List[Dict]) -> tuple:
