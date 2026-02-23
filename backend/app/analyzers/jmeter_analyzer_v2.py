@@ -400,169 +400,137 @@ class JMeterAnalyzerV2:
         skewness: float
     ) -> List[str]:
         """
-        Generate root causes based on SYMPTOM PATTERNS matching real-world performance issues
-        Returns 5-8 most relevant causes based on actual symptoms detected in the data
+        Generate ACTUAL ROOT CAUSES based on performance behavior patterns
+        Analyzes 20 performance patterns and returns 5-8 most relevant root causes
+        
+        Returns ROOT CAUSES (WHY), not symptoms or recommendations
         """
-        detected_issues = []
+        root_causes = []
         
         # Calculate key indicators
         p95_avg_ratio = p95_response / avg_response if avg_response > 0 else 0
         p99_avg_ratio = p99_response / avg_response if avg_response > 0 else 0
         
-        # ========== 1. DATABASE BOTTLENECKS (60-70% of real issues) ==========
-        # Symptoms: Only some transactions slow, gradual increase, high tail latency
-        if (p99_avg_ratio > 3 or avg_response > 1.5) and skewness > 1:
-            detected_issues.append({
-                "category": "🗄️ **Database Bottleneck** (Most Common - 60-70% of performance issues)",
-                "diagnosis": "Application slowness caused by database queries, not application code",
-                "symptoms": "Some transactions slower than others, gradual performance degradation",
-                "causes": [
-                    "**Slow SQL Queries**: Analyze slow query logs and identify queries taking >500ms",
-                    "**Missing Indexes**: Add indexes on WHERE, JOIN, and ORDER BY columns",
-                    "**Table Scans**: Optimize queries doing full table scans (EXPLAIN PLAN)",
-                    "**Lock Contention**: Monitor row/table locking and deadlocks",
-                    "**Connection Leaks**: Ensure connections are properly closed after use",
-                    "**Large Result Sets**: Implement pagination for queries returning 1000+ rows"
-                ]
-            })
+        # ========== PATTERN DETECTION ==========
+        # Analyze data against 20 performance behavior patterns
         
-        # ========== 2. EXTERNAL DEPENDENCY FAILURES ==========
-        # Key Indicator: P95 very high but avg normal (external service latency)
-        if p95_avg_ratio > 4 or (p99_avg_ratio > 5 and avg_response < 2):
-            detected_issues.append({
-                "category": "🌐 **External Dependency Failure** (Third-party services)",
-                "diagnosis": "Random slowness indicates external service latency issues",
-                "symptoms": "P95 latency very high but average latency normal - classic external dependency sign",
-                "causes": [
-                    "**Slow Third-Party APIs**: Payment gateway, SMS, OTP, SSO, credit score services",
-                    "**No Timeout Handling**: Add connection and read timeouts (5-10 seconds)",
-                    "**No Circuit Breaker**: Implement circuit breaker pattern to fail fast",
-                    "**Synchronous Calls**: Use async/non-blocking calls for external services",
-                    "**No Retry Logic**: Add exponential backoff retry with max attempts"
-                ]
-            })
+        # PATTERN 5: P95/P99 very high but average normal (random spikes)
+        if p95_avg_ratio > 4 or p99_avg_ratio > 5:
+            root_causes.extend([
+                "Slow third-party APIs causing intermittent delays",
+                "DNS resolution delays",
+                "Lock contention in database or application",
+                "JVM Full Garbage Collection pauses",
+                "Network jitter or packet loss"
+            ])
         
-        # ========== 3. APPLICATION SERVER / THREAD POOL EXHAUSTION ==========
-        # Symptoms: Throughput plateaus, response time spikes, requests queue
-        if throughput < 100 and avg_response > 1.5 and error_rate < 5:
-            detected_issues.append({
-                "category": "⚙️ **Application Server / Thread Pool Exhaustion**",
-                "diagnosis": "90% of enterprise apps fail due to thread/connection pool misconfiguration",
-                "symptoms": "Throughput stops increasing, response time spikes, CPU not fully utilized",
-                "causes": [
-                    "**Thread Pool Exhaustion**: Increase max threads (check active vs max threads)",
-                    "**Connection Pool Exhaustion**: Tune database connection pool (min: 10, max: 50-100)",
-                    "**Blocking Synchronous Calls**: Convert blocking I/O to async/await patterns",
-                    "**Session Locking**: Review session management and locking mechanisms",
-                    "**Request Queue Size**: Increase queue size or add more worker processes"
-                ]
-            })
+        # PATTERN 6: Only specific transactions slow (e.g., login/search/checkout)
+        # Detected by checking if some transactions are significantly slower
+        if skewness > 1 and avg_response > 1:
+            root_causes.extend([
+                "Slow SQL queries in specific endpoints",
+                "Missing database indexes on frequently queried tables",
+                "Full table scans instead of indexed lookups",
+                "External service call embedded in specific API",
+                "Heavy serialization overhead in specific transaction"
+            ])
         
-        # ========== 4. INFRASTRUCTURE / RESOURCE SATURATION ==========
-        # Symptoms: All transactions slow, linear increase with users, system collapses under load
-        if avg_response > 2 and sla_compliance < 70 and throughput < 75:
-            detected_issues.append({
-                "category": "💻 **Infrastructure Resource Saturation**",
-                "diagnosis": "OS/VM/Container resource exhaustion rather than code inefficiency",
-                "symptoms": "All transactions slow (not specific pages), system collapses under concurrency",
-                "causes": [
-                    "**CPU Saturation**: Monitor CPU usage (should be <70%), consider vertical scaling",
-                    "**Memory Exhaustion**: Check memory usage, identify memory leaks (heap dumps)",
-                    "**Disk I/O Wait**: Monitor disk I/O (iostat), use SSD instead of HDD",
-                    "**Insufficient Autoscaling**: Configure autoscaling rules based on CPU/memory",
-                    "**Noisy Neighbor VM**: Very common in cloud - request dedicated instances"
-                ]
-            })
+        # PATTERN 10: Throughput stops increasing after certain users
+        if throughput < 100 and avg_response > 1:
+            root_causes.extend([
+                "Thread pool size limit reached",
+                "Database connection pool limit exhausted",
+                "Request queue size limit hit",
+                "Load balancer connection limit reached"
+            ])
         
-        # ========== 5. CACHING PROBLEMS ==========
-        # Symptoms: Performance degrades over time, DB CPU high
-        if avg_response > 2 and throughput < 100:
-            detected_issues.append({
-                "category": "⚡ **Caching Problems** (Can reduce response time from 3s → 200ms)",
-                "diagnosis": "Missing or misconfigured caching layer causing excessive database load",
-                "symptoms": "Performance degrades over time, database CPU very high",
-                "causes": [
-                    "**Cache Disabled**: Enable Redis/Memcached for read-heavy operations",
-                    "**Wrong Cache TTL**: Set appropriate TTL (15-60 minutes for static data)",
-                    "**Cache Stampede**: Implement cache warming to prevent thundering herd",
-                    "**CDN Not Configured**: Use CDN for static assets (images, CSS, JS)"
-                ]
-            })
+        # PATTERN 7: All transactions slow simultaneously
+        if avg_response > 2 and sla_compliance < 70:
+            root_causes.extend([
+                "CPU saturation across all servers",
+                "Disk I/O bottleneck on storage layer",
+                "Network latency between application and database",
+                "Infrastructure throttling or resource limits",
+                "Autoscaling failed to trigger or insufficient"
+            ])
         
-        # ========== 6. MEMORY LEAKS ==========
-        # Symptoms: Test starts good, degrades after 30-60 min, restart fixes
-        if skewness > 1.5 and avg_response > 1.5:
-            detected_issues.append({
-                "category": "🔧 **Memory Leak Detection**",
-                "diagnosis": "Memory steadily increases → GC frequency increases → response time increases",
-                "symptoms": "System degrades after 30-60 minutes, restart fixes everything",
-                "causes": [
-                    "**Objects Not Released**: Review object lifecycle and ensure proper disposal",
-                    "**Session Accumulation**: Clear expired sessions regularly",
-                    "**Static Collections**: Avoid unbounded static collections (Map, List)",
-                    "**Heap Analysis**: Take heap dumps and analyze with profiler"
-                ]
-            })
+        # PATTERN 8: CPU low but response time high (system waiting, not processing)
+        if throughput < 75 and avg_response > 1.5:
+            root_causes.extend([
+                "Thread pool starvation - threads waiting for resources",
+                "Database lock contention causing waits",
+                "Blocking I/O operations not using async patterns",
+                "Application waiting for external API responses",
+                "Connection pool exhausted - waiting for available connections"
+            ])
         
-        # ========== 7. LOAD BALANCER / TRAFFIC DISTRIBUTION ==========
-        # Symptoms: Some users fast, some slow, uneven distribution
-        if error_rate > 2 and skewness > 2:
-            detected_issues.append({
-                "category": "⚖️ **Load Balancer / Traffic Distribution Issues**",
-                "diagnosis": "Uneven load distribution causing inconsistent user experience",
-                "symptoms": "Some users fast, some extremely slow, random failures",
-                "causes": [
-                    "**Sticky Session Misconfiguration**: Review session affinity settings",
-                    "**Uneven Load Distribution**: Change algorithm (round-robin vs least-connections)",
-                    "**Health Check Wrong**: Verify health check endpoints are accurate",
-                    "**Session Replication**: Optimize session replication across nodes"
-                ]
-            })
+        # PATTERN 17: Database bottleneck indicators
+        if p99_avg_ratio > 3 and skewness > 1:
+            root_causes.extend([
+                "Query optimizer choosing bad execution plan",
+                "Missing or outdated table statistics",
+                "Lock escalation from row to table level",
+                "Heavy reporting queries running concurrently"
+            ])
         
-        # ========== 8. CONFIGURATION & CAPACITY PLANNING ==========
-        # Always relevant if performance is poor
-        if avg_response > 1.5 or throughput < 100 or sla_compliance < 85:
-            detected_issues.append({
-                "category": "📊 **Configuration & Capacity Planning**",
-                "diagnosis": "System configuration not tuned for expected load",
-                "symptoms": "System underperforming despite adequate code quality",
-                "causes": [
-                    "**JVM Settings**: Tune heap size (Xms=Xmx), GC algorithm (G1GC for low latency)",
-                    "**Instance Size**: Increase CPU/RAM or use compute-optimized instances",
-                    "**Too Many Microservice Hops**: Reduce service-to-service calls",
-                    "**Improper Autoscaling Rules**: Set thresholds: scale at 60-70% CPU/memory"
-                ]
-            })
+        # PATTERN 2: Performance degrades continuously over time
+        if skewness > 1.5:
+            root_causes.extend([
+                "Memory leak - heap growing without bounds",
+                "Database connection leak - connections not returned to pool",
+                "Session accumulation - old sessions not cleared",
+                "Cache filling without eviction policy",
+                "File handles or socket connections not released"
+            ])
         
-        # ========== EXTRACT TOP 5-8 ROOT CAUSES (NO CATEGORIES) ==========
-        # Silently analyze all detected issues and extract most relevant root causes
+        # PATTERN 4: System starts throwing errors
+        if error_rate > 2:
+            root_causes.extend([
+                "Connection pool completely exhausted",
+                "Thread pool completely exhausted",
+                "Too many open file descriptors or sockets",
+                "Rate limiting triggered by dependency",
+                "External API failure cascading to application"
+            ])
         
-        all_causes = []
+        # PATTERN 14: Sudden latency spikes
+        if max_response > p95_response * 5:
+            root_causes.extend([
+                "Full Garbage Collection pause freezing application",
+                "Container or pod restart during autoscaling",
+                "Network routing change or failover event"
+            ])
         
-        # Sort by priority (Database and External Deps usually first)
-        priority_order = ["Database", "External", "Application Server", "Infrastructure", "Caching", "Memory", "Load Balancer", "Configuration"]
-        detected_issues.sort(key=lambda x: next((i for i, p in enumerate(priority_order) if p in x["category"]), 99))
+        # PATTERN 1: Linear increase in response time with load
+        if avg_response > 1.5 and throughput < 100:
+            root_causes.extend([
+                "Insufficient server capacity for load",
+                "Synchronous processing blocking threads",
+                "No horizontal scaling configured",
+                "Network bandwidth limitation reached"
+            ])
         
-        # Extract root causes from all detected issues
-        for issue in detected_issues:
-            for cause in issue['causes']:
-                all_causes.append(cause)
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_causes = []
+        for cause in root_causes:
+            if cause not in seen:
+                seen.add(cause)
+                unique_causes.append(cause)
         
-        # If no specific issues detected, provide general guidance
-        if not all_causes:
-            all_causes = [
-                "**Database Optimization**: Review slow query logs and add missing indexes on frequently queried columns",
-                "**Connection Pool Tuning**: Increase database connection pool size (min: 10-20, max: 50-100)",
-                "**Thread Pool Configuration**: Increase application server thread pool to handle concurrent requests",
-                "**Caching Strategy**: Implement Redis/Memcached for read-heavy operations to reduce database load",
-                "**Query Optimization**: Optimize complex queries with JOINs, subqueries, and use EXPLAIN PLAN to identify table scans",
-                "**Resource Monitoring**: Enable APM tools to identify CPU, memory, and I/O bottlenecks"
+        # Return top 5-8 most relevant root causes
+        if not unique_causes:
+            # Default causes if no patterns detected
+            unique_causes = [
+                "Query optimizer choosing bad execution plan",
+                "Missing database indexes on frequently queried tables",
+                "Thread pool size limit reached",
+                "Database connection pool limit exhausted",
+                "CPU saturation across all servers",
+                "Memory leak - heap growing without bounds"
             ]
         
-        # Return top 5-8 most relevant root causes (prioritized by detection order)
-        top_causes = all_causes[:min(8, len(all_causes))]
-        
-        return top_causes
+        return unique_causes[:8]
     
     @staticmethod
     def _analyze_by_label(data: List[Dict]) -> tuple:
