@@ -324,15 +324,19 @@ class JMeterAnalyzerV2:
                         root_causes.append("Transaction '{}' has {:.1f}% error rate - specific endpoint issue".format(
                             top_error[0], top_error[1].get("error_rate", 0)))
             
-            # If no specific causes found, add generic ones
-            if not root_causes:
-                root_causes = [
-                    "Garbage collection pauses causing intermittent delays",
-                    "Database connection pool exhaustion under load",
-                    "Thread pool saturation limiting concurrent request handling",
-                    "Network latency spikes from downstream services",
-                    "Resource contention (CPU/Memory/IO) under peak load"
-                ]
+            # Add comprehensive infrastructure-level root causes
+            infrastructure_causes = JMeterAnalyzerV2._generate_infrastructure_root_causes(
+                avg_response, p95_response, p99_response, max_response,
+                error_rate, throughput, sla_compliance, skewness
+            )
+            
+            # Combine data-driven and infrastructure causes
+            if root_causes:
+                # Have specific data-driven causes, add infrastructure analysis
+                root_causes.extend(infrastructure_causes)
+            else:
+                # No specific causes found, use infrastructure analysis
+                root_causes = infrastructure_causes
             
             return {
                 "type": "Positively Skewed (Right Skewed)",
@@ -383,6 +387,94 @@ class JMeterAnalyzerV2:
                 ],
                 "business_impact": "Unusual pattern - validate test methodology"
             }
+    
+    @staticmethod
+    def _generate_infrastructure_root_causes(
+        avg_response: float,
+        p95_response: float, 
+        p99_response: float,
+        max_response: float,
+        error_rate: float,
+        throughput: float,
+        sla_compliance: float,
+        skewness: float
+    ) -> List[str]:
+        """
+        Generate comprehensive infrastructure-level root causes based on performance patterns
+        Covers: CPU/Memory, Network, Code Optimization, System Configuration, Database
+        """
+        causes = []
+        
+        # === 1. RESOURCE CAPACITY (CPU/Memory) ===
+        if p99_response > avg_response * 4 or max_response > p95_response * 3:
+            causes.append("💻 **Resource Capacity Issue**: Insufficient CPU or memory causing performance spikes")
+            causes.append("   → Check server CPU utilization (should be <70% under normal load)")
+            causes.append("   → Monitor memory usage and identify memory leaks or excessive heap usage")
+            causes.append("   → Verify if garbage collection (GC) pauses are causing delays (check GC logs)")
+            causes.append("   → Consider vertical scaling (add more CPU/RAM) or horizontal scaling (add more instances)")
+        
+        # === 2. NETWORK ISSUES ===
+        if throughput < 50 or (error_rate > 2 and avg_response > 2):
+            causes.append("🌐 **Network Performance Issue**: Network latency or bandwidth constraints detected")
+            causes.append("   → Verify network latency between load balancer and application servers")
+            causes.append("   → Check for network timeouts and packet loss")
+            causes.append("   → Review firewall and security group rules that may throttle connections")
+            causes.append("   → Ensure proper DNS resolution and consider using connection keep-alive")
+            causes.append("   → Monitor downstream service response times (APIs, databases, external services)")
+        
+        # === 3. CODE OPTIMIZATION ===
+        if avg_response > 1.5 or sla_compliance < 85:
+            causes.append("⚡ **Code Optimization Required**: Application code not optimized for expected load")
+            causes.append("   → Profile application to identify CPU-intensive operations (hot spots)")
+            causes.append("   → Review and optimize synchronous I/O operations - use async/await patterns")
+            causes.append("   → Implement lazy loading and pagination for large data sets")
+            causes.append("   → Reduce JSON serialization/deserialization overhead")
+            causes.append("   → Optimize loops, recursive functions, and complex business logic")
+            causes.append("   → Implement response caching for read-heavy operations (Redis/Memcached)")
+        
+        # === 4. SYSTEM CONFIGURATION (Thread Pool, Connection Pool, Multiprocessing) ===
+        if throughput < 100 or p95_response > avg_response * 2.5:
+            causes.append("⚙️ **System Configuration Tuning**: Thread pool, connection pool, or concurrency settings suboptimal")
+            causes.append("   → **Thread Pool**: Increase thread pool size if threads are exhausted (check active/max threads)")
+            causes.append("   → **Connection Pool**: Tune database connection pool size (min/max connections)")
+            causes.append("   → **Connection Timeout**: Adjust connection timeout and socket timeout settings")
+            causes.append("   → **Keep-Alive**: Enable HTTP keep-alive to reuse connections")
+            causes.append("   → **Request Queue**: Configure request queue size and rejection policies")
+            causes.append("   → **Multiprocessing**: Enable multiprocessing/worker processes for CPU-bound tasks")
+            causes.append("   → **Async Workers**: Use async workers (e.g., Gunicorn with gevent/eventlet for Python)")
+        
+        # === 5. DATABASE ISSUES (Indexes, Queries, Configuration) ===
+        if avg_response > 1 or error_rate > 1:
+            causes.append("🗄️ **Database Performance Issue**: Slow queries, missing indexes, or database configuration")
+            causes.append("   → **Missing Indexes**: Analyze slow query logs and add indexes on frequently queried columns")
+            causes.append("   → **Query Optimization**: Review and optimize complex queries (JOINs, subqueries, full table scans)")
+            causes.append("   → **N+1 Query Problem**: Identify and fix N+1 queries using eager loading or batch fetching")
+            causes.append("   → **Connection Pooling**: Ensure database connection pooling is enabled and properly sized")
+            causes.append("   → **Database Configuration**: Tune database parameters (buffer pool, cache size, max connections)")
+            causes.append("   → **Read Replicas**: Distribute read queries across read replicas to reduce load on primary")
+            causes.append("   → **Query Cache**: Enable query caching where appropriate")
+            causes.append("   → **Database Locking**: Investigate and resolve table/row locking and deadlock issues")
+        
+        # === 6. ADDITIONAL INFRASTRUCTURE CHECKS ===
+        if skewness > 1.5:
+            causes.append("🔧 **Additional System Checks**:")
+            causes.append("   → **Load Balancer**: Verify load balancing algorithm and health check configurations")
+            causes.append("   → **SSL/TLS**: Check if SSL handshake overhead is impacting performance")
+            causes.append("   → **Logging**: Reduce excessive logging in production (especially synchronous logging)")
+            causes.append("   → **Monitoring Overhead**: Ensure APM/monitoring tools are not causing performance impact")
+            causes.append("   → **Container Resources**: If using containers, verify CPU/memory limits and requests")
+            causes.append("   → **Disk I/O**: Monitor disk I/O for bottlenecks (especially for file-based operations)")
+        
+        # === 7. SCALABILITY RECOMMENDATIONS ===
+        if throughput < 75 or sla_compliance < 90:
+            causes.append("📈 **Scalability Improvements**:")
+            causes.append("   → Implement horizontal autoscaling based on CPU/memory/request metrics")
+            causes.append("   → Use CDN for static assets (images, CSS, JS)")
+            causes.append("   → Implement circuit breakers for failing downstream dependencies")
+            causes.append("   → Add rate limiting and request throttling to prevent overload")
+            causes.append("   → Consider message queues for async processing of heavy operations")
+        
+        return causes
     
     @staticmethod
     def _analyze_by_label(data: List[Dict]) -> tuple:

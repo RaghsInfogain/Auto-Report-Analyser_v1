@@ -3709,9 +3709,9 @@ class HTMLReportGenerator:
         
         return f'''
         <div class="section">
-            <h2>🚀 Phased Improvement Plan to A+ Grade</h2>
+            <h2>🚀 Recommended Action Plan</h2>
             <p style="font-size: 1rem; color: #4b5563; margin-bottom: 1.5rem;">
-                Step-by-step roadmap to achieve optimal performance (Grade A+, Score 90+)
+                <strong>Phased Improvement Plan to A+ Grade</strong> - Step-by-step roadmap to achieve optimal performance (Grade A+, Score 90+)
             </p>
             
             {overview_html}
