@@ -96,14 +96,34 @@ class JMeterAnalyzerV2:
                                                                error_rate * 100, throughput, p95_response / 1000.0,
                                                                sla_compliance_2s_pct, grade, grade_class)
         
-        # Skewness interpretation for response time and throughput
+        # Skewness interpretation for response time with DYNAMIC root cause analysis
         response_time_skewness = sample_time_stats.get("skewness", 0)
         skewness_interpretation = JMeterAnalyzerV2._interpret_skewness(
-            response_time_skewness, "response time"
+            response_time_skewness, 
+            "response time",
+            {
+                "avg_response": avg_response_sec,
+                "p95_response": p95_response / 1000.0,
+                "p99_response": sample_time_stats.get("p99", 0) / 1000.0,
+                "max_response": sample_time_stats.get("max", 0) / 1000.0,
+                "error_rate": error_rate * 100,
+                "throughput": throughput,
+                "transaction_stats": transaction_stats,
+                "request_stats": request_stats,
+                "response_codes": dict(response_codes),
+                "sla_compliance": sla_compliance_2s_pct
+            }
         )
         
         # Get business impact for the grade
         business_impact = JMeterAnalyzerV2._get_business_impact(grade)
+        
+        # Generate PHASED improvement plan to reach A+
+        phased_improvement_plan = JMeterAnalyzerV2._generate_phased_improvement_plan(
+            grade, overall_score, scores, avg_response_sec, error_rate * 100, 
+            throughput, p95_response / 1000.0, sla_compliance_2s_pct, 
+            transaction_stats, request_stats
+        )
         
         # Build summary
         summary = {
@@ -126,6 +146,7 @@ class JMeterAnalyzerV2:
             },
             "business_impact": business_impact,
             "skewness_analysis": skewness_interpretation,
+            "phased_improvement_plan": phased_improvement_plan,
             "grade_reasons": grade_reasons,
             "response_time_distribution": rt_distribution,
             "time_series_data": time_series_data,
@@ -197,15 +218,30 @@ class JMeterAnalyzerV2:
         }
     
     @staticmethod
-    def _interpret_skewness(skewness: float, metric_name: str = "response time") -> Dict[str, Any]:
+    def _interpret_skewness(skewness: float, metric_name: str = "response time", metrics: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Interpret skewness value and provide actionable insights
+        Interpret skewness value and provide actionable insights based on ACTUAL data
         
         Skewness interpretation:
         - ~0: Normal distribution (symmetric)
         - >0: Right-skewed (positive skew) - most values low, some very high
         - <0: Left-skewed (negative skew) - most values high, some very low
         """
+        if metrics is None:
+            metrics = {}
+        
+        # Extract actual metrics for dynamic analysis
+        avg_response = metrics.get("avg_response", 0)
+        p95_response = metrics.get("p95_response", 0)
+        p99_response = metrics.get("p99_response", 0)
+        max_response = metrics.get("max_response", 0)
+        error_rate = metrics.get("error_rate", 0)
+        throughput = metrics.get("throughput", 0)
+        transaction_stats = metrics.get("transaction_stats", {})
+        request_stats = metrics.get("request_stats", {})
+        response_codes = metrics.get("response_codes", {})
+        sla_compliance = metrics.get("sla_compliance", 0)
+        
         if abs(skewness) < 0.5:
             # Normal distribution - Ideal situation
             return {
@@ -229,7 +265,74 @@ class JMeterAnalyzerV2:
             }
         elif skewness > 0.5:
             # Right-skewed (Positively skewed) - VERY COMMON in performance tests
+            # DYNAMIC ROOT CAUSE ANALYSIS based on actual data
             severity = "critical" if skewness > 2 else ("danger" if skewness > 1 else "warning")
+            
+            # Analyze actual data to identify specific root causes
+            root_causes = []
+            evidence = []
+            
+            # 1. Analyze response time patterns
+            if p99_response > avg_response * 3:
+                root_causes.append("Severe tail latency - 99th percentile is {}x slower than average".format(round(p99_response / avg_response, 1)))
+                evidence.append("P99: {:.2f}s vs Avg: {:.2f}s".format(p99_response, avg_response))
+            
+            if max_response > p95_response * 2:
+                root_causes.append("Extreme outliers detected - Maximum response time is {}x the 95th percentile".format(round(max_response / p95_response, 1)))
+                evidence.append("Max: {:.2f}s vs P95: {:.2f}s".format(max_response, p95_response))
+            
+            # 2. Check error rate correlation
+            if error_rate > 1:
+                root_causes.append("High error rate ({:.1f}%) correlates with slow responses - indicates system overload or failures".format(error_rate))
+                evidence.append("Error rate: {:.1f}%".format(error_rate))
+                
+                # Check for specific error codes
+                if response_codes:
+                    error_codes = {code: count for code, count in response_codes.items() if code.startswith(('4', '5'))}
+                    if error_codes:
+                        most_common_error = max(error_codes.items(), key=lambda x: x[1])
+                        root_causes.append("Most common error: HTTP {} ({} occurrences) - suggests specific failure pattern".format(most_common_error[0], most_common_error[1]))
+            
+            # 3. Analyze throughput
+            if throughput < 50:
+                root_causes.append("Low throughput ({:.1f} req/s) suggests resource bottleneck or connection pool exhaustion".format(throughput))
+                evidence.append("Throughput: {:.1f} req/s".format(throughput))
+            
+            # 4. Check SLA compliance
+            if sla_compliance < 80:
+                root_causes.append("Only {:.1f}% requests meet 2s SLA - indicates widespread performance degradation".format(sla_compliance))
+                evidence.append("SLA compliance: {:.1f}%".format(sla_compliance))
+            
+            # 5. Analyze slowest transactions
+            if transaction_stats or request_stats:
+                all_transactions = {**transaction_stats, **request_stats}
+                if all_transactions:
+                    slow_transactions = [(name, stats) for name, stats in all_transactions.items() 
+                                       if stats.get("avg_response", 0) > avg_response * 1.5]
+                    if slow_transactions:
+                        slow_transactions.sort(key=lambda x: x[1].get("avg_response", 0), reverse=True)
+                        top_slow = slow_transactions[0]
+                        root_causes.append("Slowest transaction: '{}' ({:.2f}s avg) is {}x slower than overall average".format(
+                            top_slow[0], top_slow[1].get("avg_response", 0) / 1000.0, 
+                            round(top_slow[1].get("avg_response", 0) / (avg_response * 1000), 1)))
+                    
+                    # Check for high error rate transactions
+                    error_transactions = [(name, stats) for name, stats in all_transactions.items() 
+                                        if stats.get("error_rate", 0) > 5]
+                    if error_transactions:
+                        top_error = max(error_transactions, key=lambda x: x[1].get("error_rate", 0))
+                        root_causes.append("Transaction '{}' has {:.1f}% error rate - specific endpoint issue".format(
+                            top_error[0], top_error[1].get("error_rate", 0)))
+            
+            # If no specific causes found, add generic ones
+            if not root_causes:
+                root_causes = [
+                    "Garbage collection pauses causing intermittent delays",
+                    "Database connection pool exhaustion under load",
+                    "Thread pool saturation limiting concurrent request handling",
+                    "Network latency spikes from downstream services",
+                    "Resource contention (CPU/Memory/IO) under peak load"
+                ]
             
             return {
                 "type": "Positively Skewed (Right Skewed)",
@@ -240,7 +343,8 @@ class JMeterAnalyzerV2:
                 "observations": [
                     f"Most {metric_name}s are fast (low values)",
                     f"Some {metric_name}s are extremely slow (high values)",
-                    "Asymmetric distribution with outliers on the high end"
+                    "Asymmetric distribution with outliers on the high end",
+                    f"P95: {p95_response:.2f}s, P99: {p99_response:.2f}s, Max: {max_response:.2f}s"
                 ],
                 "interpretation": {
                     "bottlenecks": "⚠️ System has performance bottlenecks",
@@ -248,15 +352,8 @@ class JMeterAnalyzerV2:
                     "consistency": "⚠️ Inconsistent performance across requests",
                     "tail_latency": "❌ High tail latency detected"
                 },
-                "possible_causes": [
-                    "Garbage collection pauses",
-                    "Database locking or connection pool exhaustion",
-                    "Thread pool saturation",
-                    "Network latency spikes",
-                    "Resource contention under load",
-                    "Cold start / cache miss scenarios",
-                    "Slow database queries (N+1 queries, missing indexes)"
-                ],
+                "possible_causes": root_causes,  # DYNAMIC based on actual data
+                "evidence": evidence,  # Supporting data points
                 "business_impact": "Customer experience varies - majority get fast service, but some users face frustrating delays",
                 "urgency": "High" if skewness > 1.5 else "Medium"
             }
@@ -963,4 +1060,275 @@ class JMeterAnalyzerV2:
             "F": "0-49"
         }
         return ranges.get(grade, "Unknown")
+    
+    @staticmethod
+    def _generate_phased_improvement_plan(
+        current_grade: str, 
+        current_score: float,
+        scores: Dict[str, float],
+        avg_response: float,
+        error_rate: float,
+        throughput: float,
+        p95_response: float,
+        sla_compliance: float,
+        transaction_stats: Dict,
+        request_stats: Dict
+    ) -> Dict[str, Any]:
+        """
+        Generate a PHASED improvement plan to reach A+ grade (90+)
+        Plan is dynamically generated based on current weaknesses
+        """
+        
+        # Calculate gap to A+ (90)
+        target_score = 90
+        score_gap = target_score - current_score
+        
+        if current_score >= 90:
+            return {
+                "current_grade": current_grade,
+                "current_score": round(current_score, 1),
+                "target_grade": "A+",
+                "target_score": 90,
+                "status": "🎉 Already at A+ Grade!",
+                "message": "Congratulations! Your system is performing at optimal levels. Focus on maintaining this performance.",
+                "maintenance_actions": [
+                    "Continue monitoring key metrics",
+                    "Maintain infrastructure capacity",
+                    "Regular performance regression testing",
+                    "Keep dependencies updated",
+                    "Document current configuration as best practice"
+                ]
+            }
+        
+        # Identify weak areas that need improvement
+        weak_areas = []
+        if scores.get("performance", 0) < 85:
+            weak_areas.append(("performance", scores.get("performance", 0), "Response time and P95 latency"))
+        if scores.get("reliability", 0) < 85:
+            weak_areas.append(("reliability", scores.get("reliability", 0), "Error rate and success rate"))
+        if scores.get("user_experience", 0) < 85:
+            weak_areas.append(("user_experience", scores.get("user_experience", 0), "SLA compliance"))
+        if scores.get("scalability", 0) < 85:
+            weak_areas.append(("scalability", scores.get("scalability", 0), "Throughput capacity"))
+        
+        # Sort by score (weakest first)
+        weak_areas.sort(key=lambda x: x[1])
+        
+        # Find slowest transactions for specific actions
+        all_transactions = {**transaction_stats, **request_stats}
+        slowest_transactions = []
+        if all_transactions:
+            slowest_transactions = sorted(
+                [(name, stats.get("avg_response", 0) / 1000.0, stats.get("p95", 0) / 1000.0) 
+                 for name, stats in all_transactions.items()],
+                key=lambda x: x[1],
+                reverse=True
+            )[:5]
+        
+        # Generate phased plan
+        phases = []
+        
+        # PHASE 1: Critical/Immediate (Week 1-2)
+        phase1_actions = []
+        phase1_impact = 0
+        
+        if error_rate > 1:
+            phase1_actions.append({
+                "action": "Fix Critical Errors",
+                "detail": f"Reduce error rate from {error_rate:.1f}% to <1%",
+                "steps": [
+                    "Analyze error logs for top 5 error patterns",
+                    "Fix HTTP 5xx errors (server-side failures)",
+                    "Add retry logic for transient failures",
+                    "Implement circuit breakers for failing dependencies"
+                ],
+                "expected_impact": "+5-8 points"
+            })
+            phase1_impact += 6.5
+        
+        if avg_response > 3:
+            phase1_actions.append({
+                "action": "Reduce Slowest API Response Times",
+                "detail": f"Target: Bring average from {avg_response:.2f}s to <2s",
+                "steps": [
+                    f"Optimize slowest endpoint: {slowest_transactions[0][0] if slowest_transactions else 'N/A'} ({slowest_transactions[0][1]:.2f}s)" if slowest_transactions else "Identify and optimize slowest transactions",
+                    "Add database query indexes",
+                    "Enable database connection pooling",
+                    "Implement response caching for read-heavy endpoints"
+                ],
+                "expected_impact": "+8-12 points"
+            })
+            phase1_impact += 10
+        elif avg_response > 2:
+            phase1_actions.append({
+                "action": "Optimize Response Times",
+                "detail": f"Target: Reduce average from {avg_response:.2f}s to <1.5s",
+                "steps": [
+                    f"Optimize top 3 slowest endpoints: {', '.join([t[0][:30] for t in slowest_transactions[:3]])}" if slowest_transactions else "Profile and optimize slow transactions",
+                    "Review and optimize database queries",
+                    "Add caching layer (Redis/Memcached)",
+                    "Compress API responses"
+                ],
+                "expected_impact": "+5-8 points"
+            })
+            phase1_impact += 6.5
+        
+        if not phase1_actions:
+            phase1_actions.append({
+                "action": "Fine-tune Existing Performance",
+                "detail": "Incremental optimizations to reach next grade",
+                "steps": [
+                    "Profile application for hotspots",
+                    "Optimize database query execution plans",
+                    "Review and reduce API payload sizes",
+                    "Enable HTTP/2 or HTTP/3"
+                ],
+                "expected_impact": "+3-5 points"
+            })
+            phase1_impact += 4
+        
+        phases.append({
+            "phase": "Phase 1: Critical Fixes",
+            "timeline": "Week 1-2",
+            "priority": "🔴 High",
+            "actions": phase1_actions,
+            "target_score": min(90, round(current_score + phase1_impact, 1)),
+            "expected_grade": JMeterAnalyzerV2._calculate_grade(min(90, current_score + phase1_impact))[0]
+        })
+        
+        # PHASE 2: Major Improvements (Week 3-4)
+        phase2_actions = []
+        phase2_impact = 0
+        current_after_phase1 = min(90, current_score + phase1_impact)
+        
+        if current_after_phase1 < 90:
+            if sla_compliance < 95:
+                phase2_actions.append({
+                    "action": "Improve SLA Compliance",
+                    "detail": f"Increase SLA compliance from {sla_compliance:.1f}% to >95%",
+                    "steps": [
+                        "Set response time SLO targets per endpoint",
+                        "Implement timeout controls",
+                        "Add autoscaling rules for traffic spikes",
+                        "Optimize middleware and authentication layers"
+                    ],
+                    "expected_impact": "+3-5 points"
+                })
+                phase2_impact += 4
+            
+            if p95_response > 3:
+                phase2_actions.append({
+                    "action": "Reduce Tail Latency (P95/P99)",
+                    "detail": f"Bring P95 from {p95_response:.2f}s to <2.5s",
+                    "steps": [
+                        "Identify and fix P95+ outliers",
+                        "Optimize database connection handling",
+                        "Implement request queuing with priorities",
+                        "Add APM tools to trace slow requests"
+                    ],
+                    "expected_impact": "+4-6 points"
+                })
+                phase2_impact += 5
+            
+            if throughput < 100:
+                phase2_actions.append({
+                    "action": "Increase System Throughput",
+                    "detail": f"Scale from {throughput:.0f} to >100 req/s",
+                    "steps": [
+                        "Horizontal scaling - add more instances",
+                        "Optimize thread pool configuration",
+                        "Enable async processing for long-running tasks",
+                        "Load balance across multiple nodes"
+                    ],
+                    "expected_impact": "+3-5 points"
+                })
+                phase2_impact += 4
+            
+            if not phase2_actions:
+                phase2_actions.append({
+                    "action": "Advanced Performance Optimization",
+                    "detail": "Push performance to A+ level",
+                    "steps": [
+                        "Implement comprehensive caching strategy",
+                        "Optimize JSON serialization/deserialization",
+                        "Enable gzip/brotli compression",
+                        "Reduce memory allocations and GC pressure"
+                    ],
+                    "expected_impact": "+2-4 points"
+                })
+                phase2_impact += 3
+        
+        phases.append({
+            "phase": "Phase 2: Major Improvements",
+            "timeline": "Week 3-4",
+            "priority": "🟡 Medium",
+            "actions": phase2_actions,
+            "target_score": min(90, round(current_after_phase1 + phase2_impact, 1)),
+            "expected_grade": JMeterAnalyzerV2._calculate_grade(min(90, current_after_phase1 + phase2_impact))[0]
+        })
+        
+        # PHASE 3: Fine-tuning & Excellence (Week 5-6)
+        phase3_actions = []
+        current_after_phase2 = min(90, current_after_phase1 + phase2_impact)
+        
+        if current_after_phase2 < 90:
+            phase3_actions = [{
+                "action": "Infrastructure & Architecture Optimization",
+                "detail": "Achieve A+ grade through infrastructure excellence",
+                "steps": [
+                    "Implement CDN for static assets",
+                    "Database read replicas for query distribution",
+                    "Enable connection pooling and keep-alive",
+                    "Implement rate limiting and request throttling",
+                    "Add monitoring and alerting for proactive issue detection"
+                ],
+                "expected_impact": f"+{round(90 - current_after_phase2, 1)} points to reach A+"
+            }]
+        else:
+            phase3_actions = [{
+                "action": "Maintain A+ Performance",
+                "detail": "Sustain peak performance levels",
+                "steps": [
+                    "Continuous monitoring and alerting",
+                    "Regular load testing",
+                    "Performance regression testing in CI/CD",
+                    "Capacity planning and scaling strategies",
+                    "Regular performance audits"
+                ],
+                "expected_impact": "Maintain 90+ score"
+            }]
+        
+        phases.append({
+            "phase": "Phase 3: Excellence & Sustainability",
+            "timeline": "Week 5-6",
+            "priority": "🟢 Low",
+            "actions": phase3_actions,
+            "target_score": 90,
+            "expected_grade": "A+"
+        })
+        
+        # Calculate total estimated improvement
+        total_expected_improvement = phase1_impact + phase2_impact + (90 - current_after_phase2 if current_after_phase2 < 90 else 0)
+        final_expected_score = min(95, current_score + total_expected_improvement)
+        
+        return {
+            "current_grade": current_grade,
+            "current_score": round(current_score, 1),
+            "target_grade": "A+",
+            "target_score": 90,
+            "score_gap": round(score_gap, 1),
+            "total_phases": len(phases),
+            "estimated_timeline": "4-6 weeks",
+            "phases": phases,
+            "final_expected_score": round(final_expected_score, 1),
+            "weak_areas": [{"area": area[2], "current_score": round(area[1], 1)} for area in weak_areas],
+            "success_metrics": [
+                "Average response time < 1.5s",
+                "P95 response time < 2.5s",
+                "Error rate < 0.5%",
+                "Success rate > 99.5%",
+                "Throughput > 100 req/s",
+                "SLA compliance > 95%"
+            ]
+        }
 

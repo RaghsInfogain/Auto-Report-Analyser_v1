@@ -38,6 +38,7 @@ Start here if you're new to the platform:
 | [HTML_REPORTS_NEW_TAB.md](./HTML_REPORTS_NEW_TAB.md) | HTML reports now open in new tab (v3.0.1) |
 | [SKEWNESS_BUSINESS_GRADING.md](./SKEWNESS_BUSINESS_GRADING.md) | Statistical skewness & business-focused grading (v3.0.2) |
 | [REPORT_LAYOUT_PDF_UPDATE.md](./REPORT_LAYOUT_PDF_UPDATE.md) | Report layout reorganization & PDF export (v3.0.3) |
+| [DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md](./DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md) | Dynamic root cause analysis & phased improvement plans (v3.0.4) |
 
 ---
 
@@ -185,8 +186,10 @@ docs/
 
 ---
 
-## 🚀 Latest Features (v3.0.3)
+## 🚀 Latest Features (v3.0.4)
 
+- ✅ **Dynamic Root Cause Analysis** - Evidence-based issue detection from actual data (v3.0.4)
+- ✅ **Phased Improvement Plans** - Customized 3-phase roadmap to A+ grade (v3.0.4)
 - ✅ **Horizontal Card Layout** - Business Impact & Distribution Analysis in responsive cards (v3.0.3)
 - ✅ **PDF Export Button** - One-click PDF save directly from HTML report (v3.0.3)
 - ✅ **Reorganized Executive Summary** - Better visual hierarchy and logical flow (v3.0.3)

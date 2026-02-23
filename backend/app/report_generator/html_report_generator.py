@@ -137,7 +137,8 @@ class HTMLReportGenerator:
         business_impact = HTMLReportGenerator._generate_business_impact(error_rate_pct, avg_response)
         
         update_progress(89, "Generating action plan...")
-        action_plan = HTMLReportGenerator._generate_action_plan(improvement_roadmap, overall_grade)
+        phased_plan = summary.get("phased_improvement_plan", {})
+        action_plan = HTMLReportGenerator._generate_phased_action_plan(phased_plan, overall_grade)
         
         update_progress(91, "Generating success metrics...")
         success_metrics = HTMLReportGenerator._generate_success_metrics(avg_response, p95_response, error_rate_pct, success_rate, sla_compliance_2s, throughput)
@@ -3602,61 +3603,157 @@ class HTMLReportGenerator:
         </div>'''
     
     @staticmethod
-    def _generate_action_plan(roadmap: List[dict], current_grade: str) -> str:
-        """Generate recommended action plan in tabular format"""
-        if not roadmap:
-            return f'''
-        <div class="section">
-            <h2>🚀 Recommended Action Plan</h2>
-            <p>No specific action plan generated. Consider standard performance optimization strategies.</p>
+    def _generate_phased_action_plan(phased_plan: Dict[str, Any], current_grade: str) -> str:
+        """Generate PHASED improvement plan to reach A+ grade"""
+        if not phased_plan or not phased_plan.get("phases"):
+            return HTMLReportGenerator._generate_action_plan([], current_grade)
+        
+        current_score = phased_plan.get("current_score", 0)
+        target_score = phased_plan.get("target_score", 90)
+        score_gap = phased_plan.get("score_gap", 0)
+        phases = phased_plan.get("phases", [])
+        final_expected_score = phased_plan.get("final_expected_score", 90)
+        estimated_timeline = phased_plan.get("estimated_timeline", "4-6 weeks")
+        weak_areas = phased_plan.get("weak_areas", [])
+        success_metrics = phased_plan.get("success_metrics", [])
+        
+        # Generate overview header
+        overview_html = f'''
+        <div style="background: linear-gradient(135deg, #ede9fe, #f5f3ff); border: 2px solid #a78bfa; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+            <h3 style="margin: 0 0 1rem 0; color: #5b21b6;">📈 Improvement Roadmap to A+ Grade</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <div>
+                    <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">Current Status</p>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 1.5rem; font-weight: 700; color: #5b21b6;">{current_grade} ({current_score}/100)</p>
+                </div>
+                <div>
+                    <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">Target Grade</p>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 1.5rem; font-weight: 700; color: #10b981;">A+ (90+/100)</p>
+                </div>
+                <div>
+                    <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">Score Gap</p>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 1.5rem; font-weight: 700; color: #f59e0b;">{score_gap} points</p>
+                </div>
+                <div>
+                    <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">Estimated Timeline</p>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 1.5rem; font-weight: 700; color: #3b82f6;">{estimated_timeline}</p>
+                </div>
+            </div>
         </div>'''
         
-        # Generate table rows
-        table_rows = ""
-        for i, phase in enumerate(roadmap, 1):
-            phase_name = phase.get('phase', f'Phase {i}')
-            target_grade = phase.get('target_grade', 'N/A')
-            improvements = phase.get('improvements', [])
-            actions = '; '.join(improvements) if improvements else 'Review and optimize system performance'
-            expected_impact = phase.get('expected_impact', 'Improved system performance and reliability')
+        # Generate weak areas if any
+        weak_areas_html = ""
+        if weak_areas:
+            weak_items = ''.join([f'<li style="margin-bottom: 0.5rem;"><strong>{area["area"]}:</strong> {area["current_score"]}/100</li>' for area in weak_areas])
+            weak_areas_html = f'''
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 0 8px 8px 0; margin-bottom: 1.5rem;">
+                <p style="margin: 0 0 0.5rem 0; font-weight: 700; color: #92400e;">⚠️ Focus Areas (Weakest Performance)</p>
+                <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.9rem;">
+                    {weak_items}
+                </ul>
+            </div>'''
+        
+        # Generate phase cards
+        phases_html = ""
+        for phase_data in phases:
+            phase_name = phase_data.get("phase", "Phase")
+            timeline = phase_data.get("timeline", "")
+            priority = phase_data.get("priority", "")
+            actions = phase_data.get("actions", [])
+            target_score = phase_data.get("target_score", 0)
+            expected_grade = phase_data.get("expected_grade", "")
             
-            table_rows += f'''
-            <tr>
-                <td style="padding: 1rem; font-weight: 600; color: var(--text-primary);">{phase_name}</td>
-                <td style="padding: 1rem; text-align: center; color: var(--text-secondary);">{target_grade}</td>
-                <td style="padding: 1rem; color: var(--text-secondary);">{actions}</td>
-                <td style="padding: 1rem; color: var(--text-secondary);">{expected_impact}</td>
-            </tr>'''
+            # Priority color
+            priority_color = "#ef4444" if "High" in priority else "#f59e0b" if "Medium" in priority else "#10b981"
+            
+            # Generate action items HTML
+            actions_html = ""
+            for action in actions:
+                action_title = action.get("action", "")
+                action_detail = action.get("detail", "")
+                steps = action.get("steps", [])
+                impact = action.get("expected_impact", "")
+                
+                steps_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.5;">{step}</li>' for step in steps])
+                
+                actions_html += f'''
+                <div style="background: white; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid {priority_color};">
+                    <h4 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 1rem;">{action_title}</h4>
+                    <p style="margin: 0 0 0.75rem 0; color: #6b7280; font-size: 0.875rem; font-style: italic;">{action_detail}</p>
+                    <p style="margin: 0 0 0.5rem 0; font-weight: 600; font-size: 0.875rem; color: var(--text-primary);">Steps:</p>
+                    <ol style="margin: 0 0 0.75rem 0; padding-left: 1.5rem; font-size: 0.875rem;">
+                        {steps_html}
+                    </ol>
+                    <div style="background: #f0fdf4; padding: 0.5rem 0.75rem; border-radius: 6px; display: inline-block;">
+                        <span style="font-size: 0.875rem; color: #166534; font-weight: 600;">💡 Impact: {impact}</span>
+                    </div>
+                </div>'''
+            
+            phases_html += f'''
+            <div style="background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; flex-wrap: wrap;">
+                    <div>
+                        <h3 style="margin: 0; color: var(--primary-color); font-size: 1.3rem;">{phase_name}</h3>
+                        <p style="margin: 0.25rem 0 0 0; color: #6b7280; font-size: 0.875rem;">📅 {timeline} | Priority: {priority}</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">Target</p>
+                        <p style="margin: 0.25rem 0 0 0; font-size: 1.5rem; font-weight: 700; color: #10b981;">{expected_grade} ({target_score})</p>
+                    </div>
+                </div>
+                {actions_html}
+            </div>'''
+        
+        # Generate success metrics
+        success_metrics_html = ''.join([f'<li style="margin-bottom: 0.5rem;">✓ {metric}</li>' for metric in success_metrics])
         
         return f'''
         <div class="section">
-            <h2>🚀 Recommended Action Plan</h2>
-            <div style="overflow-x: auto; margin-top: 1.5rem;">
-                <table class="endpoint-table" style="width: 100%; border-collapse: collapse;">
-                    <thead>
-                        <tr style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white;">
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Phase</th>
-                            <th style="padding: 1rem; text-align: center; font-weight: 600;">Target Grade</th>
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Actions</th>
-                            <th style="padding: 1rem; text-align: left; font-weight: 600;">Expected Impact</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {table_rows}
-                    </tbody>
-                </table>
+            <h2>🚀 Phased Improvement Plan to A+ Grade</h2>
+            <p style="font-size: 1rem; color: #4b5563; margin-bottom: 1.5rem;">
+                Step-by-step roadmap to achieve optimal performance (Grade A+, Score 90+)
+            </p>
+            
+            {overview_html}
+            {weak_areas_html}
+            
+            <h3 style="margin: 2rem 0 1rem 0; color: var(--text-primary);">📋 Implementation Phases</h3>
+            {phases_html}
+            
+            <div style="background: linear-gradient(135deg, #dcfce7, #f0fdf4); border: 2px solid #86efac; border-radius: 12px; padding: 1.5rem; margin-top: 2rem;">
+                <h3 style="margin: 0 0 1rem 0; color: #166534;">🎯 A+ Grade Success Criteria</h3>
+                <p style="margin: 0 0 0.75rem 0; color: #374151;">Once all phases are complete, your system will meet these benchmarks:</p>
+                <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.9rem; color: #166534;">
+                    {success_metrics_html}
+                </ul>
+                <div style="background: white; padding: 1rem; border-radius: 8px; margin-top: 1rem; border-left: 4px solid #10b981;">
+                    <p style="margin: 0; font-weight: 600; color: #166534;">
+                        🎉 Expected Final Score: <span style="font-size: 1.2rem;">{final_expected_score}/100 (Grade A+)</span>
+                    </p>
+                </div>
             </div>
             
             <div style="background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border-left: 4px solid var(--success-color); padding: 1.5rem; border-radius: 0 8px 8px 0; margin-top: 2rem;">
                 <h3>Deployment Recommendation</h3>
                 <p><strong>✅ RECOMMENDED:</strong> {'Full production deployment with monitoring' if current_grade in ['A+', 'A'] else 'Gradual rollout with performance monitoring while implementing improvements' if current_grade in ['B+', 'B'] else 'Limited production rollout while implementing critical fixes'}</p>
                 <ul>
-                    <li>{'Deploy to full user base' if current_grade in ['A+', 'A'] else 'Deploy to limited user base initially' if current_grade in ['B+', 'B', 'C+'] else 'Deploy to pilot users only'}</li>
+                    <li>{'Deploy to full user base' if current_grade in ['A+', 'A'] else 'Deploy to limited user base initially (10-20%)' if current_grade in ['B+', 'B', 'C+'] else 'Deploy to pilot users only (<5%)'}</li>
                     <li>Implement comprehensive monitoring and alerting</li>
-                    <li>{'Maintain performance standards' if current_grade in ['A+', 'A'] else 'Gradual scale-up with continuous monitoring'}</li>
-                    <li>Regular performance reviews and optimization</li>
+                    <li>Execute improvement phases in parallel with production</li>
+                    <li>{'Maintain performance standards' if current_grade in ['A+', 'A'] else 'Gradual scale-up after each phase completion'}</li>
+                    <li>Regular performance reviews and regression testing</li>
                 </ul>
             </div>
+        </div>'''
+    
+    @staticmethod
+    def _generate_action_plan(roadmap: List[dict], current_grade: str) -> str:
+        """Generate recommended action plan in tabular format (LEGACY - kept for backward compatibility)"""
+        if not roadmap:
+            return f'''
+        <div class="section">
+            <h2>🚀 Recommended Action Plan</h2>
+            <p>No specific action plan generated. Consider standard performance optimization strategies.</p>
         </div>'''
     
     @staticmethod
