@@ -155,6 +155,8 @@ class HTMLReportGenerator:
         
         update_progress(99, "Assembling final HTML...")
         
+        consolidated_report_line = (f'<p style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"><strong>Consolidated Report:</strong> {file_count} file(s) analyzed</p>' if is_consolidated else '')
+        
         # Generate HTML
         html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -174,7 +176,7 @@ class HTMLReportGenerator:
                 <div>
                     <h1 style="margin: 0;">Performance Assessment Report</h1>
                     <p style="margin: 0.5rem 0 0 0;">Load Testing Results & Executive Analysis | {current_date}</p>
-                    {f'<p style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"><strong>Consolidated Report:</strong> {file_count} file(s) analyzed</p>' if is_consolidated else ''}
+                    {consolidated_report_line}
                 </div>
                 <button onclick="window.print()" class="pdf-button no-print" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); transition: all 0.2s;">
                     <span style="font-size: 1.2rem;">📄</span>
@@ -688,6 +690,13 @@ class HTMLReportGenerator:
             observations_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">{obs}</li>' for obs in observations])
             interpretation_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">{key}: {value}</li>' for key, value in interpretation.items()])
             causes_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">{cause}</li>' for cause in possible_causes]) if possible_causes else ""
+            causes_block = (f'''<div style="background: #fef2f2; padding: 1rem; border-radius: 8px; border: 1px solid #fca5a5;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #b91c1c; font-size: 0.95rem;">⚠️ Possible Root Causes</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {causes_html}
+                        </ul>
+                    </div>''' if causes_html else '')
+            business_impact_block = (f'<div style="margin-top: 1rem; padding: 1rem; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 6px;"><p style="margin: 0;"><strong>🎯 Business Impact:</strong> {business_impact_text}</p></div>' if business_impact_text else '')
             
             skewness_html = f'''
             <div style="background: rgba(255, 255, 255, 0.95); padding: 1.5rem; border-radius: 8px; margin-top: 1.5rem; color: var(--text-primary);">
@@ -717,15 +726,10 @@ class HTMLReportGenerator:
                     </div>
                     
                     <!-- Possible Root Causes Card -->
-                    {f'''<div style="background: #fef2f2; padding: 1rem; border-radius: 8px; border: 1px solid #fca5a5;">
-                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #b91c1c; font-size: 0.95rem;">⚠️ Possible Root Causes</p>
-                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
-                            {causes_html}
-                        </ul>
-                    </div>''' if causes_html else ''}
+                    {causes_block}
                 </div>
                 
-                {f'<div style="margin-top: 1rem; padding: 1rem; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 6px;"><p style="margin: 0;"><strong>🎯 Business Impact:</strong> {business_impact_text}</p></div>' if business_impact_text else ''}
+                {business_impact_block}
             </div>'''
         
         # Generate business impact section with HORIZONTAL CARDS
@@ -742,6 +746,36 @@ class HTMLReportGenerator:
             outcome_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">✓ {item}</li>' for item in business_outcome]) if business_outcome else ""
             actions_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">→ {item}</li>' for item in business_actions]) if business_actions else ""
             tech_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">• {item}</li>' for item in tech_indicators]) if tech_indicators else ""
+            customer_block = ('''<!-- Customer Impact Card -->
+                    <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px; border: 1px solid #86efac;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #166534; font-size: 0.95rem;">👥 Customer Impact</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            ''' + customer_html + '''
+                        </ul>
+                    </div>''' if customer_html else '')
+            outcome_block = ('''<!-- Business Outcomes Card -->
+                    <div style="background: #eff6ff; padding: 1rem; border-radius: 8px; border: 1px solid #93c5fd;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #1e40af; font-size: 0.95rem;">📊 Business Outcomes</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            ''' + outcome_html + '''
+                        </ul>
+                    </div>''' if outcome_html else '')
+            actions_block = ('''<!-- Recommended Actions Card -->
+                    <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; border: 1px solid #fcd34d;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #92400e; font-size: 0.95rem;">🎯 Recommended Actions</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            ''' + actions_html + '''
+                        </ul>
+                    </div>''' if actions_html else '')
+            tech_block = ('''<!-- Technical Indicators Card -->
+                    <div style="background: #f5f3ff; padding: 1rem; border-radius: 8px; border: 1px solid #c4b5fd;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #5b21b6; font-size: 0.95rem;">🔧 Technical Indicators</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            ''' + tech_html + '''
+                        </ul>
+                    </div>''' if tech_html else '')
+            risk_note_block = (f'<div style="margin-top: 1rem; padding: 1rem; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;"><p style="margin: 0;"><strong>⚠️ Risk Note:</strong> {risk_note}</p></div>' if risk_note else '')
+            business_translation_block = (f'<div style="margin-top: 1rem; padding: 1rem; background: #dbeafe; border-left: 4px solid #3b82f6; border-radius: 6px;"><p style="margin: 0;"><strong>💬 Business Translation:</strong> {business_translation}</p></div>' if business_translation else '')
             
             business_impact_html = f'''
             <div style="background: rgba(255, 255, 255, 0.95); padding: 1.5rem; border-radius: 8px; margin-top: 1.5rem; color: var(--text-primary);">
@@ -754,41 +788,17 @@ class HTMLReportGenerator:
                 
                 <!-- Horizontal Cards -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-                    {f'''<!-- Customer Impact Card -->
-                    <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px; border: 1px solid #86efac;">
-                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #166534; font-size: 0.95rem;">👥 Customer Impact</p>
-                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
-                            {customer_html}
-                        </ul>
-                    </div>''' if customer_html else ''}
+                    {customer_block}
                     
-                    {f'''<!-- Business Outcomes Card -->
-                    <div style="background: #eff6ff; padding: 1rem; border-radius: 8px; border: 1px solid #93c5fd;">
-                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #1e40af; font-size: 0.95rem;">📊 Business Outcomes</p>
-                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
-                            {outcome_html}
-                        </ul>
-                    </div>''' if outcome_html else ''}
+                    {outcome_block}
                     
-                    {f'''<!-- Recommended Actions Card -->
-                    <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; border: 1px solid #fcd34d;">
-                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #92400e; font-size: 0.95rem;">🎯 Recommended Actions</p>
-                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
-                            {actions_html}
-                        </ul>
-                    </div>''' if actions_html else ''}
+                    {actions_block}
                     
-                    {f'''<!-- Technical Indicators Card -->
-                    <div style="background: #f5f3ff; padding: 1rem; border-radius: 8px; border: 1px solid #c4b5fd;">
-                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #5b21b6; font-size: 0.95rem;">🔧 Technical Indicators</p>
-                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
-                            {tech_html}
-                        </ul>
-                    </div>''' if tech_html else ''}
+                    {tech_block}
                 </div>
                 
-                {f'<div style="margin-top: 1rem; padding: 1rem; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;"><p style="margin: 0;"><strong>⚠️ Risk Note:</strong> {risk_note}</p></div>' if risk_note else ''}
-                {f'<div style="margin-top: 1rem; padding: 1rem; background: #dbeafe; border-left: 4px solid #3b82f6; border-radius: 6px;"><p style="margin: 0;"><strong>💬 Business Translation:</strong> {business_translation}</p></div>' if business_translation else ''}
+                {risk_note_block}
+                {business_translation_block}
             </div>'''
         
         return f'''
@@ -1499,6 +1509,8 @@ class HTMLReportGenerator:
         }
         rt_badge_color = dist_badge_colors.get(rt_dist_type, '#6b7280')
         tp_badge_color = dist_badge_colors.get(tp_dist_type, '#6b7280')
+        rt_badge_span = (f'<span style="padding: 0.5rem 1rem; background: {rt_badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">RT: {rt_dist_type.replace("_", " ")}</span>' if rt_dist_type != 'unknown' else '')
+        tp_badge_span = (f'<span style="padding: 0.5rem 1rem; background: {tp_badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">TP: {tp_dist_type.replace("_", " ")}</span>' if tp_dist_type != 'unknown' else '')
         
         return f'''
             <div style="margin-bottom: 2rem;">
@@ -1506,8 +1518,8 @@ class HTMLReportGenerator:
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
                         <h3 style="margin: 0; color: var(--text-primary); font-size: 1.3rem; font-weight: 600;">📊 Graph Understanding and Performance Analysis</h3>
                         <div style="display: flex; gap: 0.5rem;">
-                            {f'<span style="padding: 0.5rem 1rem; background: {rt_badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">RT: {rt_dist_type.replace("_", " ")}</span>' if rt_dist_type != 'unknown' else ''}
-                            {f'<span style="padding: 0.5rem 1rem; background: {tp_badge_color}; color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">TP: {tp_dist_type.replace("_", " ")}</span>' if tp_dist_type != 'unknown' else ''}
+                            {rt_badge_span}
+                            {tp_badge_span}
                         </div>
                     </div>
                     
