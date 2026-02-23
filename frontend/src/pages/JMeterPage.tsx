@@ -150,12 +150,15 @@ const JMeterPage: React.FC = () => {
     try {
       const report = await getRunReport(run.run_id, type);
       if (type === 'html' && typeof report === 'string') {
-        setModalContent({
-          type: 'html',
-          content: report,
-          filename: `${run.run_id}_report.html`
-        });
-        setModalOpen(true);
+        // Open HTML report in a new tab
+        const newWindow = window.open('', '_blank');
+        if (newWindow) {
+          newWindow.document.write(report);
+          newWindow.document.close();
+          newWindow.document.title = `${run.run_id} - Performance Report`;
+        } else {
+          alert('Please allow pop-ups to view the report in a new tab');
+        }
       } else if (type === 'pdf' || type === 'ppt') {
         const blob = new Blob([report as Blob], { type: type === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
         const url = URL.createObjectURL(blob);

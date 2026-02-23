@@ -63,6 +63,25 @@ const Layout: React.FC = () => {
             {isSidebarOpen && <span className="nav-text">All Files</span>}
           </NavLink>
 
+          {isSidebarOpen && <div className="nav-separator">Release Intelligence</div>}
+
+          <NavLink to="/baselines" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">📍</span>
+            {isSidebarOpen && <span className="nav-text">Baselines</span>}
+          </NavLink>
+
+          <NavLink to="/compare" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">⚖️</span>
+            {isSidebarOpen && <span className="nav-text">Compare Runs</span>}
+          </NavLink>
+
+          <NavLink to="/release-decision" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">🎯</span>
+            {isSidebarOpen && <span className="nav-text">Release Decision</span>}
+          </NavLink>
+
+          {isSidebarOpen && <div className="nav-separator">Tools</div>}
+
           <NavLink to="/ai-chat" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">🤖</span>
             {isSidebarOpen && <span className="nav-text">AI Assistant</span>}

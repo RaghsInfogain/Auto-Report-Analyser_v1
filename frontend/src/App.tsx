@@ -10,6 +10,9 @@ import JMeterPage from './pages/JMeterPage';
 import WebVitalsPage from './pages/WebVitalsPage';
 import AIChatPage from './pages/AIChatPage';
 import ParsedDataPage from './pages/ParsedDataPage';
+import BaselinesPage from './pages/BaselinesPage';
+import ComparePage from './pages/ComparePage';
+import ReleaseDecisionPage from './pages/ReleaseDecisionPage';
 import './App.css';
 
 function App() {
@@ -33,6 +36,9 @@ function App() {
             <Route path="jmeter" element={<JMeterPage />} />
             <Route path="web-vitals" element={<WebVitalsPage />} />
             <Route path="runs/:runId/parsed-data" element={<ParsedDataPage />} />
+            <Route path="baselines" element={<BaselinesPage />} />
+            <Route path="compare" element={<ComparePage />} />
+            <Route path="release-decision" element={<ReleaseDecisionPage />} />
             <Route path="ai-chat" element={<AIChatPage />} />
           </Route>
         </Routes>

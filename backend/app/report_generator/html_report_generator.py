@@ -111,7 +111,9 @@ class HTMLReportGenerator:
         css_content = HTMLReportGenerator._generate_css()
         
         update_progress(20, "Generating executive summary...")
-        exec_summary = HTMLReportGenerator._generate_executive_summary(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, summary)
+        skewness_analysis = summary.get("skewness_analysis", {})
+        business_impact = summary.get("business_impact", {})
+        exec_summary = HTMLReportGenerator._generate_executive_summary(overall_grade, overall_score, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, summary, skewness_analysis, business_impact)
         
         update_progress(30, "Generating performance scorecard...")
         scorecard = HTMLReportGenerator._generate_performance_scorecard(overall_grade, overall_score, grade_reasons, scores, targets, success_rate, avg_response, error_rate_pct, throughput, p95_response, sla_compliance_2s, grade_bg_color, grade_border_color, overall_grade_description)
@@ -166,9 +168,17 @@ class HTMLReportGenerator:
     <!-- Header -->
     <div class="header">
         <div class="container">
-            <h1>Performance Assessment Report</h1>
-            <p>Load Testing Results & Executive Analysis | {current_date}</p>
-            {f'<p style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"><strong>Consolidated Report:</strong> {file_count} file(s) analyzed</p>' if is_consolidated else ''}
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                <div>
+                    <h1 style="margin: 0;">Performance Assessment Report</h1>
+                    <p style="margin: 0.5rem 0 0 0;">Load Testing Results & Executive Analysis | {current_date}</p>
+                    {f'<p style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"><strong>Consolidated Report:</strong> {file_count} file(s) analyzed</p>' if is_consolidated else ''}
+                </div>
+                <button onclick="window.print()" class="pdf-button no-print" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); transition: all 0.2s;">
+                    <span style="font-size: 1.2rem;">📄</span>
+                    Save as PDF
+                </button>
+            </div>
         </div>
     </div>
 
@@ -538,27 +548,78 @@ class HTMLReportGenerator:
         @media (max-width: 600px) {
             .metrics-grid { grid-template-columns: 1fr; }
         }
+        
+        /* Print styles for PDF generation */
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            
+            .pdf-button {
+                display: none !important;
+            }
+            
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            
+            .container {
+                max-width: 100%;
+                padding: 1rem;
+            }
+            
+            /* Ensure page breaks work properly */
+            .section {
+                page-break-inside: avoid;
+            }
+            
+            /* Remove box shadows for print */
+            .card, .alert, .summary-item {
+                box-shadow: none;
+            }
+        }
+        
+        /* PDF Button Styles */
+        .pdf-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5) !important;
+        }
+        
+        .pdf-button:active {
+            transform: translateY(0);
+        }
     </style>'''
     
     @staticmethod
-    def _generate_executive_summary(grade: str, score: float, success_rate: float, avg_response: float, error_rate: float, throughput: float, p95_response: float, sla_compliance: float, summary: dict) -> str:
-        """Generate executive summary section with key findings"""
-        # Determine status color and message
+    def _generate_executive_summary(grade: str, score: float, success_rate: float, avg_response: float, error_rate: float, throughput: float, p95_response: float, sla_compliance: float, summary: dict, skewness_analysis: dict = None, business_impact: dict = None) -> str:
+        """Generate executive summary section with key findings, skewness interpretation, and business impact"""
+        
+        # Get business impact data if available
+        if not business_impact:
+            business_impact = {}
+        
+        # Determine status using business impact
+        release_decision = business_impact.get("release_decision", "")
+        executive_meaning = business_impact.get("executive_meaning", "")
+        operational_risk = business_impact.get("operational_risk", "Unknown")
+        
+        # Determine status color and message from business impact
         if grade in ["A+", "A"]:
             status_color = "#10b981"
             status_icon = "✅"
-            status_text = "APPROVED"
-            status_message = "The application demonstrates excellent performance and stability. Ready for full production deployment."
+            status_text = release_decision or "APPROVED"
+            status_message = executive_meaning or "The application demonstrates excellent performance and stability. Ready for full production deployment."
         elif grade in ["B+", "B"]:
             status_color = "#f59e0b"
             status_icon = "⚠️"
-            status_text = "CONDITIONAL APPROVAL"
-            status_message = "The application is stable but requires performance improvements. Recommended approach: Limited rollout with monitoring."
+            status_text = release_decision or "CONDITIONAL APPROVAL"
+            status_message = executive_meaning or "The application is stable but requires performance improvements. Recommended approach: Limited rollout with monitoring."
         else:
             status_color = "#ef4444"
-            status_icon = "⚠️"
-            status_text = "CAUTIONARY APPROVAL"
-            status_message = "The application demonstrates stability but exhibits critical performance issues requiring immediate attention. Recommended approach: Limited production rollout while implementing critical fixes."
+            status_icon = "❌"
+            status_text = release_decision or "RELEASE NOT RECOMMENDED"
+            status_message = executive_meaning or "The application demonstrates stability but exhibits critical performance issues requiring immediate attention."
         
         # Generate key findings
         key_findings = []
@@ -605,6 +666,124 @@ class HTMLReportGenerator:
         
         findings_html = ''.join([f'<li style="margin-bottom: 0.75rem; line-height: 1.6;">{finding}</li>' for finding in key_findings])
         
+        # Generate skewness analysis section with HORIZONTAL CARDS
+        skewness_html = ""
+        if skewness_analysis:
+            skew_type = skewness_analysis.get("type", "Unknown")
+            skew_value = skewness_analysis.get("skewness_value", 0)
+            skew_icon = skewness_analysis.get("distribution_icon", "📊")
+            skew_shape = skewness_analysis.get("shape", "")
+            observations = skewness_analysis.get("observations", [])
+            interpretation = skewness_analysis.get("interpretation", {})
+            possible_causes = skewness_analysis.get("possible_causes", [])
+            business_impact_text = skewness_analysis.get("business_impact", "")
+            
+            observations_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">{obs}</li>' for obs in observations])
+            interpretation_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">{key}: {value}</li>' for key, value in interpretation.items()])
+            causes_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">{cause}</li>' for cause in possible_causes]) if possible_causes else ""
+            
+            skewness_html = f'''
+            <div style="background: rgba(255, 255, 255, 0.95); padding: 1.5rem; border-radius: 8px; margin-top: 1.5rem; color: var(--text-primary);">
+                <h3 style="color: var(--primary-color); margin-top: 0; margin-bottom: 1rem;">{skew_icon} Statistical Distribution Analysis</h3>
+                <div style="background: #f8fafc; padding: 1rem; border-radius: 6px; border-left: 4px solid var(--primary-color); margin-bottom: 1rem;">
+                    <p style="margin: 0 0 0.5rem 0;"><strong>Distribution Type:</strong> {skew_type}</p>
+                    <p style="margin: 0 0 0.5rem 0;"><strong>Skewness Value:</strong> {skew_value}</p>
+                    <p style="margin: 0;"><strong>Shape:</strong> {skew_shape}</p>
+                </div>
+                
+                <!-- Horizontal Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                    <!-- Observations Card -->
+                    <div style="background: #f0f9ff; padding: 1rem; border-radius: 8px; border: 1px solid #bae6fd;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #0369a1; font-size: 0.95rem;">📈 Observations</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {observations_html}
+                        </ul>
+                    </div>
+                    
+                    <!-- Interpretation Card -->
+                    <div style="background: #fefce8; padding: 1rem; border-radius: 8px; border: 1px solid #fde047;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #a16207; font-size: 0.95rem;">💡 Interpretation</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {interpretation_html}
+                        </ul>
+                    </div>
+                    
+                    <!-- Possible Root Causes Card -->
+                    {f'''<div style="background: #fef2f2; padding: 1rem; border-radius: 8px; border: 1px solid #fca5a5;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #b91c1c; font-size: 0.95rem;">⚠️ Possible Root Causes</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {causes_html}
+                        </ul>
+                    </div>''' if causes_html else ''}
+                </div>
+                
+                {f'<div style="margin-top: 1rem; padding: 1rem; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 6px;"><p style="margin: 0;"><strong>🎯 Business Impact:</strong> {business_impact_text}</p></div>' if business_impact_text else ''}
+            </div>'''
+        
+        # Generate business impact section with HORIZONTAL CARDS
+        business_impact_html = ""
+        if business_impact:
+            customer_impact = business_impact.get("customer_impact", [])
+            business_outcome = business_impact.get("business_outcome", [])
+            business_actions = business_impact.get("business_actions", [])
+            tech_indicators = business_impact.get("tech_indicators", [])
+            risk_note = business_impact.get("risk_note", "")
+            business_translation = business_impact.get("business_translation", "")
+            
+            customer_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">✓ {item}</li>' for item in customer_impact]) if customer_impact else ""
+            outcome_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">✓ {item}</li>' for item in business_outcome]) if business_outcome else ""
+            actions_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">→ {item}</li>' for item in business_actions]) if business_actions else ""
+            tech_html = ''.join([f'<li style="margin-bottom: 0.5rem; line-height: 1.4;">• {item}</li>' for item in tech_indicators]) if tech_indicators else ""
+            
+            business_impact_html = f'''
+            <div style="background: rgba(255, 255, 255, 0.95); padding: 1.5rem; border-radius: 8px; margin-top: 1.5rem; color: var(--text-primary);">
+                <h3 style="color: var(--primary-color); margin-top: 0; margin-bottom: 1rem;">💼 Business Impact & Release Decision</h3>
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <p style="margin: 0 0 0.5rem 0; font-size: 0.9rem; opacity: 0.9;">Release Decision</p>
+                    <p style="margin: 0; font-size: 1.4rem; font-weight: 700;">{release_decision}</p>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">Operational Risk: <strong>{operational_risk}</strong></p>
+                </div>
+                
+                <!-- Horizontal Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                    {f'''<!-- Customer Impact Card -->
+                    <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px; border: 1px solid #86efac;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #166534; font-size: 0.95rem;">👥 Customer Impact</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {customer_html}
+                        </ul>
+                    </div>''' if customer_html else ''}
+                    
+                    {f'''<!-- Business Outcomes Card -->
+                    <div style="background: #eff6ff; padding: 1rem; border-radius: 8px; border: 1px solid #93c5fd;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #1e40af; font-size: 0.95rem;">📊 Business Outcomes</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {outcome_html}
+                        </ul>
+                    </div>''' if outcome_html else ''}
+                    
+                    {f'''<!-- Recommended Actions Card -->
+                    <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; border: 1px solid #fcd34d;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #92400e; font-size: 0.95rem;">🎯 Recommended Actions</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {actions_html}
+                        </ul>
+                    </div>''' if actions_html else ''}
+                    
+                    {f'''<!-- Technical Indicators Card -->
+                    <div style="background: #f5f3ff; padding: 1rem; border-radius: 8px; border: 1px solid #c4b5fd;">
+                        <p style="font-weight: 700; margin: 0 0 0.75rem 0; color: #5b21b6; font-size: 0.95rem;">🔧 Technical Indicators</p>
+                        <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.875rem;">
+                            {tech_html}
+                        </ul>
+                    </div>''' if tech_html else ''}
+                </div>
+                
+                {f'<div style="margin-top: 1rem; padding: 1rem; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;"><p style="margin: 0;"><strong>⚠️ Risk Note:</strong> {risk_note}</p></div>' if risk_note else ''}
+                {f'<div style="margin-top: 1rem; padding: 1rem; background: #dbeafe; border-left: 4px solid #3b82f6; border-radius: 6px;"><p style="margin: 0;"><strong>💬 Business Translation:</strong> {business_translation}</p></div>' if business_translation else ''}
+            </div>'''
+        
         return f'''
         <div class="executive-summary">
             <h2 style="color: white; border-bottom: 2px solid white;">Executive Summary</h2>
@@ -636,6 +815,8 @@ class HTMLReportGenerator:
                     {findings_html}
                 </ul>
             </div>
+            {business_impact_html}
+            {skewness_html}
         </div>'''
     
     @staticmethod

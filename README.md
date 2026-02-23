@@ -1,9 +1,10 @@
-# Auto Report Analyzer
+# Auto Report Analyzer v3.0.0
 
-A comprehensive performance analysis application for analyzing Web Vitals, JMeter test results, and UI Performance metrics.
+A comprehensive performance analysis application for analyzing Web Vitals, JMeter test results, and UI Performance metrics with **AI-powered Release Intelligence**.
 
-## Features
+## 🚀 Key Features
 
+### Performance Testing & Analysis
 - **Multi-format Support**: Upload JSON, CSV, and JTL files
 - **Three Analysis Categories**:
   - Web Vitals (LCP, FID, CLS, FCP, TTFB, INP)
@@ -11,7 +12,31 @@ A comprehensive performance analysis application for analyzing Web Vitals, JMete
   - UI Performance (DNS lookup, connection time, page load time)
 - **Comprehensive Reports**: Generate detailed performance reports with recommendations
 - **Statistical Analysis**: Mean, median, P95, P99 metrics
+
+### 🎯 Release Intelligence (NEW in v3.0.0)
+- **Baseline Management**: Create and track performance baselines
+- **Automated Regression Detection**: Compare current vs baseline performance
+- **Release Readiness Scoring**: AI-powered release decision recommendations
+- **Correlation Analysis**: Detect backend/frontend performance issues
+- **Natural Language Reports**: Auto-generated executive summaries
+- **Visual UI**: Three dedicated pages for baselines, comparisons, and release decisions
+
+### Other Features
+- **AI Chatbot**: Intelligent assistant for performance analysis
 - **Modern UI**: React-based frontend with TypeScript
+- **Authentication**: Secure login system with role-based access
+
+## 📚 Documentation
+
+All comprehensive documentation is now organized in the **`docs/`** folder:
+
+- **[docs/INDEX.md](docs/INDEX.md)** - Complete documentation index
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - Quick start guide
+- **[docs/UI_COMPARISON_FEATURES.md](docs/UI_COMPARISON_FEATURES.md)** - Guide to comparison UI
+- **[docs/QUICK_START_COMPARISON.md](docs/QUICK_START_COMPARISON.md)** - Comparison engine quick start
+- **[docs/EXECUTIVE_SUMMARY_COMPARISON.md](docs/EXECUTIVE_SUMMARY_COMPARISON.md)** - Business overview
+
+[**→ Browse all documentation**](docs/INDEX.md)
 
 ## Project Structure
 
@@ -22,15 +47,20 @@ AutoReportAnalyzer/
 │   │   ├── models/         # Data models
 │   │   ├── parsers/        # File parsers (JSON, CSV, JTL)
 │   │   ├── analyzers/      # Analysis logic
+│   │   ├── comparison/     # NEW: Comparison & release intelligence engine
 │   │   ├── report_generator/ # Report generation
+│   │   ├── database/       # Database models and service
 │   │   └── api/            # API routes
 │   ├── requirements.txt
 │   └── uploads/            # Uploaded files storage
-└── frontend/               # React frontend
-    ├── src/
-    │   ├── components/     # React components
-    │   └── services/       # API services
-    └── package.json
+├── frontend/               # React frontend
+│   ├── src/
+│   │   ├── components/     # React components
+│   │   ├── pages/          # Page components (Dashboard, Baselines, Compare, etc.)
+│   │   └── services/       # API services
+│   └── package.json
+├── docs/                   # 📚 Comprehensive documentation (23 files)
+└── sample_data/            # Sample test data files
 ```
 
 ## Setup Instructions
@@ -103,11 +133,23 @@ Use the provided `.bat` scripts (equivalent to the `.sh` scripts on macOS/Linux)
 
 ## API Endpoints
 
+### Core APIs
 - `POST /api/upload` - Upload files with categories
 - `GET /api/files` - List all uploaded files
+- `GET /api/runs` - List all test runs
 - `POST /api/analyze` - Analyze selected files
 - `POST /api/report/generate` - Generate comprehensive report
 - `GET /api/health` - Health check
+
+### Comparison & Release Intelligence APIs (NEW)
+- `POST /api/comparison/baseline/set` - Create a new baseline
+- `GET /api/comparison/baseline/list` - List all baselines
+- `POST /api/comparison/compare` - Run performance comparison
+- `GET /api/comparison/compare/result/{id}` - Get comparison results
+- `GET /api/comparison/release/verdict/{id}` - Get release verdict
+- `GET /api/comparison/release/regressions/{id}` - Get regression details
+
+[**→ Interactive API docs**](http://localhost:8000/docs) (when server is running)
 
 ## File Format Examples
 
@@ -141,10 +183,39 @@ timeStamp,elapsed,label,responseCode,success,Latency
 
 ## Technologies Used
 
-- **Backend**: FastAPI, Python, Pandas, NumPy
-- **Frontend**: React, TypeScript, Axios
+- **Backend**: FastAPI, Python, SQLAlchemy, Pandas, NumPy
+- **Frontend**: React, TypeScript, React Router, Axios
+- **Database**: SQLite (default), supports PostgreSQL
 - **Analysis**: Statistical analysis with Pandas and NumPy
-- **Report Generation**: Custom report builder
+- **Report Generation**: Custom report builder with natural language generation
+- **Authentication**: JWT-based authentication
+
+## Quick Start
+
+### Easiest Way - Use Shell Scripts
+
+```bash
+# Start both backend and frontend
+./run_server.sh
+
+# Backend will start on: http://localhost:8000
+# Frontend will start on: http://localhost:3000
+```
+
+### Login Credentials
+- **Username**: `admin` | **Password**: `admin123` (Admin)
+- **Username**: `tester` | **Password**: `test123` (User)
+
+See [docs/USER_CREDENTIALS.md](docs/USER_CREDENTIALS.md) for complete credentials.
+
+## Latest Updates (v3.0.0)
+
+- ✅ **Performance Comparison Engine**: Automated regression detection
+- ✅ **Release Intelligence**: AI-powered release scoring (0-100)
+- ✅ **Baseline Management**: Track performance over time
+- ✅ **Correlation Analysis**: Backend/Frontend issue detection
+- ✅ **Natural Language Reports**: Auto-generated executive summaries
+- ✅ **New UI Pages**: Baselines, Compare Runs, Release Decision
 
 ## License
 

@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
+from app.api.comparison_routes import router as comparison_router
 from app.database import init_db
 
 app = FastAPI(
     title="Auto Report Analyzer",
-    description="Performance analysis application for Web Vitals, JMeter, and UI Performance data",
-    version="2.0.0"
+    description="Performance analysis application for Web Vitals, JMeter, and UI Performance data with Release Intelligence",
+    version="3.0.0"
 )
 
 # Initialize database on startup
@@ -14,6 +15,7 @@ app = FastAPI(
 async def startup_event():
     init_db()
     print("✅ Database initialized successfully!")
+    print("📊 Performance Comparison Engine loaded")
 
 # CORS middleware
 app.add_middleware(
@@ -24,9 +26,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
 app.include_router(router, prefix="/api")
+app.include_router(comparison_router, prefix="/api")
 
 @app.get("/")
 async def root():
-    return {"message": "Auto Report Analyzer API", "version": "2.0.0"}
+    return {
+        "message": "Auto Report Analyzer API with Release Intelligence",
+        "version": "3.0.0",
+        "features": [
+            "Performance Testing Analysis",
+            "Baseline Management",
+            "Regression Comparison",
+            "Release Readiness Scoring"
+        ]
+    }
 

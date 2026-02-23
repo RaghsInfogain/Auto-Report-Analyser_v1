@@ -96,6 +96,15 @@ class JMeterAnalyzerV2:
                                                                error_rate * 100, throughput, p95_response / 1000.0,
                                                                sla_compliance_2s_pct, grade, grade_class)
         
+        # Skewness interpretation for response time and throughput
+        response_time_skewness = sample_time_stats.get("skewness", 0)
+        skewness_interpretation = JMeterAnalyzerV2._interpret_skewness(
+            response_time_skewness, "response time"
+        )
+        
+        # Get business impact for the grade
+        business_impact = JMeterAnalyzerV2._get_business_impact(grade)
+        
         # Build summary
         summary = {
             "test_duration_hours": round(duration_hours, 2),
@@ -115,6 +124,8 @@ class JMeterAnalyzerV2:
                 "score_range": JMeterAnalyzerV2._get_grade_range(grade),
                 "class": grade_class
             },
+            "business_impact": business_impact,
+            "skewness_analysis": skewness_interpretation,
             "grade_reasons": grade_reasons,
             "response_time_distribution": rt_distribution,
             "time_series_data": time_series_data,
@@ -149,12 +160,26 @@ class JMeterAnalyzerV2:
     
     @staticmethod
     def _calculate_stats(values: np.ndarray) -> Dict[str, float]:
-        """Calculate percentile statistics efficiently"""
+        """Calculate percentile statistics efficiently with skewness"""
         if len(values) == 0:
             return {
                 "mean": 0.0, "median": 0.0, "p70": 0.0, "p75": 0.0, "p80": 0.0,
-                "p90": 0.0, "p95": 0.0, "p99": 0.0, "min": 0.0, "max": 0.0
+                "p90": 0.0, "p95": 0.0, "p99": 0.0, "min": 0.0, "max": 0.0,
+                "std": 0.0, "skewness": 0.0
             }
+        
+        # Calculate skewness using scipy's formula if available, else manual
+        try:
+            from scipy import stats as scipy_stats
+            skewness = float(scipy_stats.skew(values))
+        except ImportError:
+            # Manual calculation: Pearson's moment coefficient of skewness
+            mean = np.mean(values)
+            std = np.std(values)
+            if std > 0:
+                skewness = float(np.mean(((values - mean) / std) ** 3))
+            else:
+                skewness = 0.0
         
         return {
             "mean": float(np.mean(values)),
@@ -166,8 +191,101 @@ class JMeterAnalyzerV2:
             "p95": float(np.percentile(values, 95)),
             "p99": float(np.percentile(values, 99)),
             "min": float(np.min(values)),
-            "max": float(np.max(values))
+            "max": float(np.max(values)),
+            "std": float(np.std(values)),
+            "skewness": skewness
         }
+    
+    @staticmethod
+    def _interpret_skewness(skewness: float, metric_name: str = "response time") -> Dict[str, Any]:
+        """
+        Interpret skewness value and provide actionable insights
+        
+        Skewness interpretation:
+        - ~0: Normal distribution (symmetric)
+        - >0: Right-skewed (positive skew) - most values low, some very high
+        - <0: Left-skewed (negative skew) - most values high, some very low
+        """
+        if abs(skewness) < 0.5:
+            # Normal distribution - Ideal situation
+            return {
+                "type": "Normal Distribution",
+                "skewness_value": round(skewness, 3),
+                "shape": "Symmetric bell-shaped curve",
+                "distribution_icon": "📊",
+                "severity": "success",
+                "observations": [
+                    f"Most {metric_name}s are clustered around the average",
+                    "Very few extreme slow requests",
+                    "Balanced distribution across all percentiles"
+                ],
+                "interpretation": {
+                    "status": "✅ System is stable",
+                    "predictability": "✅ Predictable behavior",
+                    "infrastructure": "✅ Infrastructure is properly tuned",
+                    "performance_spikes": "✅ No major performance spikes"
+                },
+                "business_impact": "Optimal performance - users experience consistent response times"
+            }
+        elif skewness > 0.5:
+            # Right-skewed (Positively skewed) - VERY COMMON in performance tests
+            severity = "critical" if skewness > 2 else ("danger" if skewness > 1 else "warning")
+            
+            return {
+                "type": "Positively Skewed (Right Skewed)",
+                "skewness_value": round(skewness, 3),
+                "shape": "Long tail on the right side",
+                "distribution_icon": "⚠️",
+                "severity": severity,
+                "observations": [
+                    f"Most {metric_name}s are fast (low values)",
+                    f"Some {metric_name}s are extremely slow (high values)",
+                    "Asymmetric distribution with outliers on the high end"
+                ],
+                "interpretation": {
+                    "bottlenecks": "⚠️ System has performance bottlenecks",
+                    "user_experience": "⚠️ Some users experience very slow responses",
+                    "consistency": "⚠️ Inconsistent performance across requests",
+                    "tail_latency": "❌ High tail latency detected"
+                },
+                "possible_causes": [
+                    "Garbage collection pauses",
+                    "Database locking or connection pool exhaustion",
+                    "Thread pool saturation",
+                    "Network latency spikes",
+                    "Resource contention under load",
+                    "Cold start / cache miss scenarios",
+                    "Slow database queries (N+1 queries, missing indexes)"
+                ],
+                "business_impact": "Customer experience varies - majority get fast service, but some users face frustrating delays",
+                "urgency": "High" if skewness > 1.5 else "Medium"
+            }
+        else:  # skewness < -0.5
+            # Left-skewed (Negatively skewed) - Rare in performance tests
+            return {
+                "type": "Negatively Skewed (Left Skewed)",
+                "skewness_value": round(skewness, 3),
+                "shape": "Long tail on the left side",
+                "distribution_icon": "🔍",
+                "severity": "info",
+                "observations": [
+                    f"Most {metric_name}s are high",
+                    f"Few {metric_name}s are exceptionally low",
+                    "Uncommon pattern in performance testing"
+                ],
+                "interpretation": {
+                    "status": "ℹ️ Unusual distribution pattern",
+                    "investigation": "🔍 Requires investigation",
+                    "data_quality": "⚠️ Check data quality and test configuration"
+                },
+                "possible_causes": [
+                    "Caching effects - most requests served from cache",
+                    "Load test warm-up period not excluded",
+                    "Test configuration issues",
+                    "Data sampling bias"
+                ],
+                "business_impact": "Unusual pattern - validate test methodology"
+            }
     
     @staticmethod
     def _analyze_by_label(data: List[Dict]) -> tuple:
@@ -616,33 +734,220 @@ class JMeterAnalyzerV2:
     
     @staticmethod
     def _get_grade_title(grade: str) -> str:
-        """Get grade title"""
+        """Get business-focused grade title"""
         titles = {
-            "A+": "Exceptional Performance",
-            "A": "Excellent Performance",
-            "B+": "Good Performance",
-            "B": "Above Average",
-            "C+": "Average Performance",
-            "C": "Below Average",
-            "D": "Poor Performance",
-            "F": "Critical - Failing"
+            "A+": "Business Accelerator",
+            "A": "Production Ready",
+            "B+": "Acceptable but Watch Closely",
+            "B": "Customer Experience Risk",
+            "C+": "Revenue Leakage State",
+            "C": "Business Impact Warning",
+            "D": "Business Critical Failure",
+            "F": "Production Blocker"
         }
         return titles.get(grade, "Unknown")
     
     @staticmethod
     def _get_grade_description(grade: str) -> str:
-        """Get grade description"""
+        """Get comprehensive business-focused grade description"""
         descriptions = {
-            "A+": "System exceeds all performance expectations",
-            "A": "System meets or exceeds most performance benchmarks",
-            "B+": "System performs well under normal conditions",
-            "B": "System is functional but has noticeable performance gaps",
-            "C+": "System meets minimum requirements but struggles under load",
-            "C": "System has multiple performance issues",
-            "D": "System fails to meet basic performance standards",
-            "F": "System is experiencing severe performance problems"
+            "A+": "The application is not just stable — it is a competitive advantage. Pages feel instant, users trust the platform, leading to higher conversion rates and engagement.",
+            "A": "System meets and slightly exceeds expected customer experience standards. Fast response with minor delays only under peak usage.",
+            "B+": "Customers will use it… but they will notice slowness. Occasional slow pages and some frustration, especially for mobile users.",
+            "B": "Customers can complete journeys, but experience is frustrating. Noticeable delays and page reload attempts lead to increased bounce rates.",
+            "C+": "The system is working… but customers are silently leaving. Slow checkout and timeout during payment cause major cart abandonment.",
+            "C": "System has severe performance degradation. Multiple critical issues affecting user experience and revenue.",
+            "D": "Launching this version will directly impact revenue and reputation. Users cannot complete journeys, experiencing frequent errors/timeouts.",
+            "F": "System is experiencing critical failures equivalent to a production outage. Immediate intervention required."
         }
         return descriptions.get(grade, "Unknown")
+    
+    @staticmethod
+    def _get_business_impact(grade: str) -> Dict[str, Any]:
+        """Get comprehensive business impact and decision for each grade"""
+        business_impacts = {
+            "A+": {
+                "score_range": "90-100",
+                "executive_meaning": "The application is not just stable — it is a competitive advantage",
+                "customer_impact": [
+                    "Pages feel instant",
+                    "Users trust the platform",
+                    "High engagement",
+                    "Positive brand perception"
+                ],
+                "business_outcome": [
+                    "Higher conversion rate",
+                    "Higher session duration",
+                    "Increased repeat users",
+                    "Better app store / customer ratings",
+                    "Marketing campaigns can be safely scaled"
+                ],
+                "release_decision": "🟢 Immediate Release Approved",
+                "operational_risk": "Very Low",
+                "business_actions": [
+                    "Launch promotions",
+                    "High traffic events (sale, offers, campaigns)",
+                    "New geography rollout"
+                ],
+                "tech_indicators": [
+                    "Server CPU < 60%",
+                    "No error spikes",
+                    "P95 latency within SLA",
+                    "Core Web Vitals (LCP, INP, CLS) in green"
+                ]
+            },
+            "A": {
+                "score_range": "80-89",
+                "executive_meaning": "System meets and slightly exceeds expected customer experience standards",
+                "customer_impact": [
+                    "Fast response",
+                    "Minor delays under peak usage only"
+                ],
+                "business_outcome": [
+                    "Stable conversions",
+                    "Good user retention",
+                    "Safe for production traffic"
+                ],
+                "release_decision": "🟢 Release with Monitoring",
+                "operational_risk": "Low",
+                "risk_note": "If traffic increases suddenly (marketing, festive season), degradation may start",
+                "business_actions": [
+                    "Proceed with launch",
+                    "Avoid aggressive marketing spike without scaling"
+                ]
+            },
+            "B+": {
+                "score_range": "75-79",
+                "executive_meaning": "Customers will use it… but they will notice slowness",
+                "customer_impact": [
+                    "Occasional slow pages",
+                    "Some frustration",
+                    "Mobile users most affected"
+                ],
+                "business_outcome": [
+                    "3–8% potential conversion drop",
+                    "Cart abandonment increases",
+                    "Customer support tickets rise"
+                ],
+                "release_decision": "🟡 Conditional Release (Business Approval Required)",
+                "operational_risk": "Moderate",
+                "tech_indicators": [
+                    "P95 latency high",
+                    "APIs slow under concurrency",
+                    "Lighthouse score yellow",
+                    "DB waits or connection pool saturation"
+                ],
+                "business_actions": [
+                    "Release only if deadline critical",
+                    "Avoid campaigns",
+                    "Add war room monitoring"
+                ]
+            },
+            "B": {
+                "score_range": "70-74",
+                "executive_meaning": "Customers can complete journeys, but experience is frustrating",
+                "customer_impact": [
+                    "Noticeable delays",
+                    "Page reload attempts",
+                    "Mobile churn"
+                ],
+                "business_outcome": [
+                    "Revenue leakage",
+                    "Increased bounce rate",
+                    "Poor customer reviews"
+                ],
+                "release_decision": "🟠 Release Only with Business Sign-Off",
+                "operational_risk": "High during peak traffic",
+                "business_translation": "This is not a technical issue anymore — this is a revenue impact condition",
+                "business_actions": [
+                    "Limit concurrent users",
+                    "Use traffic throttling",
+                    "Disable heavy features"
+                ]
+            },
+            "C+": {
+                "score_range": "65-69",
+                "executive_meaning": "The system is working… but customers are silently leaving",
+                "customer_impact": [
+                    "Slow checkout",
+                    "Timeout during payment",
+                    "App appears unreliable"
+                ],
+                "business_outcome": [
+                    "Major cart abandonment",
+                    "Payment failures",
+                    "Customer churn",
+                    "Brand damage"
+                ],
+                "release_decision": "🔴 Release Not Recommended",
+                "operational_risk": "Very High",
+                "symptoms": [
+                    "Spike in support calls",
+                    "Payment complaints",
+                    "Social media negativity"
+                ],
+                "real_interpretation": "The system is technically 'up' but commercially 'failing'"
+            },
+            "C": {
+                "score_range": "60-64",
+                "executive_meaning": "System is experiencing severe performance degradation",
+                "customer_impact": [
+                    "Frequent timeouts",
+                    "Transaction failures",
+                    "User abandonment"
+                ],
+                "business_outcome": [
+                    "Direct revenue loss",
+                    "Brand reputation damage",
+                    "SLA breach risk"
+                ],
+                "release_decision": "🔴 Release Blocked - Critical Issues",
+                "operational_risk": "Critical"
+            },
+            "D": {
+                "score_range": "50-59",
+                "executive_meaning": "Launching this version will directly impact revenue and reputation",
+                "customer_impact": [
+                    "Users cannot complete journeys",
+                    "Errors/timeouts frequent"
+                ],
+                "business_outcome": [
+                    "Direct revenue loss",
+                    "SLA breach penalties",
+                    "Possible contractual violations"
+                ],
+                "release_decision": "⛔ Release Blocked (Go-Live Stopper)",
+                "operational_risk": "Critical",
+                "symptoms": [
+                    "Login failures",
+                    "Checkout failures",
+                    "API breakdowns",
+                    "High 5xx errors"
+                ],
+                "management_translation": "This is equivalent to a partial production outage waiting to happen"
+            },
+            "F": {
+                "score_range": "0-49",
+                "executive_meaning": "Critical system failure - immediate intervention required",
+                "customer_impact": [
+                    "Service unavailable",
+                    "Complete transaction failures"
+                ],
+                "business_outcome": [
+                    "Complete revenue halt",
+                    "Severe brand damage",
+                    "Regulatory compliance issues"
+                ],
+                "release_decision": "⛔ PRODUCTION BLOCKER",
+                "operational_risk": "Emergency"
+            }
+        }
+        return business_impacts.get(grade, {
+            "score_range": "Unknown",
+            "executive_meaning": "Grade not recognized",
+            "release_decision": "Unknown",
+            "operational_risk": "Unknown"
+        })
     
     @staticmethod
     def _get_grade_range(grade: str) -> str:

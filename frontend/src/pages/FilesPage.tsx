@@ -214,11 +214,16 @@ const FilesPage: React.FC = () => {
       const reportData = await getRunReport(run.run_id, reportType);
 
       if (reportType === 'html') {
-        setModalContent({
-          type: 'html',
-          content: reportData as string,
-          filename: run.run_id
-        });
+        // Open HTML report in a new tab
+        const htmlContent = reportData as string;
+        const newWindow = window.open('', '_blank');
+        if (newWindow) {
+          newWindow.document.write(htmlContent);
+          newWindow.document.close();
+          newWindow.document.title = `${run.run_id} - Performance Report`;
+        } else {
+          alert('Please allow pop-ups to view the report in a new tab');
+        }
       } else if (reportType === 'pdf') {
         const blob = reportData as Blob;
         const url = URL.createObjectURL(blob);
@@ -227,6 +232,7 @@ const FilesPage: React.FC = () => {
           url: url,
           filename: run.run_id
         });
+        setModalOpen(true);
       } else if (reportType === 'ppt') {
         const blob = reportData as Blob;
         const url = URL.createObjectURL(blob);
@@ -235,9 +241,8 @@ const FilesPage: React.FC = () => {
           url: url,
           filename: run.run_id
         });
+        setModalOpen(true);
       }
-
-      setModalOpen(true);
     } catch (error: any) {
       console.error('Failed to view report:', error);
       alert(`Failed to load ${reportType.toUpperCase()} report: ${error.response?.data?.detail || error.message}`);
