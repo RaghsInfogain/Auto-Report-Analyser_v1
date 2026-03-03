@@ -265,78 +265,14 @@ class JMeterAnalyzerV2:
             }
         elif skewness > 0.5:
             # Right-skewed (Positively skewed) - VERY COMMON in performance tests
-            # DYNAMIC ROOT CAUSE ANALYSIS based on actual data
+            # Generate ACTUAL ROOT CAUSES based on performance behavior patterns
             severity = "critical" if skewness > 2 else ("danger" if skewness > 1 else "warning")
             
-            # Analyze actual data to identify specific root causes
-            root_causes = []
-            evidence = []
-            
-            # 1. Analyze response time patterns
-            if p99_response > avg_response * 3:
-                root_causes.append("Severe tail latency - 99th percentile is {}x slower than average".format(round(p99_response / avg_response, 1)))
-                evidence.append("P99: {:.2f}s vs Avg: {:.2f}s".format(p99_response, avg_response))
-            
-            if max_response > p95_response * 2:
-                root_causes.append("Extreme outliers detected - Maximum response time is {}x the 95th percentile".format(round(max_response / p95_response, 1)))
-                evidence.append("Max: {:.2f}s vs P95: {:.2f}s".format(max_response, p95_response))
-            
-            # 2. Check error rate correlation
-            if error_rate > 1:
-                root_causes.append("High error rate ({:.1f}%) correlates with slow responses - indicates system overload or failures".format(error_rate))
-                evidence.append("Error rate: {:.1f}%".format(error_rate))
-                
-                # Check for specific error codes
-                if response_codes:
-                    error_codes = {code: count for code, count in response_codes.items() if code.startswith(('4', '5'))}
-                    if error_codes:
-                        most_common_error = max(error_codes.items(), key=lambda x: x[1])
-                        root_causes.append("Most common error: HTTP {} ({} occurrences) - suggests specific failure pattern".format(most_common_error[0], most_common_error[1]))
-            
-            # 3. Analyze throughput
-            if throughput < 50:
-                root_causes.append("Low throughput ({:.1f} req/s) suggests resource bottleneck or connection pool exhaustion".format(throughput))
-                evidence.append("Throughput: {:.1f} req/s".format(throughput))
-            
-            # 4. Check SLA compliance
-            if sla_compliance < 80:
-                root_causes.append("Only {:.1f}% requests meet 2s SLA - indicates widespread performance degradation".format(sla_compliance))
-                evidence.append("SLA compliance: {:.1f}%".format(sla_compliance))
-            
-            # 5. Analyze slowest transactions
-            if transaction_stats or request_stats:
-                all_transactions = {**transaction_stats, **request_stats}
-                if all_transactions:
-                    slow_transactions = [(name, stats) for name, stats in all_transactions.items() 
-                                       if stats.get("avg_response", 0) > avg_response * 1.5]
-                    if slow_transactions:
-                        slow_transactions.sort(key=lambda x: x[1].get("avg_response", 0), reverse=True)
-                        top_slow = slow_transactions[0]
-                        root_causes.append("Slowest transaction: '{}' ({:.2f}s avg) is {}x slower than overall average".format(
-                            top_slow[0], top_slow[1].get("avg_response", 0) / 1000.0, 
-                            round(top_slow[1].get("avg_response", 0) / (avg_response * 1000), 1)))
-                    
-                    # Check for high error rate transactions
-                    error_transactions = [(name, stats) for name, stats in all_transactions.items() 
-                                        if stats.get("error_rate", 0) > 5]
-                    if error_transactions:
-                        top_error = max(error_transactions, key=lambda x: x[1].get("error_rate", 0))
-                        root_causes.append("Transaction '{}' has {:.1f}% error rate - specific endpoint issue".format(
-                            top_error[0], top_error[1].get("error_rate", 0)))
-            
-            # Add comprehensive infrastructure-level root causes
-            infrastructure_causes = JMeterAnalyzerV2._generate_infrastructure_root_causes(
+            # Generate root causes using pattern-based analysis (NO SYMPTOMS)
+            root_causes = JMeterAnalyzerV2._generate_infrastructure_root_causes(
                 avg_response, p95_response, p99_response, max_response,
                 error_rate, throughput, sla_compliance, skewness
             )
-            
-            # Combine data-driven and infrastructure causes
-            if root_causes:
-                # Have specific data-driven causes, add infrastructure analysis
-                root_causes.extend(infrastructure_causes)
-            else:
-                # No specific causes found, use infrastructure analysis
-                root_causes = infrastructure_causes
             
             return {
                 "type": "Positively Skewed (Right Skewed)",
@@ -356,8 +292,7 @@ class JMeterAnalyzerV2:
                     "consistency": "⚠️ Inconsistent performance across requests",
                     "tail_latency": "❌ High tail latency detected"
                 },
-                "possible_causes": root_causes,  # DYNAMIC based on actual data
-                "evidence": evidence,  # Supporting data points
+                "possible_causes": root_causes,  # Pattern-based root causes (WHY)
                 "business_impact": "Customer experience varies - majority get fast service, but some users face frustrating delays",
                 "urgency": "High" if skewness > 1.5 else "Medium"
             }
@@ -404,6 +339,7 @@ class JMeterAnalyzerV2:
         Analyzes 20 performance patterns and returns 5-8 most relevant root causes
         
         Returns ROOT CAUSES (WHY), not symptoms or recommendations
+        Updated: v3.0.8 - Pattern-based root cause detection
         """
         root_causes = []
         
