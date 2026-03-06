@@ -599,7 +599,7 @@ class JMeterAnalyzerV2:
             "vusers": [], 
             "pass_count": 0, 
             "fail_count": 0,
-            "by_label": defaultdict(lambda: {"response_times": [], "pass_count": 0, "fail_count": 0})
+            "by_label": defaultdict(lambda: {"response_times": [], "pass_count": 0, "fail_count": 0, "has_url": False})
         })
         
         timestamps = [d.get("timestamp", 0) for d in sampled_data if d.get("timestamp")]
@@ -640,6 +640,16 @@ class JMeterAnalyzerV2:
                 label_data["fail_count"] += 1
             else:
                 label_data["pass_count"] += 1
+            
+            # Track if this is a Transaction Controller or Request
+            # Transaction Controllers: URL is NULL/empty OR response_message contains "Number of samples in transaction"
+            # Requests: URL has value AND response_message doesn't contain transaction info
+            url = d.get("url", "")
+            response_msg = d.get("response_message", "")
+            is_transaction_controller = (not url or not url.strip()) or ("Number of samples in transaction" in response_msg)
+            
+            if not is_transaction_controller:
+                label_data["has_url"] = True  # Mark as request (not transaction controller)
         
         time_series = []
         for idx in sorted(intervals.keys()):
@@ -654,7 +664,8 @@ class JMeterAnalyzerV2:
                 label_total = label_info["pass_count"] + label_info["fail_count"]
                 by_label_data[label] = {
                     "avg_response_time": round(np.mean(label_rt_values) / 1000.0, 2) if label_rt_values else 0.0,
-                    "throughput": round(label_total / interval_size, 2) if interval_size > 0 else 0.0
+                    "throughput": round(label_total / interval_size, 2) if interval_size > 0 else 0.0,
+                    "has_url": label_info.get("has_url", False)
                 }
             
             time_series.append({

@@ -77,6 +77,7 @@ class JTLParserV2:
             'latency': ['Latency', 'latency', 'lt'],
             'sample_time': ['elapsed', 'Elapsed', 'elapsedTime', 'sample_time', 'st', 't'],
             'connect_time': ['Connect', 'connect', 'connectTime', 'connect_time', 'ct'],
+            'url': ['URL', 'url', 'Url'],
         }
         
         record = {}

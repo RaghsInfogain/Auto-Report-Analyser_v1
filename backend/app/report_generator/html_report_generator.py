@@ -1822,18 +1822,36 @@ class HTMLReportGenerator:
         vusers = [d['vusers'] for d in time_series_data]
         
         # Collect all unique transaction/request labels that actually have data in time series
-        # Only use labels that appear in the time_series_data (not just in stats)
-        all_labels = set()
+        # PRIORITY: Show transaction controllers (URL=NULL) if they exist, else show requests (URL!=NULL)
+        transaction_controllers = set()  # Labels with URL=NULL
+        requests_with_url = set()  # Labels with URL!=NULL
+        
         for d in time_series_data:
             by_label = d.get('by_label', {})
-            all_labels.update(by_label.keys())
+            for label, label_info in by_label.items():
+                if label_info.get('has_url', False):
+                    requests_with_url.add(label)
+                else:
+                    transaction_controllers.add(label)
         
-        # If no labels found in time series, fall back to stats (for backward compatibility)
-        if not all_labels:
-            all_labels.update(transaction_stats.keys())
-            all_labels.update(request_stats.keys())
-        
-        all_labels = sorted(list(all_labels))  # Sort for consistent ordering
+        # Decide which labels to show: prioritize transaction controllers
+        if transaction_controllers:
+            all_labels = sorted(list(transaction_controllers))
+            print(f"  Using {len(all_labels)} transaction controllers (URL=NULL) for graph")
+        elif requests_with_url:
+            all_labels = sorted(list(requests_with_url))
+            print(f"  Using {len(all_labels)} requests (URL!=NULL) for graph")
+        else:
+            # Fallback for backward compatibility (if no URL info available)
+            all_labels = set()
+            for d in time_series_data:
+                by_label = d.get('by_label', {})
+                all_labels.update(by_label.keys())
+            if not all_labels:
+                all_labels.update(transaction_stats.keys())
+                all_labels.update(request_stats.keys())
+            all_labels = sorted(list(all_labels))
+            print(f"  Using {len(all_labels)} labels (no URL filtering) for graph")
         
         # Generate color palette for multiple lines
         colors = [
@@ -1853,7 +1871,7 @@ class HTMLReportGenerator:
         datasets = []
         label_colors = {}  # Store color for each label for table headers
         for idx, label in enumerate(all_labels):
-            # Extract response time data for this label over time as scatter points
+            # Extract response time data for this label over time as line points
             # Collect all data points first (including zeros if transaction exists in that interval)
             label_scatter_data = []
             for d in time_series_data:
@@ -1879,11 +1897,13 @@ class HTMLReportGenerator:
                 'label': label,
                 'data': label_scatter_data,
                 'borderColor': color,
-                'backgroundColor': color,
+                'backgroundColor': color.replace('1)', '0.2)'),  # Transparent fill
+                'fill': False,
+                'tension': 0.3,  # Smooth lines
                 'yAxisID': 'y',
-                'pointRadius': 4,
+                'pointRadius': 3,
                 'pointHoverRadius': 6,
-                'showLine': False
+                'showLine': True  # Show lines connecting points for each label
             })
         
         # Prepare data for table (sample every Nth point, show all transactions)
