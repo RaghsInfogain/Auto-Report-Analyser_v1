@@ -1195,11 +1195,31 @@ class HTMLReportGenerator:
             if not stats:
                 return f"<p><em>No {title.lower()} data available</em></p>"
             
-            # Sort by transaction/endpoint name in ascending order (to show sequence of flow)
-            sorted_stats = sorted(stats.items(), key=lambda x: x[0])
+            # Natural sort by transaction/endpoint name (handles T100, T200, "1 Request", etc.)
+            import re
+            def natural_sort_key(item):
+                """Extract numeric prefix for natural sorting (T100 < T200 < T300, 1 < 2 < 3)"""
+                name = item[0]
+                # Pattern 1: Letters + Numbers (T100, TC01, etc.)
+                match = re.match(r'^([A-Z]+)(\d+)', name)
+                if match:
+                    prefix = match.group(1)
+                    number = int(match.group(2))
+                    return (0, prefix, number, name)
+                
+                # Pattern 2: Just Numbers at start ("1 HTTP Request", "25 /Home", etc.)
+                match = re.match(r'^(\d+)', name)
+                if match:
+                    number = int(match.group(1))
+                    return (1, '', number, name)
+                
+                # Pattern 3: No numeric prefix - sort alphabetically last
+                return (2, '', 0, name)
+            
+            sorted_stats = sorted(stats.items(), key=natural_sort_key)
             
             rows = ""
-            for label, data in sorted_stats[:15]:  # Top 15
+            for label, data in sorted_stats[:50]:  # Top 50 to show complete flow sequence
                 min_resp = data.get('min', 0) or 0
                 avg_resp = data.get('avg_response', 0) or 0
                 median = data.get('median', 0) or 0
