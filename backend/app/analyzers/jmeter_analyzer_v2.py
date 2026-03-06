@@ -661,10 +661,10 @@ class JMeterAnalyzerV2:
             by_label_data = {}
             for label, label_info in interval["by_label"].items():
                 label_rt_values = label_info["response_times"]
-                label_total = label_info["pass_count"] + label_info["fail_count"]
+                label_count = label_info["pass_count"] + label_info["fail_count"]  # Count of samples for this label
                 by_label_data[label] = {
                     "avg_response_time": round(np.mean(label_rt_values) / 1000.0, 2) if label_rt_values else 0.0,
-                    "throughput": round(label_total / interval_size, 2) if interval_size > 0 else 0.0,
+                    "throughput": label_count,  # Use raw count instead of rate (count/interval)
                     "has_url": label_info.get("has_url", False)
                 }
             

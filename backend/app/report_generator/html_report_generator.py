@@ -2132,7 +2132,7 @@ class HTMLReportGenerator:
                 # Check if this label has data in this time interval
                 if label in by_label:
                     label_data = by_label[label]
-                    tp_value = label_data.get('throughput', 0.0)
+                    tp_value = label_data.get('throughput', 0)
                     # Only add point if there's actual data (value > 0)
                     if tp_value > 0:
                         label_scatter_data.append({
@@ -2185,10 +2185,10 @@ class HTMLReportGenerator:
                 # Only show value if transaction has data in this interval
                 if label in by_label:
                     label_data = by_label[label]
-                    tp = label_data.get('throughput', 0.0)
+                    tp = label_data.get('throughput', 0)
                     if tp > 0:
                         has_data = True
-                        row_cells += f'<td style="padding: 0.5rem; text-align: center;">{tp:.2f}</td>'
+                        row_cells += f'<td style="padding: 0.5rem; text-align: center;">{int(tp)}</td>'  # Show count as integer
                     else:
                         row_cells += f'<td style="padding: 0.5rem; text-align: center; color: #999;">-</td>'
                 else:
@@ -2209,9 +2209,9 @@ class HTMLReportGenerator:
         
         return f'''
         <div class="section">
-            <h2>📈 Throughput Over Time by Transaction vs VUsers</h2>
+            <h2>📈 Sample Count Over Time by Transaction vs VUsers</h2>
             <p style="margin-bottom: 1rem; color: var(--text-secondary);">
-                Throughput trends for transactions/requests over time compared with virtual user load.
+                Number of samples (executions) for each transaction controller over time, compared with virtual user load.
             </p>
             
             <!-- Graph (100% width) -->
@@ -2300,7 +2300,7 @@ class HTMLReportGenerator:
                         y: {{
                             type: 'linear',
                             position: 'left',
-                            title: {{ display: true, text: 'Throughput (req/s)' }},
+                            title: {{ display: true, text: 'Sample Count' }},
                             beginAtZero: true,
                             grid: {{ display: true }}
                         }},
