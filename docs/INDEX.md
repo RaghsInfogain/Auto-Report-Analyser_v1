@@ -41,6 +41,7 @@ Start here if you're new to the platform:
 | [DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md](./DYNAMIC_ROOT_CAUSE_PHASED_PLAN.md) | Dynamic root cause analysis & phased improvement plans (v3.0.4) |
 | [INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md](../INFRASTRUCTURE_ROOT_CAUSE_UPDATE.md) | Infrastructure-level root cause analysis (v3.0.5) |
 | [SYMPTOM_BASED_ROOT_CAUSE_v3.0.6.md](../SYMPTOM_BASED_ROOT_CAUSE_v3.0.6.md) | Symptom-based pattern matching with real-world expertise (v3.0.6) ⭐ |
+| [THROUGHPUT_COUNT_v3.2.2.md](./THROUGHPUT_COUNT_v3.2.2.md) | Sample count visualization instead of throughput rates (v3.2.2) |
 
 ---
 
