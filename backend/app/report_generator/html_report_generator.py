@@ -1195,8 +1195,8 @@ class HTMLReportGenerator:
             if not stats:
                 return f"<p><em>No {title.lower()} data available</em></p>"
             
-            # Sort by average response time (slowest first)
-            sorted_stats = sorted(stats.items(), key=lambda x: x[1].get('avg_response', 0) or 0, reverse=True)
+            # Sort by transaction/endpoint name in ascending order (to show sequence of flow)
+            sorted_stats = sorted(stats.items(), key=lambda x: x[0])
             
             rows = ""
             for label, data in sorted_stats[:15]:  # Top 15
