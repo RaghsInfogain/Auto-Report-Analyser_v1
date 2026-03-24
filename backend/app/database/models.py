@@ -275,6 +275,84 @@ class ComparisonResult(Base):
         }
 
 
+class JmeterComparisonReport(Base):
+    """Saved JMeter A/B performance comparison HTML + analysis (like stored JMeter run reports)."""
+
+    __tablename__ = "jmeter_comparison_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    comparison_report_id = Column(String(100), unique=True, index=True, nullable=False)
+    source_type = Column(String(20), nullable=False)  # runs | files
+    run_id_a = Column(String(100), nullable=True, index=True)
+    run_id_b = Column(String(100), nullable=True, index=True)
+    name_a = Column(String(255), nullable=False)
+    name_b = Column(String(255), nullable=False)
+    environment_a = Column(String(200), nullable=True)
+    environment_b = Column(String(200), nullable=True)
+    build_a = Column(String(200), nullable=True)
+    build_b = Column(String(200), nullable=True)
+    original_filename_a = Column(String(255), nullable=True)
+    original_filename_b = Column(String(255), nullable=True)
+    html_path = Column(String(500), nullable=False)
+    analysis_json = Column(JSON, nullable=False)
+    verdict = Column(String(100), nullable=True)
+    traffic_signal = Column(String(20), nullable=True)
+    file_size = Column(Integer, default=0)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_by = Column(String(100), default="unknown")
+
+    def to_dict(self):
+        return {
+            "comparison_report_id": self.comparison_report_id,
+            "source_type": self.source_type,
+            "run_id_a": self.run_id_a,
+            "run_id_b": self.run_id_b,
+            "name_a": self.name_a,
+            "name_b": self.name_b,
+            "environment_a": self.environment_a,
+            "environment_b": self.environment_b,
+            "build_a": self.build_a,
+            "build_b": self.build_b,
+            "original_filename_a": self.original_filename_a,
+            "original_filename_b": self.original_filename_b,
+            "html_path": self.html_path,
+            "verdict": self.verdict,
+            "traffic_signal": self.traffic_signal,
+            "file_size": self.file_size,
+            "generated_at": self.generated_at.isoformat() if self.generated_at else None,
+            "generated_by": self.generated_by,
+        }
+
+
+class RunTarget(Base):
+    """SLA/target values for a run (entered before report generation)"""
+    __tablename__ = "run_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String(100), unique=True, nullable=False, index=True)
+    availability_target = Column(Float)  # % e.g. 99.9
+    avg_response_time_target = Column(Float)  # ms e.g. 2000
+    error_rate_target = Column(Float)  # % e.g. 1
+    throughput_target = Column(Float)  # req/sec e.g. 100
+    p95_target = Column(Float)  # ms e.g. 3000
+    sla_compliance_target = Column(Float)  # % e.g. 95
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "run_id": self.run_id,
+            "availability_target": self.availability_target,
+            "avg_response_time_target": self.avg_response_time_target,
+            "error_rate_target": self.error_rate_target,
+            "throughput_target": self.throughput_target,
+            "p95_target": self.p95_target,
+            "sla_compliance_target": self.sla_compliance_target,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 class RegressionDetail(Base):
     """Individual regression/improvement records"""
     __tablename__ = "regression_details"

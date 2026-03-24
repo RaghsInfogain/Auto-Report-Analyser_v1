@@ -7,6 +7,7 @@ import PrivateRoute from './components/PrivateRoute';
 import Dashboard from './pages/Dashboard';
 import FilesPage from './pages/FilesPage';
 import JMeterPage from './pages/JMeterPage';
+import PerformanceTestComparePage from './pages/PerformanceTestComparePage';
 import WebVitalsPage from './pages/WebVitalsPage';
 import AIChatPage from './pages/AIChatPage';
 import ParsedDataPage from './pages/ParsedDataPage';
@@ -34,6 +35,7 @@ function App() {
             <Route path="upload" element={<FilesPage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="jmeter" element={<JMeterPage />} />
+            <Route path="performance-test-compare" element={<PerformanceTestComparePage />} />
             <Route path="web-vitals" element={<WebVitalsPage />} />
             <Route path="runs/:runId/parsed-data" element={<ParsedDataPage />} />
             <Route path="baselines" element={<BaselinesPage />} />

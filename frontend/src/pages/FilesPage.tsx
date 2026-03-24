@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileUpload from '../components/FileUpload';
-import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress } from '../services/api';
+import TargetValuesModal from '../components/TargetValuesModal';
+import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress, RunTargets } from '../services/api';
 import './FilesPage.css';
 
 interface ProgressState {
@@ -27,6 +28,9 @@ const FilesPage: React.FC = () => {
   const [modalContent, setModalContent] = useState<ModalContent | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [targetModalRun, setTargetModalRun] = useState<RunInfo | null>(null);
+  const [targetModalRegenerate, setTargetModalRegenerate] = useState(false);
   const progressPollInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -69,7 +73,19 @@ const FilesPage: React.FC = () => {
     });
   };
 
-  const handleGenerateReport = async (run: RunInfo, regenerate: boolean = false) => {
+  const openTargetModal = (run: RunInfo, regenerate: boolean) => {
+    setTargetModalRun(run);
+    setTargetModalRegenerate(regenerate);
+    setTargetModalOpen(true);
+  };
+
+  const handleTargetsConfirmed = async (_targets: RunTargets) => {
+    if (!targetModalRun) return;
+    await doGenerateReport(targetModalRun, targetModalRegenerate);
+    setTargetModalRun(null);
+  };
+
+  const doGenerateReport = async (run: RunInfo, regenerate: boolean = false) => {
     try {
       // Stage 1: Analyzing (skip if regenerating)
       if (!regenerate) {
@@ -481,7 +497,7 @@ const FilesPage: React.FC = () => {
                       ) : (
                         <button
                           className="btn-link btn-primary-link"
-                          onClick={() => handleGenerateReport(run)}
+                          onClick={() => openTargetModal(run, false)}
                           disabled={progress?.runId === run.run_id}
                           title="Generate Report"
                         >
@@ -529,7 +545,7 @@ const FilesPage: React.FC = () => {
                       <div className="action-buttons">
                         {run.report_status === 'generated' && (
                           <button 
-                            onClick={() => handleGenerateReport(run, true)}
+                            onClick={() => openTargetModal(run, true)}
                             className="btn-link"
                             title="Regenerate Report"
                             disabled={progress?.runId === run.run_id}
@@ -599,6 +615,14 @@ const FilesPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <TargetValuesModal
+        isOpen={targetModalOpen}
+        runId={targetModalRun?.run_id ?? ''}
+        runLabel={targetModalRun?.run_id}
+        onClose={() => { setTargetModalOpen(false); setTargetModalRun(null); }}
+        onConfirm={handleTargetsConfirmed}
+      />
 
       {modalOpen && modalContent && (
         <div className="modal-overlay" onClick={closeModal}>

@@ -1,7 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import FileUpload from '../components/FileUpload';
-import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress } from '../services/api';
+import TargetValuesModal from '../components/TargetValuesModal';
+import {
+  listRuns,
+  RunInfo,
+  generateRunReport,
+  getRunReport,
+  deleteRun,
+  UploadedFile,
+  getReportProgress,
+  ReportProgress,
+  RunTargets,
+} from '../services/api';
 import './JMeterPage.css';
 
 interface ProgressState {
@@ -19,7 +29,6 @@ interface ModalContent {
 }
 
 const JMeterPage: React.FC = () => {
-  const navigate = useNavigate();
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -27,6 +36,9 @@ const JMeterPage: React.FC = () => {
   const [modalContent, setModalContent] = useState<ModalContent | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [targetModalRun, setTargetModalRun] = useState<RunInfo | null>(null);
+  const [targetModalRegenerate, setTargetModalRegenerate] = useState(false);
   const progressPollInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -70,7 +82,19 @@ const JMeterPage: React.FC = () => {
     });
   };
 
-  const handleGenerateReport = async (run: RunInfo, regenerate: boolean = false) => {
+  const openTargetModal = (run: RunInfo, regenerate: boolean) => {
+    setTargetModalRun(run);
+    setTargetModalRegenerate(regenerate);
+    setTargetModalOpen(true);
+  };
+
+  const handleTargetsConfirmed = async (_targets: RunTargets) => {
+    if (!targetModalRun) return;
+    await doGenerateReport(targetModalRun, targetModalRegenerate);
+    setTargetModalRun(null);
+  };
+
+  const doGenerateReport = async (run: RunInfo, regenerate: boolean = false) => {
     try {
       if (!regenerate) {
         setProgress({
@@ -364,7 +388,7 @@ const JMeterPage: React.FC = () => {
                                     Download
                                   </button>
                                   <button 
-                                    onClick={() => handleGenerateReport(run, true)}
+                                    onClick={() => openTargetModal(run, true)}
                                     className="btn-link"
                                     title="Regenerate Report"
                                   >
@@ -373,7 +397,7 @@ const JMeterPage: React.FC = () => {
                                 </>
                               ) : (
                                 <button
-                                  onClick={() => handleGenerateReport(run, false)}
+                                  onClick={() => openTargetModal(run, false)}
                                   disabled={run.report_status === 'analyzing' || run.report_status === 'generating'}
                                   className="btn-link btn-primary-link"
                                   title="Generate Report"
@@ -437,6 +461,15 @@ const JMeterPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Target Values Modal */}
+      <TargetValuesModal
+        isOpen={targetModalOpen}
+        runId={targetModalRun?.run_id ?? ''}
+        runLabel={targetModalRun?.run_id}
+        onClose={() => { setTargetModalOpen(false); setTargetModalRun(null); }}
+        onConfirm={handleTargetsConfirmed}
+      />
 
       {/* Modal */}
       {modalOpen && modalContent && (

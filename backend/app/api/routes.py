@@ -1,9 +1,11 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query, Body
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse, Response
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional, Dict, Any
 import os
 import uuid
+import tempfile
 from pathlib import Path
 import time
 import json
@@ -28,6 +30,8 @@ from app.report_generator.html_report_generator import HTMLReportGenerator
 from app.report_generator.lighthouse_html_generator import LighthouseHTMLGenerator
 from app.report_generator.pdf_generator import PDFReportGenerator
 from app.report_generator.ppt_generator import PPTReportGenerator
+from app.report_generator.jmeter_ab_comparison_report import generate_jmeter_ab_comparison_html
+from app.comparison.engines.jmeter_ab_analyzer import analyze_jmeter_ab
 from app.database import get_db
 from app.database.service import DatabaseService
 from app.database.models import UploadedFile, AnalysisResult, GeneratedReport
@@ -64,9 +68,263 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 MERGED_DIR = BASE_DIR / "merged"
 REPORTS_DIR = BASE_DIR / "reports"
+JMETER_COMPARE_REPORTS_DIR = REPORTS_DIR / "jmeter_compare"
 UPLOAD_DIR.mkdir(exist_ok=True)
 MERGED_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
+JMETER_COMPARE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _load_jmeter_records_for_run(db: Session, run_id: str) -> List[Dict[str, Any]]:
+    """Load and merge all JMeter JTL/JSON files for a run_id."""
+    files = [f for f in DatabaseService.get_files_by_run_id(db, run_id) if f.category == "jmeter"]
+    if not files:
+        raise HTTPException(status_code=404, detail=f"No JMeter files for run_id {run_id}")
+    all_data: List[List[Dict[str, Any]]] = []
+    for db_file in files:
+        p = db_file.file_path
+        if not os.path.isfile(p):
+            continue
+        ext = Path(p).suffix.lower()
+        try:
+            if ext == ".json":
+                all_data.append(JSONParser.parse(p, "jmeter"))
+            else:
+                all_data.append(JTLParserV2.parse(str(p)))
+        except Exception as e:
+            print(f"compare-ab: skip {p}: {e}")
+    if not all_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not parse any JMeter files for the given run_id(s)",
+        )
+    return JTLParserV2.merge_data(all_data) if len(all_data) > 1 else all_data[0]
+
+
+@router.post("/jmeter/compare-ab")
+async def jmeter_compare_ab(
+    file_a: Optional[UploadFile] = File(None),
+    file_b: Optional[UploadFile] = File(None),
+    run_id_a: Optional[str] = Form(None),
+    run_id_b: Optional[str] = Form(None),
+    name_a: str = Form("Test A (Baseline)"),
+    name_b: str = Form("Test B"),
+    environment_a: Optional[str] = Form(None),
+    environment_b: Optional[str] = Form(None),
+    build_a: Optional[str] = Form(None),
+    build_b: Optional[str] = Form(None),
+    response_format: str = Query("json"),
+    persist: bool = Query(False, description="Save HTML + analysis under reports/jmeter_compare (like JMeter run reports)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Compare two JMeter result sets (baseline A vs new B). Provide either two uploads
+    (`file_a`, `file_b`) or two existing runs (`run_id_a`, `run_id_b`).
+    Returns JSON analysis by default; set `response_format=html` for an HTML report.
+    With persist=true, writes files and a DB row; JSON responses include comparison_report_id and report_urls.
+    """
+    use_runs = bool(run_id_a and run_id_b)
+    use_files = bool(file_a and file_b)
+    if use_runs == use_files:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide exactly one of: (file_a + file_b) OR (run_id_a + run_id_b)",
+        )
+    tmp_paths: List[Path] = []
+    orig_name_a: Optional[str] = None
+    orig_name_b: Optional[str] = None
+    try:
+        if use_files:
+            for uf in (file_a, file_b):
+                assert uf is not None
+                suffix = Path(uf.filename or "jtl").suffix or ".jtl"
+                fd, raw = tempfile.mkstemp(suffix=suffix, dir=str(UPLOAD_DIR))
+                os.close(fd)
+                p = Path(raw)
+                p.write_bytes(await uf.read())
+                tmp_paths.append(p)
+            data_a = JTLParserV2.parse(str(tmp_paths[0]))
+            data_b = JTLParserV2.parse(str(tmp_paths[1]))
+            orig_name_a = file_a.filename if file_a else None
+            orig_name_b = file_b.filename if file_b else None
+        else:
+            data_a = _load_jmeter_records_for_run(db, run_id_a or "")
+            data_b = _load_jmeter_records_for_run(db, run_id_b or "")
+
+        analysis = analyze_jmeter_ab(
+            data_a,
+            data_b,
+            name_a=name_a,
+            name_b=name_b,
+            environment_a=environment_a,
+            environment_b=environment_b,
+            build_a=build_a,
+            build_b=build_b,
+        )
+        html = generate_jmeter_ab_comparison_html(analysis)
+        exec_s = analysis.get("executive_summary") or {}
+        verdict = exec_s.get("verdict")
+        traffic = exec_s.get("traffic_signal")
+
+        comparison_report_id: Optional[str] = None
+        if persist:
+            import uuid as _uuid
+
+            comparison_report_id = str(_uuid.uuid4())
+            JMETER_COMPARE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            html_path = JMETER_COMPARE_REPORTS_DIR / f"{comparison_report_id}.html"
+            html_path.write_text(html, encoding="utf-8")
+            html_size = len(html.encode("utf-8"))
+            DatabaseService.create_jmeter_comparison_report(
+                db=db,
+                comparison_report_id=comparison_report_id,
+                source_type="runs" if use_runs else "files",
+                name_a=name_a,
+                name_b=name_b,
+                html_path=str(html_path),
+                analysis_json=analysis,
+                verdict=verdict,
+                traffic_signal=traffic,
+                file_size=html_size,
+                run_id_a=run_id_a if use_runs else None,
+                run_id_b=run_id_b if use_runs else None,
+                environment_a=environment_a,
+                environment_b=environment_b,
+                build_a=build_a,
+                build_b=build_b,
+                original_filename_a=orig_name_a,
+                original_filename_b=orig_name_b,
+                generated_by="api",
+            )
+
+        if response_format.lower() == "html":
+            headers = {}
+            if comparison_report_id:
+                headers["X-Comparison-Report-Id"] = comparison_report_id
+            return HTMLResponse(content=html, headers=headers)
+
+        payload: Dict[str, Any] = dict(analysis)
+        if comparison_report_id:
+            payload["comparison_report_id"] = comparison_report_id
+            payload["saved"] = True
+            payload["report_urls"] = {
+                "html": f"/api/jmeter/comparison-reports/{comparison_report_id}/html",
+                "html_download": f"/api/jmeter/comparison-reports/{comparison_report_id}/html?download=1",
+            }
+        else:
+            payload["saved"] = False
+        return JSONResponse(content=payload)
+    finally:
+        for p in tmp_paths:
+            try:
+                p.unlink(missing_ok=True)
+            except TypeError:
+                if p.exists():
+                    p.unlink()
+
+
+@router.get("/jmeter/comparison-reports")
+async def list_jmeter_comparison_reports(db: Session = Depends(get_db)):
+    rows = DatabaseService.list_jmeter_comparison_reports(db)
+    return {
+        "reports": [
+            {
+                **r.to_dict(),
+                "html_url": f"/api/jmeter/comparison-reports/{r.comparison_report_id}/html",
+                "download_url": f"/api/jmeter/comparison-reports/{r.comparison_report_id}/html?download=1",
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/jmeter/comparison-reports/{comparison_report_id}/html")
+async def get_jmeter_comparison_report_html(
+    comparison_report_id: str,
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    row = DatabaseService.get_jmeter_comparison_report(db, comparison_report_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Comparison report not found")
+    path = row.html_path
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Report file missing on disk")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if download:
+        fname = f"comparison_{comparison_report_id[:8]}.html"
+        return Response(
+            content=content,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+    return HTMLResponse(content=content)
+
+
+@router.post("/jmeter/comparison-reports/{comparison_report_id}/regenerate")
+async def regenerate_jmeter_comparison_report(comparison_report_id: str, db: Session = Depends(get_db)):
+    row = DatabaseService.get_jmeter_comparison_report(db, comparison_report_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Comparison report not found")
+
+    if row.source_type == "runs" and row.run_id_a and row.run_id_b:
+        try:
+            data_a = _load_jmeter_records_for_run(db, row.run_id_a)
+            data_b = _load_jmeter_records_for_run(db, row.run_id_b)
+        except HTTPException:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not reload JMeter data for one or both runs; runs may have been deleted.",
+            )
+        analysis = analyze_jmeter_ab(
+            data_a,
+            data_b,
+            name_a=row.name_a,
+            name_b=row.name_b,
+            environment_a=row.environment_a,
+            environment_b=row.environment_b,
+            build_a=row.build_a,
+            build_b=row.build_b,
+        )
+    else:
+        analysis = row.analysis_json
+        if not analysis:
+            raise HTTPException(status_code=500, detail="No stored analysis to regenerate from")
+
+    html = generate_jmeter_ab_comparison_html(analysis)
+    path = Path(row.html_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(html, encoding="utf-8")
+    exec_s = analysis.get("executive_summary") or {}
+    row.analysis_json = analysis
+    flag_modified(row, "analysis_json")
+    row.verdict = exec_s.get("verdict")
+    row.traffic_signal = exec_s.get("traffic_signal")
+    row.file_size = len(html.encode("utf-8"))
+    row.generated_at = datetime.utcnow()
+    db.commit()
+    return {
+        "success": True,
+        "comparison_report_id": comparison_report_id,
+        "html_url": f"/api/jmeter/comparison-reports/{comparison_report_id}/html",
+    }
+
+
+@router.delete("/jmeter/comparison-reports/{comparison_report_id}")
+async def delete_jmeter_comparison_report(comparison_report_id: str, db: Session = Depends(get_db)):
+    row = DatabaseService.get_jmeter_comparison_report(db, comparison_report_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Comparison report not found")
+    p = row.html_path
+    DatabaseService.delete_jmeter_comparison_report(db, comparison_report_id)
+    try:
+        if p and os.path.isfile(p):
+            os.remove(p)
+    except OSError as e:
+        print(f"Warning: could not delete comparison report file {p}: {e}")
+    return {"success": True, "comparison_report_id": comparison_report_id}
+
 
 @router.get("/health")
 async def health_check():
@@ -679,6 +937,42 @@ async def delete_run(run_id: str, db: Session = Depends(get_db)):
     
     return {"message": f"Run {run_id} deleted successfully"}
 
+
+@router.get("/runs/{run_id}/targets")
+async def get_run_targets(run_id: str, db: Session = Depends(get_db)):
+    """Get target values for a run (for pre-filling before report generation)"""
+    files = DatabaseService.get_files_by_run_id(db, run_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="Run not found")
+    target = DatabaseService.get_run_targets(db, run_id)
+    if not target:
+        return {"run_id": run_id, "targets": None}
+    return {"run_id": run_id, "targets": target.to_dict()}
+
+
+@router.put("/runs/{run_id}/targets")
+async def save_run_targets(
+    run_id: str,
+    db: Session = Depends(get_db),
+    body: dict = Body(...)
+):
+    """Save target values for a run (Availability, Avg Response Time, Error Rate, Throughput, P95, SLA Compliance)"""
+    files = DatabaseService.get_files_by_run_id(db, run_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="Run not found")
+    target = DatabaseService.save_run_targets(
+        db=db,
+        run_id=run_id,
+        availability_target=body.get("availability_target"),
+        avg_response_time_target=body.get("avg_response_time_target"),
+        error_rate_target=body.get("error_rate_target"),
+        throughput_target=body.get("throughput_target"),
+        p95_target=body.get("p95_target"),
+        sla_compliance_target=body.get("sla_compliance_target")
+    )
+    return {"run_id": run_id, "targets": target.to_dict()}
+
+
 @router.get("/runs/{run_id}/parsed-data")
 async def get_run_parsed_data(run_id: str, db: Session = Depends(get_db)):
     """Get parsed data for all files in a run - for debugging/validation"""
@@ -1008,6 +1302,23 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         for f in files:
             print(f"  - {f.filename} (ID: {f.file_id}, Status: {f.report_status}, Category: {f.category})")
         print(f"{'='*60}\n")
+
+        # Fetch run targets (saved from Target Values modal) for report scoring
+        run_targets = None
+        db_target = DatabaseService.get_run_targets(db, run_id)
+        if db_target:
+            run_targets = {
+                "availability_target": db_target.availability_target,
+                "avg_response_time_target": db_target.avg_response_time_target,
+                "error_rate_target": db_target.error_rate_target,
+                "throughput_target": db_target.throughput_target,
+                "p95_target": db_target.p95_target,
+                "sla_compliance_target": db_target.sla_compliance_target
+            }
+            # Filter out None values so analyzer uses defaults for unset fields
+            run_targets = {k: v for k, v in (run_targets or {}).items() if v is not None}
+            if run_targets:
+                print(f"  Using run targets for scoring: {run_targets}")
         
         # Task 1: Parsing Files
         ReportProgressTracker.update_task(run_id, "parsing", "in_progress", 0, "Starting analysis and report generation...")
@@ -1080,7 +1391,7 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     print(f"Starting analysis of merged data ({len(merged_data):,} records)...")
                     analysis_start = time.time()
                     try:
-                        metrics_obj = JMeterAnalyzerV2.analyze(merged_data)
+                        metrics_obj = JMeterAnalyzerV2.analyze(merged_data, targets=run_targets)
                         metrics = metrics_obj.dict()
                         analysis_duration = time.time() - analysis_start
                         print(f"✓ Analysis complete in {analysis_duration:.1f}s. Total samples: {metrics.get('total_samples', 0):,}")
@@ -1185,7 +1496,7 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     print(f"Starting analysis of data ({len(merged_data):,} records)...")
                     analysis_start = time.time()
                     try:
-                        metrics_obj = JMeterAnalyzerV2.analyze(merged_data)
+                        metrics_obj = JMeterAnalyzerV2.analyze(merged_data, targets=run_targets)
                         metrics = metrics_obj.dict()
                         analysis_duration = time.time() - analysis_start
                         print(f"✓ Analysis complete in {analysis_duration:.1f}s. Total samples: {metrics.get('total_samples', 0):,}")
@@ -1299,7 +1610,7 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         # Analyze merged data once
                         print(f"Starting analysis of merged data ({len(merged_data):,} records)...")
                         try:
-                            metrics_obj = JMeterAnalyzerV2.analyze(merged_data)
+                            metrics_obj = JMeterAnalyzerV2.analyze(merged_data, targets=run_targets)
                             metrics = metrics_obj.dict()
                             print(f"✓ Analysis complete. Total samples: {metrics.get('total_samples', 0):,}")
                         except Exception as e:

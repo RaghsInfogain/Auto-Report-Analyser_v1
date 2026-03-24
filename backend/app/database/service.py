@@ -6,7 +6,14 @@ import uuid
 import json
 import re
 
-from .models import UploadedFile, AnalysisResult, GeneratedReport, ChatHistory
+from .models import (
+    UploadedFile,
+    AnalysisResult,
+    GeneratedReport,
+    ChatHistory,
+    RunTarget,
+    JmeterComparisonReport,
+)
 
 
 class DatabaseService:
@@ -213,11 +220,64 @@ class DatabaseService:
         """Delete all files in a run and related data"""
         files = DatabaseService.get_files_by_run_id(db, run_id)
         if files:
+            # Also delete run targets if exist
+            run_target = db.query(RunTarget).filter(RunTarget.run_id == run_id).first()
+            if run_target:
+                db.delete(run_target)
             for f in files:
                 db.delete(f)
             db.commit()
             return True
         return False
+
+    @staticmethod
+    def get_run_targets(db: Session, run_id: str) -> Optional[RunTarget]:
+        """Get target values for a run"""
+        return db.query(RunTarget).filter(RunTarget.run_id == run_id).first()
+
+    @staticmethod
+    def save_run_targets(
+        db: Session,
+        run_id: str,
+        availability_target: Optional[float] = None,
+        avg_response_time_target: Optional[float] = None,
+        error_rate_target: Optional[float] = None,
+        throughput_target: Optional[float] = None,
+        p95_target: Optional[float] = None,
+        sla_compliance_target: Optional[float] = None
+    ) -> RunTarget:
+        """Save or update target values for a run"""
+        existing = db.query(RunTarget).filter(RunTarget.run_id == run_id).first()
+        if existing:
+            if availability_target is not None:
+                existing.availability_target = availability_target
+            if avg_response_time_target is not None:
+                existing.avg_response_time_target = avg_response_time_target
+            if error_rate_target is not None:
+                existing.error_rate_target = error_rate_target
+            if throughput_target is not None:
+                existing.throughput_target = throughput_target
+            if p95_target is not None:
+                existing.p95_target = p95_target
+            if sla_compliance_target is not None:
+                existing.sla_compliance_target = sla_compliance_target
+            existing.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(existing)
+            return existing
+        db_target = RunTarget(
+            run_id=run_id,
+            availability_target=availability_target,
+            avg_response_time_target=avg_response_time_target,
+            error_rate_target=error_rate_target,
+            throughput_target=throughput_target,
+            p95_target=p95_target,
+            sla_compliance_target=sla_compliance_target
+        )
+        db.add(db_target)
+        db.commit()
+        db.refresh(db_target)
+        return db_target
     
     @staticmethod
     def create_analysis_result(
@@ -355,6 +415,78 @@ class DatabaseService:
         ).distinct().all()
         return [s[0] for s in sessions]
 
+    @staticmethod
+    def create_jmeter_comparison_report(
+        db: Session,
+        comparison_report_id: str,
+        source_type: str,
+        name_a: str,
+        name_b: str,
+        html_path: str,
+        analysis_json: Dict[str, Any],
+        verdict: Optional[str],
+        traffic_signal: Optional[str],
+        file_size: int,
+        run_id_a: Optional[str] = None,
+        run_id_b: Optional[str] = None,
+        environment_a: Optional[str] = None,
+        environment_b: Optional[str] = None,
+        build_a: Optional[str] = None,
+        build_b: Optional[str] = None,
+        original_filename_a: Optional[str] = None,
+        original_filename_b: Optional[str] = None,
+        generated_by: str = "unknown",
+    ) -> JmeterComparisonReport:
+        row = JmeterComparisonReport(
+            comparison_report_id=comparison_report_id,
+            source_type=source_type,
+            run_id_a=run_id_a,
+            run_id_b=run_id_b,
+            name_a=name_a,
+            name_b=name_b,
+            environment_a=environment_a,
+            environment_b=environment_b,
+            build_a=build_a,
+            build_b=build_b,
+            original_filename_a=original_filename_a,
+            original_filename_b=original_filename_b,
+            html_path=html_path,
+            analysis_json=analysis_json,
+            verdict=verdict,
+            traffic_signal=traffic_signal,
+            file_size=file_size,
+            generated_by=generated_by,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
 
+    @staticmethod
+    def list_jmeter_comparison_reports(db: Session) -> List[JmeterComparisonReport]:
+        return (
+            db.query(JmeterComparisonReport)
+            .order_by(JmeterComparisonReport.generated_at.desc())
+            .all()
+        )
+
+    @staticmethod
+    def get_jmeter_comparison_report(
+        db: Session, comparison_report_id: str
+    ) -> Optional[JmeterComparisonReport]:
+        return (
+            db.query(JmeterComparisonReport)
+            .filter(JmeterComparisonReport.comparison_report_id == comparison_report_id)
+            .first()
+        )
+
+    @staticmethod
+    def delete_jmeter_comparison_report(db: Session, comparison_report_id: str) -> bool:
+        row = DatabaseService.get_jmeter_comparison_report(db, comparison_report_id)
+        if not row:
+            return False
+        db.delete(row)
+        db.commit()
+        return True
 
 

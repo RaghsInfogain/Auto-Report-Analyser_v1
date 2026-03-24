@@ -154,6 +154,25 @@ export const deleteRun = async (runId: string): Promise<{ message: string }> => 
   return response.data;
 };
 
+export interface RunTargets {
+  availability_target?: number;
+  avg_response_time_target?: number;
+  error_rate_target?: number;
+  throughput_target?: number;
+  p95_target?: number;
+  sla_compliance_target?: number;
+}
+
+export const getRunTargets = async (runId: string): Promise<{ run_id: string; targets: RunTargets | null }> => {
+  const response = await api.get(`/api/runs/${runId}/targets`);
+  return response.data;
+};
+
+export const saveRunTargets = async (runId: string, targets: RunTargets): Promise<{ run_id: string; targets: any }> => {
+  const response = await api.put(`/api/runs/${runId}/targets`, targets);
+  return response.data;
+};
+
 export const generateRunReport = async (runId: string, regenerate: boolean = false): Promise<{
   success: boolean;
   run_id: string;
@@ -234,4 +253,114 @@ export interface ParsedDataResponse {
 export const getRunParsedData = async (runId: string): Promise<ParsedDataResponse> => {
   const response = await api.get(`/api/runs/${runId}/parsed-data`);
   return response.data;
+};
+
+/** Compare two JMeter JTL/CSV files (A = baseline, B = candidate). Returns JSON or HTML string. */
+export const compareJmeterAb = async (
+  fileA: File,
+  fileB: File,
+  options?: {
+    nameA?: string;
+    nameB?: string;
+    environmentA?: string;
+    environmentB?: string;
+    buildA?: string;
+    buildB?: string;
+    responseFormat?: 'json' | 'html';
+    /** Persist HTML + analysis under backend reports/jmeter_compare (same idea as JMeter run reports). */
+    persist?: boolean;
+  }
+): Promise<unknown> => {
+  const formData = new FormData();
+  formData.append('file_a', fileA);
+  formData.append('file_b', fileB);
+  if (options?.nameA) formData.append('name_a', options.nameA);
+  if (options?.nameB) formData.append('name_b', options.nameB);
+  if (options?.environmentA) formData.append('environment_a', options.environmentA);
+  if (options?.environmentB) formData.append('environment_b', options.environmentB);
+  if (options?.buildA) formData.append('build_a', options.buildA);
+  if (options?.buildB) formData.append('build_b', options.buildB);
+  const fmt = options?.responseFormat === 'html' ? 'html' : 'json';
+  const persist = options?.persist ? 'true' : 'false';
+  const response = await axios.post(
+    `${API_BASE_URL}/api/jmeter/compare-ab?response_format=${fmt}&persist=${persist}`,
+    formData,
+    { responseType: fmt === 'html' ? 'text' : 'json' }
+  );
+  return response.data;
+};
+
+/** Compare two existing JMeter runs (merged JTL per run). Opens HTML when responseFormat is html. */
+export const compareJmeterAbByRuns = async (
+  runIdA: string,
+  runIdB: string,
+  options?: {
+    nameA?: string;
+    nameB?: string;
+    environmentA?: string;
+    environmentB?: string;
+    buildA?: string;
+    buildB?: string;
+    responseFormat?: 'json' | 'html';
+    persist?: boolean;
+  }
+): Promise<unknown> => {
+  const formData = new FormData();
+  formData.append('run_id_a', runIdA);
+  formData.append('run_id_b', runIdB);
+  if (options?.nameA) formData.append('name_a', options.nameA);
+  if (options?.nameB) formData.append('name_b', options.nameB);
+  if (options?.environmentA) formData.append('environment_a', options.environmentA);
+  if (options?.environmentB) formData.append('environment_b', options.environmentB);
+  if (options?.buildA) formData.append('build_a', options.buildA);
+  if (options?.buildB) formData.append('build_b', options.buildB);
+  const fmt = options?.responseFormat === 'html' ? 'html' : 'json';
+  const persist = options?.persist ? 'true' : 'false';
+  const response = await axios.post(
+    `${API_BASE_URL}/api/jmeter/compare-ab?response_format=${fmt}&persist=${persist}`,
+    formData,
+    { responseType: fmt === 'html' ? 'text' : 'json' }
+  );
+  return response.data;
+};
+
+export interface JmeterComparisonReportItem {
+  comparison_report_id: string;
+  source_type: string;
+  run_id_a: string | null;
+  run_id_b: string | null;
+  name_a: string;
+  name_b: string;
+  verdict: string | null;
+  traffic_signal: string | null;
+  file_size: number;
+  generated_at: string | null;
+  generated_by: string;
+  html_url: string;
+  download_url: string;
+}
+
+export const listJmeterComparisonReports = async (): Promise<{ reports: JmeterComparisonReportItem[] }> => {
+  const response = await api.get('/api/jmeter/comparison-reports');
+  return response.data;
+};
+
+export const regenerateJmeterComparisonReport = async (
+  comparisonReportId: string
+): Promise<{ success: boolean; comparison_report_id: string; html_url: string }> => {
+  const response = await api.post(`/api/jmeter/comparison-reports/${comparisonReportId}/regenerate`);
+  return response.data;
+};
+
+export const deleteJmeterComparisonReport = async (
+  comparisonReportId: string
+): Promise<{ success: boolean; comparison_report_id: string }> => {
+  const response = await api.delete(`/api/jmeter/comparison-reports/${comparisonReportId}`);
+  return response.data;
+};
+
+/** Open saved comparison HTML in a new tab (absolute URL). */
+export const getJmeterComparisonReportHtmlAbsoluteUrl = (comparisonReportId: string, download?: boolean): string => {
+  const q = download ? '?download=1' : '';
+  return `${API_BASE_URL}/api/jmeter/comparison-reports/${comparisonReportId}/html${q}`;
 };

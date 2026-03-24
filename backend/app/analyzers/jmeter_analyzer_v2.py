@@ -3,7 +3,7 @@ Simplified and efficient JMeter analyzer
 Fast, reliable, and produces comprehensive metrics
 """
 import numpy as np
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from collections import Counter, defaultdict
 from app.models.jmeter import JMeterMetrics
 
@@ -12,10 +12,11 @@ class JMeterAnalyzerV2:
     """Simplified JMeter analyzer with efficient calculations"""
     
     @staticmethod
-    def analyze(data: List[Dict[str, Any]]) -> JMeterMetrics:
+    def analyze(data: List[Dict[str, Any]], targets: Optional[Dict[str, float]] = None) -> JMeterMetrics:
         """
-        Analyze JMeter data and return comprehensive metrics
-        Simplified, fast, and reliable
+        Analyze JMeter data and return comprehensive metrics.
+        targets: optional dict with keys availability_target, avg_response_time_target (ms),
+                 error_rate_target (%), throughput_target, p95_target (ms), sla_compliance_target (%)
         """
         if not data:
             raise ValueError("No data provided for analysis")
@@ -84,10 +85,12 @@ class JMeterAnalyzerV2:
         sla_compliance_3s_pct = (sla_3s / total_samples * 100) if total_samples > 0 else 0.0
         sla_compliance_5s_pct = (sla_5s / total_samples * 100) if total_samples > 0 else 0.0
         
-        # Calculate scores (0-100)
+        # Calculate scores (0-100) - use run targets if provided
+        score_targets = JMeterAnalyzerV2._resolve_score_targets(targets)
         scores = JMeterAnalyzerV2._calculate_scores(
             success_rate, error_rate, avg_response_sec, p95_response / 1000.0,
-            throughput, sla_compliance_2s_pct
+            throughput, sla_compliance_2s_pct,
+            score_targets=score_targets
         )
         
         # Calculate grades
@@ -173,14 +176,7 @@ class JMeterAnalyzerV2:
             "recommendations": recommendations,
             "improvement_roadmap": improvement_roadmap,
             "scores": scores,
-            "targets": {
-                "availability": 99,
-                "response_time": 2000,
-                "error_rate": 1,
-                "throughput": 100,
-                "p95_percentile": 3000,
-                "sla_compliance": 95
-            }
+            "targets": JMeterAnalyzerV2._resolve_display_targets(targets)
         }
         
         return JMeterMetrics(
@@ -535,21 +531,65 @@ class JMeterAnalyzerV2:
         return analyze_group(transactions), analyze_group(requests)
     
     @staticmethod
+    def _resolve_score_targets(targets: Optional[Dict[str, float]]) -> Dict[str, float]:
+        """Convert run targets (ms, %) to score calculation format (seconds, decimals)."""
+        if not targets:
+            return {
+                "availability": 99,
+                "avg_response_sec": 2,
+                "error_rate": 0.01,  # 1% as decimal
+                "throughput": 100,
+                "p95_sec": 3,
+                "sla_compliance": 95
+            }
+        return {
+            "availability": float(targets.get("availability_target") or 99),
+            "avg_response_sec": (float(targets.get("avg_response_time_target") or 2000)) / 1000.0,
+            "error_rate": (float(targets.get("error_rate_target") or 1)) / 100.0,  # % to decimal
+            "throughput": float(targets.get("throughput_target") or 100),
+            "p95_sec": (float(targets.get("p95_target") or 3000)) / 1000.0,
+            "sla_compliance": float(targets.get("sla_compliance_target") or 95)
+        }
+
+    @staticmethod
+    def _resolve_display_targets(targets: Optional[Dict[str, float]]) -> Dict[str, float]:
+        """Build targets dict for report display (availability, response_time ms, etc.)."""
+        if not targets:
+            return {
+                "availability": 99,
+                "response_time": 2000,
+                "error_rate": 1,
+                "throughput": 100,
+                "p95_percentile": 3000,
+                "sla_compliance": 95
+            }
+        return {
+            "availability": float(targets.get("availability_target") or 99),
+            "response_time": float(targets.get("avg_response_time_target") or 2000),
+            "error_rate": float(targets.get("error_rate_target") or 1),
+            "throughput": float(targets.get("throughput_target") or 100),
+            "p95_percentile": float(targets.get("p95_target") or 3000),
+            "sla_compliance": float(targets.get("sla_compliance_target") or 95)
+        }
+
+    @staticmethod
     def _calculate_scores(success_rate: float, error_rate: float, avg_response: float,
-                          p95_response: float, throughput: float, sla_compliance: float) -> Dict[str, float]:
-        """Calculate category scores (0-100)"""
+                          p95_response: float, throughput: float, sla_compliance: float,
+                          score_targets: Optional[Dict[str, float]] = None) -> Dict[str, float]:
+        """Calculate category scores (0-100). Uses score_targets when provided."""
         def score_metric(value: float, target: float, higher_better: bool) -> float:
             if higher_better:
                 return min(100, max(0, (value / target) * 100)) if target > 0 else 0
             else:
                 return min(100, max(0, (target / value) * 100)) if value > 0 else 0
-        
-        availability_score = score_metric(success_rate, 99, True)
-        response_time_score = score_metric(avg_response, 2, False)
-        error_rate_score = score_metric(error_rate, 1, False)
-        throughput_score = score_metric(throughput, 100, True)
-        p95_score = score_metric(p95_response, 3, False)
-        sla_score = score_metric(sla_compliance, 95, True)
+
+        t = score_targets or JMeterAnalyzerV2._resolve_score_targets(None)
+        availability_score = score_metric(success_rate, t["availability"], True)
+        response_time_score = score_metric(avg_response, t["avg_response_sec"], False)
+        error_rate_score = score_metric(error_rate, t["error_rate"], False)
+        throughput_score = score_metric(throughput, t["throughput"], True)
+        p95_score = score_metric(p95_response, t["p95_sec"], False)
+        sla_score = score_metric(sla_compliance, t["sla_compliance"], True)
         
         performance_score = (response_time_score + p95_score) / 2
         reliability_score = (availability_score + error_rate_score) / 2
