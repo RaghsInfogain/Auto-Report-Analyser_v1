@@ -14,6 +14,27 @@ Start here if you're new to the platform:
 
 ---
 
+## 🎬 Marketing & Client Demos
+
+Professional video scripts for demonstrating the platform to clients and stakeholders:
+
+| Document | Duration | Description | Use Case |
+|----------|----------|-------------|----------|
+| [CLIENT_DEMO_VIDEO_SCRIPT.md](./CLIENT_DEMO_VIDEO_SCRIPT.md) | 10-12 min | Complete demonstration script with all features | Website, sales presentations, technical evaluation |
+| [QUICK_VIDEO_SCRIPT_3MIN.md](./QUICK_VIDEO_SCRIPT_3MIN.md) | 3 min | Fast-paced elevator pitch version | Social media, email campaigns, trade shows |
+
+**What's Included:**
+- Full narration scripts with timing
+- Visual style guidelines
+- Production notes and shot lists
+- ROI and business value messaging
+- Technical differentiators
+- Multiple audience variants (technical, executive, sales)
+- Social media cut recommendations
+- Recording and editing checklist
+
+---
+
 ## 🎯 Core Features & Guides
 
 ### Performance Testing & Analysis
