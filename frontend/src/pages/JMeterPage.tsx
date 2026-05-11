@@ -35,7 +35,6 @@ const JMeterPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalContent, setModalContent] = useState<ModalContent | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
-  const [recentUploads, setRecentUploads] = useState<UploadedFile[]>([]);
   const [targetModalOpen, setTargetModalOpen] = useState(false);
   const [targetModalRun, setTargetModalRun] = useState<RunInfo | null>(null);
   const [targetModalRegenerate, setTargetModalRegenerate] = useState(false);
@@ -65,8 +64,7 @@ const JMeterPage: React.FC = () => {
     }
   };
 
-  const handleFilesUploaded = (files: UploadedFile[]) => {
-    setRecentUploads(files);
+  const handleFilesUploaded = (_files: UploadedFile[]) => {
     loadRuns();
   };
 
@@ -157,7 +155,7 @@ const JMeterPage: React.FC = () => {
       }
       progressPollInterval.current = setInterval(pollProgress, 2000);
 
-      await generateRunReport(run.run_id, regenerate);
+      await generateRunReport(run.run_id, regenerate, run.total_size, run.total_records);
       await pollProgress();
     } catch (error: any) {
       console.error('Error generating report:', error);
@@ -281,24 +279,22 @@ const JMeterPage: React.FC = () => {
         <div className="page-header">
           <div className="header-content">
             <h1>JMeter Test Results</h1>
-            <div className="header-actions">
-              <button className="btn-primary" onClick={loadRuns}>
-                ↻ Refresh
-              </button>
-            </div>
           </div>
         </div>
         {/* Main Content Area */}
         <div className="page-main-content">
-          {/* Upload Section */}
-          <div className="content-section">
-            <div className="section-header">
-              <h2>Upload Test Results</h2>
+          {/* Upload Section — title + drop zone on one row */}
+          <div className="content-section jmeter-upload-section">
+            <div className="upload-inline-row">
+              <h2 className="upload-inline-title">Upload Test Results</h2>
+              <div className="upload-inline-body">
+                <FileUpload
+                  onFilesUploaded={handleFilesUploaded}
+                  defaultCategory="jmeter"
+                  compact
+                />
+              </div>
             </div>
-            <FileUpload 
-              onFilesUploaded={handleFilesUploaded}
-              defaultCategory="jmeter"
-            />
           </div>
 
           {/* Progress Indicator */}
@@ -338,6 +334,7 @@ const JMeterPage: React.FC = () => {
                   <thead>
                     <tr>
                       <th>Run ID</th>
+                      <th>Base URL</th>
                       <th>Files</th>
                       <th>Samples</th>
                       <th>Size</th>
@@ -352,13 +349,20 @@ const JMeterPage: React.FC = () => {
                       return (
                         <tr key={run.run_id} className={expandedRuns.has(run.run_id) ? 'expanded' : ''}>
                           <td className="run-id-cell">
-                            <button 
-                              className="expand-toggle"
-                              onClick={() => toggleExpand(run.run_id)}
-                            >
-                              {expandedRuns.has(run.run_id) ? '▼' : '▶'}
-                            </button>
-                            <span className="run-id">{run.run_id}</span>
+                            <div className="run-id-inner">
+                              <button
+                                type="button"
+                                className="expand-toggle"
+                                onClick={() => toggleExpand(run.run_id)}
+                                aria-expanded={expandedRuns.has(run.run_id)}
+                              >
+                                {expandedRuns.has(run.run_id) ? '▼' : '▶'}
+                              </button>
+                              <span className="run-id">{run.run_id}</span>
+                            </div>
+                          </td>
+                          <td className="base-url-cell" title={run.base_url || undefined}>
+                            {run.base_url || '—'}
                           </td>
                           <td>{run.file_count}</td>
                           <td>{run.total_records.toLocaleString()}</td>

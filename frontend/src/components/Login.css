@@ -22,13 +22,13 @@
 }
 
 .login-header h1 {
-  color: #333;
+  color: var(--report-ink);
   margin: 0 0 10px 0;
   font-size: 28px;
 }
 
 .login-header p {
-  color: #666;
+  color: var(--report-gray);
   margin: 0;
   font-size: 16px;
 }
@@ -46,7 +46,7 @@
 }
 
 .form-group label {
-  color: #333;
+  color: var(--report-ink);
   font-weight: 600;
   font-size: 14px;
 }
@@ -104,7 +104,7 @@
 .demo-info {
   text-align: center;
   font-size: 14px;
-  color: #666;
+  color: var(--report-gray);
   margin: 0 0 8px 0;
 }
 
@@ -117,7 +117,7 @@
 }
 
 .demo-info code {
-  background: #f5f5f5;
+  background: var(--report-paper);
   padding: 2px 8px;
   border-radius: 4px;
   color: #667eea;

@@ -12,13 +12,13 @@
   --secondary: #8b5cf6;
   --accent: #ec4899;
   
-  /* Neutrals */
-  --bg-primary: #f8fafc;
-  --bg-secondary: #f1f5f9;
-  --bg-white: #ffffff;
-  --text-primary: #0f172a;
-  --text-secondary: #64748b;
-  --text-light: #94a3b8;
+  /* Surfaces — match editorial report (warm paper) */
+  --bg-primary: var(--report-paper);
+  --bg-secondary: var(--report-cream);
+  --bg-white: var(--report-paper);
+  --text-primary: var(--report-ink);
+  --text-secondary: var(--report-gray);
+  --text-light: #8a8578;
   
   /* Status Colors */
   --success: #10b981;
@@ -27,8 +27,8 @@
   --info: #3b82f6;
   
   /* Borders */
-  --border-light: #e2e8f0;
-  --border-medium: #cbd5e1;
+  --border-light: var(--report-rule);
+  --border-medium: #b8b3a8;
   
   /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -59,8 +59,7 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-family: var(--font-report-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg-primary);

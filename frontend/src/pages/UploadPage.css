@@ -34,7 +34,7 @@
 }
 
 .recent-uploads {
-  background: white;
+  background: var(--report-paper);
   padding: 2rem;
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
@@ -129,7 +129,7 @@
 }
 
 .upload-info {
-  background: linear-gradient(135deg, white 0%, #f8f9ff 100%);
+  background: linear-gradient(135deg, var(--report-paper) 0%, #f8f9ff 100%);
   padding: 2rem;
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
@@ -159,7 +159,7 @@
 
 .info-card {
   padding: 1.75rem;
-  background: white;
+  background: var(--report-paper);
   border-radius: var(--radius-lg);
   border-left: 5px solid var(--primary);
   box-shadow: var(--shadow-sm);

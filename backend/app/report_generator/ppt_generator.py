@@ -11,6 +11,32 @@ class PPTReportGenerator:
     """Generate comprehensive PowerPoint presentations matching HTML report structure"""
     
     @staticmethod
+    def _fmt_ms_stat(v: Any) -> str:
+        if v is None:
+            return "N/A"
+        try:
+            return f"{float(v) / 1000.0:.2f}s"
+        except (TypeError, ValueError):
+            return "N/A"
+    
+    @staticmethod
+    def _fmt_sec_num(v: Any) -> str:
+        """Format value already in seconds (or None)."""
+        if v is None:
+            return "N/A"
+        try:
+            return f"{float(v):.2f}s"
+        except (TypeError, ValueError):
+            return "N/A"
+    
+    @staticmethod
+    def _avg_sort_key(item) -> tuple:
+        m = item[1].get("avg_response")
+        if isinstance(m, (int, float)):
+            return (1, float(m))
+        return (0, 0.0)
+    
+    @staticmethod
     def get_grade_color(grade: str) -> tuple:
         """Get RGB color for grade"""
         grade = grade.upper().replace('+', '')
@@ -75,15 +101,23 @@ class PPTReportGenerator:
         overall_score = summary.get("overall_score", 0)
         success_rate = summary.get("success_rate", 0)
         
+        def _ms_to_sec_ppt(m: Any) -> Any:
+            if m is None:
+                return None
+            try:
+                return float(m) / 1000.0
+            except (TypeError, ValueError):
+                return None
+        
         sample_time = metrics.get("sample_time", {})
-        avg_response = sample_time.get("mean", 0) / 1000
-        p70 = sample_time.get("p70", 0) / 1000
-        p80 = sample_time.get("p80", 0) / 1000
-        p90 = sample_time.get("p90", 0) / 1000
-        p95 = sample_time.get("p95", 0) / 1000
-        p99 = sample_time.get("p99", 0) / 1000
-        median = sample_time.get("median", 0) / 1000
-        max_time = sample_time.get("max", 0) / 1000
+        avg_response = _ms_to_sec_ppt(sample_time.get("mean"))
+        p70 = _ms_to_sec_ppt(sample_time.get("p70"))
+        p80 = _ms_to_sec_ppt(sample_time.get("p80"))
+        p90 = _ms_to_sec_ppt(sample_time.get("p90"))
+        p95 = _ms_to_sec_ppt(sample_time.get("p95"))
+        p99 = _ms_to_sec_ppt(sample_time.get("p99"))
+        median = _ms_to_sec_ppt(sample_time.get("median"))
+        max_time = _ms_to_sec_ppt(sample_time.get("max"))
         
         error_rate = metrics.get("error_rate", 0) * 100
         throughput = metrics.get("throughput", 0)
@@ -117,7 +151,7 @@ class PPTReportGenerator:
         exec_items = [
             {"text": f"Overall Grade: {overall_grade} ({overall_score:.0f}/100)", "level": 0, "bold": True},
             {"text": f"Success Rate: {success_rate:.1f}%", "level": 1},
-            {"text": f"Avg Response Time: {avg_response:.2f}s", "level": 1},
+            {"text": f"Avg Response Time: {avg_response:.2f}s" if avg_response is not None else "Avg Response Time: N/A (no successful samples)", "level": 1},
             {"text": f"Error Rate: {error_rate:.2f}%", "level": 1},
             {"text": f"Throughput: {throughput:.1f} req/s", "level": 1},
             {"text": "", "level": 0},
@@ -329,12 +363,12 @@ class PPTReportGenerator:
             {"text": f"Average Throughput: {throughput:.1f} req/s", "level": 0},
             {"text": "", "level": 0},
             {"text": "Response Time Statistics:", "level": 0, "bold": True},
-            {"text": f"Median: {median:.2f}s", "level": 1},
-            {"text": f"70th Percentile: {p70:.2f}s", "level": 1},
-            {"text": f"90th Percentile: {p90:.2f}s", "level": 1},
-            {"text": f"95th Percentile: {p95:.2f}s", "level": 1},
-            {"text": f"99th Percentile: {p99:.2f}s", "level": 1},
-            {"text": f"Maximum: {max_time:.2f}s", "level": 1},
+            {"text": f"Median: {PPTReportGenerator._fmt_sec_num(median)}", "level": 1},
+            {"text": f"70th Percentile: {PPTReportGenerator._fmt_sec_num(p70)}", "level": 1},
+            {"text": f"90th Percentile: {PPTReportGenerator._fmt_sec_num(p90)}", "level": 1},
+            {"text": f"95th Percentile: {PPTReportGenerator._fmt_sec_num(p95)}", "level": 1},
+            {"text": f"99th Percentile: {PPTReportGenerator._fmt_sec_num(p99)}", "level": 1},
+            {"text": f"Maximum: {PPTReportGenerator._fmt_sec_num(max_time)}", "level": 1},
         ]
         PPTReportGenerator.add_section_slide(prs, "📊 Test Overview", test_items)
         
@@ -350,17 +384,21 @@ class PPTReportGenerator:
         title_para.font.bold = True
         title_para.font.color.rgb = RGBColor(37, 99, 235)
         
+        # Shared column headers (must exist when only request_stats or only transaction_stats is populated)
+        headers = ["Transaction", "Avg Time", "95th %ile", "Error %"]
+        
         # Transaction table
         if transaction_stats:
-            sorted_trans = sorted(transaction_stats.items(), 
-                                 key=lambda x: x[1].get('avg_response', 0) or 0, 
-                                 reverse=True)[:5]
+            sorted_trans = sorted(
+                transaction_stats.items(),
+                key=PPTReportGenerator._avg_sort_key,
+                reverse=True
+            )[:5]
             
             rows_trans = len(sorted_trans) + 1
             trans_table = slide.shapes.add_table(rows_trans, 4, Inches(0.5), Inches(1), Inches(9), Inches(2.5)).table
             
             # Headers
-            headers = ["Transaction", "Avg Time", "95th %ile", "Error %"]
             for j, header in enumerate(headers):
                 trans_table.cell(0, j).text = header
                 cell = trans_table.cell(0, j)
@@ -375,8 +413,8 @@ class PPTReportGenerator:
             # Data
             for i, (label, data) in enumerate(sorted_trans, 1):
                 trans_table.cell(i, 0).text = label[:35]
-                trans_table.cell(i, 1).text = f"{data.get('avg_response', 0)/1000:.2f}s"
-                trans_table.cell(i, 2).text = f"{data.get('p95', 0)/1000:.2f}s"
+                trans_table.cell(i, 1).text = PPTReportGenerator._fmt_ms_stat(data.get("avg_response"))
+                trans_table.cell(i, 2).text = PPTReportGenerator._fmt_ms_stat(data.get("p95"))
                 trans_table.cell(i, 3).text = f"{data.get('error_rate', 0):.2f}%"
                 
                 # Set font size
@@ -387,16 +425,18 @@ class PPTReportGenerator:
         
         # Request table
         if request_stats:
-            sorted_req = sorted(request_stats.items(), 
-                               key=lambda x: x[1].get('avg_response', 0) or 0, 
-                               reverse=True)[:5]
+            sorted_req = sorted(
+                request_stats.items(),
+                key=PPTReportGenerator._avg_sort_key,
+                reverse=True
+            )[:5]
             
             rows_req = len(sorted_req) + 1
             req_table = slide.shapes.add_table(rows_req, 4, Inches(0.5), Inches(4), Inches(9), Inches(2.5)).table
             
             # Headers
             for j, header in enumerate(headers):
-                req_table.cell(0, j).text = header if j == 0 else headers[j]
+                req_table.cell(0, j).text = header
                 cell = req_table.cell(0, j)
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = RGBColor(5, 150, 105)
@@ -409,8 +449,8 @@ class PPTReportGenerator:
             # Data
             for i, (label, data) in enumerate(sorted_req, 1):
                 req_table.cell(i, 0).text = label[:35]
-                req_table.cell(i, 1).text = f"{data.get('avg_response', 0)/1000:.2f}s"
-                req_table.cell(i, 2).text = f"{data.get('p95', 0)/1000:.2f}s"
+                req_table.cell(i, 1).text = PPTReportGenerator._fmt_ms_stat(data.get("avg_response"))
+                req_table.cell(i, 2).text = PPTReportGenerator._fmt_ms_stat(data.get("p95"))
                 req_table.cell(i, 3).text = f"{data.get('error_rate', 0):.2f}%"
                 
                 for j in range(4):
@@ -455,7 +495,11 @@ class PPTReportGenerator:
             {"text": "", "level": 0},
             {"text": "Cost of Inaction:", "level": 0, "bold": True},
             {"text": f"Error Rate ({error_rate:.2f}%): {'Major' if error_rate > 5 else 'Moderate'} revenue loss", "level": 1},
-            {"text": f"Performance ({avg_response:.1f}s): {'Significant' if avg_response > 5 else 'Moderate'} productivity loss", "level": 1},
+            {"text": (
+                f"Performance ({avg_response:.1f}s): {'Significant' if avg_response and avg_response > 5 else 'Moderate'} productivity loss"
+                if avg_response is not None
+                else "Performance: N/A (no successful latency samples to score)"
+            ), "level": 1},
             {"text": "User Abandonment: High opportunity cost", "level": 1},
         ]
         PPTReportGenerator.add_section_slide(prs, "💰 Business Impact", business_items)
@@ -515,9 +559,19 @@ class PPTReportGenerator:
                     run.font.bold = True
         
         # Data
+        if avg_response is not None:
+            _ar6 = f"{max(0.8, float(avg_response) * 0.3):.1f}s"
+            _ar_cur = f"{float(avg_response):.1f}s"
+        else:
+            _ar6, _ar_cur = "—", "N/A"
+        if p95 is not None:
+            _p95_6 = f"{max(2.5, float(p95) * 0.2):.1f}s"
+            _p95_cur = f"{float(p95):.1f}s"
+        else:
+            _p95_6, _p95_cur = "—", "N/A"
         target_data = [
-            ["Avg Response", f"{avg_response:.1f}s", f"{max(0.8, avg_response*0.3):.1f}s", "<2s"],
-            ["95th Percentile", f"{p95:.1f}s", f"{max(2.5, p95*0.2):.1f}s", "<3s"],
+            ["Avg Response", _ar_cur, _ar6, "<2s"],
+            ["95th Percentile", _p95_cur, _p95_6, "<3s"],
             ["Error Rate", f"{error_rate:.2f}%", "0.3%", "<0.5%"],
             ["Success Rate", f"{success_rate:.1f}%", "99.5%", ">99%"],
             ["SLA Compliance", f"{sla_2s:.1f}%", "95%", ">95%"],

@@ -11,6 +11,7 @@ numpy>=1.24.0
 scipy>=1.10.0
 
 # Report generation
+jinja2>=3.1.0
 python-pptx>=0.6.21
 reportlab>=4.0.0
 

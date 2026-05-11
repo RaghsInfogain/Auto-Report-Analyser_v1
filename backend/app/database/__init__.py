@@ -1,5 +1,5 @@
 """Database initialization and connection management"""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import os
@@ -35,6 +35,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     """Initialize database tables"""
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_schema_patches()
+
+
+def _ensure_sqlite_schema_patches():
+    """Lightweight migrations for SQLite when models gain columns."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        rows = conn.execute(text("PRAGMA table_info(run_targets)")).fetchall()
+        col_names = {r[1] for r in rows}
+        if "application_name" not in col_names:
+            conn.execute(text("ALTER TABLE run_targets ADD COLUMN application_name VARCHAR(500)"))
 
 def get_db() -> Session:
     """Dependency for getting database session with proper error handling"""

@@ -91,7 +91,7 @@
 
 .prompts-sidebar h4 {
   margin: 1.5rem 0 0.8rem 0;
-  color: #333;
+  color: var(--report-ink);
   font-size: 1rem;
 }
 
@@ -130,7 +130,7 @@
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
-  color: #333;
+  color: var(--report-ink);
   font-size: 0.85rem;
   text-align: left;
   font-weight: 500;
@@ -233,7 +233,7 @@
   word-wrap: break-word;
   line-height: 1.6;
   font-size: 0.95rem;
-  color: #333;
+  color: var(--report-ink);
 }
 
 .message.user .message-text {
@@ -319,7 +319,7 @@
   font-size: 0.9rem;
   font-weight: 600;
   transition: all 0.3s ease;
-  color: #333;
+  color: var(--report-ink);
 }
 
 .action-button:hover:not(:disabled) {

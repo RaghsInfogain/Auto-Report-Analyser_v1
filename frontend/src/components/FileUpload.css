@@ -3,7 +3,7 @@
 }
 
 .upload-area {
-  border: 2px dashed #e0e0e0;
+  border: 2px dashed var(--report-rule);
   border-radius: 4px;
   padding: 2rem;
   text-align: center;
@@ -13,7 +13,7 @@
 
 .upload-area:hover {
   border-color: #6c5ce7;
-  background: #f5f5f5;
+  background: var(--report-paper);
 }
 
 .file-input-label {
@@ -41,19 +41,19 @@
 .upload-text {
   font-size: 1rem;
   font-weight: 500;
-  color: #333;
+  color: var(--report-ink);
 }
 
 .upload-hint {
   font-size: 0.875rem;
-  color: #666;
+  color: var(--report-gray);
 }
 
 /* Selected Files */
 .selected-files {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid var(--report-rule);
 }
 
 .files-header {
@@ -66,7 +66,7 @@
 .files-header h3 {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #666;
+  color: var(--report-gray);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin: 0;
@@ -100,7 +100,7 @@
   align-items: center;
   padding: 0.75rem 1rem;
   background: #f8f9fa;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--report-rule);
   border-radius: 4px;
   transition: background 0.2s;
 }
@@ -129,7 +129,7 @@
 .file-name {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #333;
+  color: var(--report-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,15 +138,15 @@
 
 .file-meta {
   font-size: 0.75rem;
-  color: #666;
+  color: var(--report-gray);
 }
 
 .category-select {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--report-rule);
   border-radius: 4px;
   font-size: 0.875rem;
-  background: white;
+  background: var(--report-paper);
   cursor: pointer;
   min-width: 180px;
   transition: border-color 0.2s;
@@ -181,7 +181,7 @@
 
 .btn-upload {
   background: #6c5ce7;
-  color: white;
+  color: #fff;
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 4px;
@@ -207,13 +207,67 @@
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Compact layout: horizontal band next to page title (JMeter) */
+.file-upload-compact .upload-area {
+  padding: 0.45rem 0.75rem;
+  background: var(--report-cream);
+  text-align: left;
+}
+
+.file-upload-compact .file-input-content {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.25rem 0.65rem;
+}
+
+.file-upload-compact .upload-icon {
+  font-size: 1.25rem;
+  margin-bottom: 0;
+  opacity: 0.65;
+}
+
+.file-upload-compact .upload-text {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.file-upload-compact .upload-hint {
+  font-size: 0.65rem;
+  margin: 0;
+  flex: 1 1 100%;
+}
+
+.file-upload-compact .selected-files {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+}
+
+.file-upload-compact .files-header {
+  margin-bottom: 0.5rem;
+}
+
+.file-upload-compact .files-list {
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.file-upload-compact .file-item {
+  padding: 0.35rem 0.5rem;
+}
+
+.file-upload-compact .files-header h3 {
+  font-size: 0.65rem;
 }
 
 /* Responsive */

@@ -15,6 +15,32 @@ const api = axios.create({
   // Let axios/browser set it automatically with boundary
 });
 
+/**
+ * Axios read timeout for run report generation (must stay aligned with
+ * backend/app/utils/report_timeouts.py — compute_report_wait_timeout_seconds).
+ */
+export function reportGenerationTimeoutMs(
+  totalBytes?: number,
+  totalRecords?: number
+): number {
+  const MB = 1024 * 1024;
+  const mb =
+    typeof totalBytes === 'number' && totalBytes > 0 ? totalBytes / MB : 0;
+  let sec: number;
+  if (mb <= 0) sec = 180;
+  else if (mb <= 200) sec = 180 + mb * 0.5;
+  else if (mb <= 500) sec = 280 + (mb - 200) * 1.2;
+  else sec = 640 + (mb - 500) * 3;
+  const rec =
+    typeof totalRecords === 'number' && totalRecords > 0 ? totalRecords : 0;
+  if (rec > 2_000_000) {
+    sec = Math.max(sec, 400 + rec / 8000);
+  }
+  sec = Math.min(Math.max(sec, 180), 10800);
+  // Extra headroom so the client does not abort before the server budget
+  return Math.ceil(sec * 1000) + 120_000;
+}
+
 export interface UploadedFile {
   file_id: string;
   filename: string;
@@ -137,6 +163,7 @@ export interface RunInfo {
   report_status: string;
   categories: string[];
   files: UploadedFile[];
+  base_url?: string;
 }
 
 export const listRuns = async (): Promise<{ runs: RunInfo[] }> => {
@@ -155,6 +182,7 @@ export const deleteRun = async (runId: string): Promise<{ message: string }> => 
 };
 
 export interface RunTargets {
+  application_name?: string;
   availability_target?: number;
   avg_response_time_target?: number;
   error_rate_target?: number;
@@ -173,7 +201,12 @@ export const saveRunTargets = async (runId: string, targets: RunTargets): Promis
   return response.data;
 };
 
-export const generateRunReport = async (runId: string, regenerate: boolean = false): Promise<{
+export const generateRunReport = async (
+  runId: string,
+  regenerate: boolean = false,
+  totalSizeBytes?: number,
+  totalRecords?: number
+): Promise<{
   success: boolean;
   run_id: string;
   file_count: number;
@@ -185,7 +218,11 @@ export const generateRunReport = async (runId: string, regenerate: boolean = fal
     ppt: string;
   };
 }> => {
-  const response = await api.post(`/api/runs/${runId}/generate-report?regenerate=${regenerate}`);
+  const response = await api.post(
+    `/api/runs/${runId}/generate-report?regenerate=${regenerate}`,
+    undefined,
+    { timeout: reportGenerationTimeoutMs(totalSizeBytes, totalRecords) }
+  );
   return response.data;
 };
 

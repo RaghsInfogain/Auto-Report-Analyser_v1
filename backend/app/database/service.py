@@ -16,6 +16,13 @@ from .models import (
 )
 
 
+def _dominant_jmeter_base_url_for_files(files: List[UploadedFile]) -> str:
+    from app.utils.jmeter_base_url import dominant_base_url_for_paths
+
+    paths = [f.file_path for f in files if f.category == "jmeter"]
+    return dominant_base_url_for_paths(paths) if paths else ""
+
+
 class DatabaseService:
     """Service class for database operations"""
     
@@ -200,7 +207,8 @@ class DatabaseService:
                 'uploaded_at': run.uploaded_at.isoformat() if run.uploaded_at else None,
                 'report_status': overall_status,
                 'categories': categories,
-                'files': files_data
+                'files': files_data,
+                'base_url': _dominant_jmeter_base_url_for_files(files),
             })
         
         return result
@@ -244,7 +252,9 @@ class DatabaseService:
         error_rate_target: Optional[float] = None,
         throughput_target: Optional[float] = None,
         p95_target: Optional[float] = None,
-        sla_compliance_target: Optional[float] = None
+        sla_compliance_target: Optional[float] = None,
+        application_name: Optional[str] = None,
+        update_application_name: bool = False,
     ) -> RunTarget:
         """Save or update target values for a run"""
         existing = db.query(RunTarget).filter(RunTarget.run_id == run_id).first()
@@ -261,6 +271,8 @@ class DatabaseService:
                 existing.p95_target = p95_target
             if sla_compliance_target is not None:
                 existing.sla_compliance_target = sla_compliance_target
+            if update_application_name:
+                existing.application_name = (application_name or "").strip() or None
             existing.updated_at = datetime.utcnow()
             db.commit()
             db.refresh(existing)
@@ -272,7 +284,8 @@ class DatabaseService:
             error_rate_target=error_rate_target,
             throughput_target=throughput_target,
             p95_target=p95_target,
-            sla_compliance_target=sla_compliance_target
+            sla_compliance_target=sla_compliance_target,
+            application_name=(application_name or "").strip() or None if update_application_name else None,
         )
         db.add(db_target)
         db.commit()

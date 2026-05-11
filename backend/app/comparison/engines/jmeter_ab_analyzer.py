@@ -9,12 +9,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from app.utils.jmeter_outcome import include_in_response_time_stats, is_jmeter_error_outcome
+
 
 def _is_error_sample(d: Dict[str, Any]) -> bool:
-    if not d.get("success", True):
-        return True
-    rc = str(d.get("response_code", "") or "")
-    return rc.startswith("4") or rc.startswith("5")
+    return is_jmeter_error_outcome(d)
+
+
+def _is_passed_for_response_time(d: Dict[str, Any]) -> bool:
+    """Match main analyzer: success + not HTTP 4xx/5xx."""
+    return include_in_response_time_stats(d)
 
 
 def _calc_stats(values: np.ndarray) -> Dict[str, float]:
@@ -71,13 +75,15 @@ def _dataset_kpis(records: List[Dict[str, Any]]) -> Dict[str, Any]:
             "latency": _calc_stats(np.array([])),
             "connect_time": _calc_stats(np.array([])),
         }
-    sample_times = np.array([float(d.get("sample_time") or 0) for d in records], dtype=float)
-    latencies = np.array([float(d.get("latency") or 0) for d in records], dtype=float)
-    connects = np.array([float(d.get("connect_time") or 0) for d in records], dtype=float)
+    passed = [d for d in records if _is_passed_for_response_time(d)]
+    sample_times = np.array([float(d.get("sample_time") or 0) for d in passed], dtype=float)
+    latencies = np.array([float(d.get("latency") or 0) for d in passed], dtype=float)
+    connects = np.array([float(d.get("connect_time") or 0) for d in passed], dtype=float)
     ts_list = [int(d.get("timestamp") or 0) for d in records if d.get("timestamp")]
     err = sum(1 for d in records if _is_error_sample(d))
     duration_sec = (max(ts_list) - min(ts_list)) / 1000.0 if len(ts_list) > 1 else 0.0
-    throughput = n / duration_sec if duration_sec > 0 else 0.0
+    passed = n - err
+    throughput = passed / duration_sec if duration_sec > 0 else 0.0
     return {
         "sample_count": n,
         "error_count": err,
@@ -122,7 +128,10 @@ def _per_label(records: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         groups[lb].append(d)
     out: Dict[str, Dict[str, Any]] = {}
     for lb, items in groups.items():
-        st = np.array([float(x.get("sample_time") or 0) for x in items], dtype=float)
+        st = np.array(
+            [float(x.get("sample_time") or 0) for x in items if _is_passed_for_response_time(x)],
+            dtype=float
+        )
         err = sum(1 for x in items if _is_error_sample(x))
         n = len(items)
         stats = _calc_stats(st)
@@ -158,7 +167,8 @@ def _time_buckets(records: List[Dict[str, Any]], num_buckets: int = 24) -> List[
         idx = int((t - t0) / 1000.0 / bucket_sec)
         idx = min(max(idx, 0), num_buckets - 1)
         b = buckets[idx]
-        b["rts"].append(float(d.get("sample_time") or 0))
+        if _is_passed_for_response_time(d):
+            b["rts"].append(float(d.get("sample_time") or 0))
         b["threads"].append(int(d.get("all_threads") or 0))
         b["n"] += 1
         if _is_error_sample(d):
@@ -187,6 +197,7 @@ def _threads_vs_rt_bins(records: List[Dict[str, Any]], bins: int = 5) -> List[Di
     pairs = [(int(d.get("all_threads") or 0), float(d.get("sample_time") or 0)) for d in records]
     threads = np.array([p[0] for p in pairs], dtype=float)
     rts = np.array([p[1] for p in pairs], dtype=float)
+    passed = np.array([_is_passed_for_response_time(d) for d in records], dtype=bool)
     if len(threads) == 0:
         return []
     edges = np.linspace(threads.min(), max(threads.max(), threads.min() + 1), bins + 1)
@@ -196,12 +207,14 @@ def _threads_vs_rt_bins(records: List[Dict[str, Any]], bins: int = 5) -> List[Di
         mask = (threads >= lo) & (threads <= hi if i == bins - 1 else threads < hi)
         if not np.any(mask):
             continue
-        sub = rts[mask]
+        ok = mask & passed
+        sub = rts[ok]
         err_n = sum(1 for j in range(len(records)) if bool(mask[j]) and _is_error_sample(records[j]))
+        mean_rt = float(np.mean(sub)) if np.any(ok) else 0.0
         rows.append({
             "thread_range": f"{int(lo)}–{int(hi)}",
             "samples": int(np.sum(mask)),
-            "mean_rt_ms": round(float(np.mean(sub)), 2),
+            "mean_rt_ms": round(mean_rt, 2),
             "error_pct": round(100.0 * err_n / max(int(np.sum(mask)), 1), 2),
         })
     return rows

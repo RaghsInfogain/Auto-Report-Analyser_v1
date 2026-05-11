@@ -11,6 +11,7 @@ interface TargetValuesModalProps {
 }
 
 const DEFAULT_TARGETS: RunTargets = {
+  application_name: '',
   availability_target: 99,
   avg_response_time_target: 2000,
   error_rate_target: 1,
@@ -18,6 +19,20 @@ const DEFAULT_TARGETS: RunTargets = {
   p95_target: 3000,
   sla_compliance_target: 95
 };
+
+/** Coerce API / JSON values to finite numbers for target fields. */
+function asTargetNumber(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = parseFloat(value);
+    if (Number.isFinite(n)) {
+      return n;
+    }
+  }
+  return fallback;
+}
 
 const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
   isOpen,
@@ -38,14 +53,24 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
       getRunTargets(runId)
         .then((res) => {
           if (res.targets && typeof res.targets === 'object') {
-            const t = res.targets as Record<string, number | undefined>;
+            const t = res.targets as Record<string, unknown>;
             setTargets({
-              availability_target: t.availability_target ?? DEFAULT_TARGETS.availability_target,
-              avg_response_time_target: t.avg_response_time_target ?? DEFAULT_TARGETS.avg_response_time_target,
-              error_rate_target: t.error_rate_target ?? DEFAULT_TARGETS.error_rate_target,
-              throughput_target: t.throughput_target ?? DEFAULT_TARGETS.throughput_target,
-              p95_target: t.p95_target ?? DEFAULT_TARGETS.p95_target,
-              sla_compliance_target: t.sla_compliance_target ?? DEFAULT_TARGETS.sla_compliance_target
+              application_name:
+                t.application_name == null || t.application_name === ''
+                  ? ''
+                  : String(t.application_name),
+              availability_target: asTargetNumber(t.availability_target, DEFAULT_TARGETS.availability_target as number),
+              avg_response_time_target: asTargetNumber(
+                t.avg_response_time_target,
+                DEFAULT_TARGETS.avg_response_time_target as number
+              ),
+              error_rate_target: asTargetNumber(t.error_rate_target, DEFAULT_TARGETS.error_rate_target as number),
+              throughput_target: asTargetNumber(t.throughput_target, DEFAULT_TARGETS.throughput_target as number),
+              p95_target: asTargetNumber(t.p95_target, DEFAULT_TARGETS.p95_target as number),
+              sla_compliance_target: asTargetNumber(
+                t.sla_compliance_target,
+                DEFAULT_TARGETS.sla_compliance_target as number
+              )
             });
           } else {
             setTargets({ ...DEFAULT_TARGETS });
@@ -60,6 +85,10 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
   }, [isOpen, runId]);
 
   const handleChange = (key: keyof RunTargets, value: string) => {
+    if (key === 'application_name') {
+      setTargets((prev) => ({ ...prev, application_name: value }));
+      return;
+    }
     const num = value === '' ? undefined : parseFloat(value);
     setTargets((prev) => ({ ...prev, [key]: num }));
   };
@@ -88,13 +117,27 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
           <button onClick={onClose} className="target-modal-close" aria-label="Close">×</button>
         </div>
         <p className="target-modal-subtitle">
-          Enter your SLA/target values. These will be saved with {runLabel || runId} and used for report generation.
+          Saved with <strong>{runLabel || runId}</strong> and used when generating the report.
         </p>
 
         {loading ? (
           <div className="target-modal-loading">Loading saved targets...</div>
         ) : (
           <div className="target-modal-form">
+            <div className="target-field target-field-full">
+              <label htmlFor="app_name">Application name (report title)</label>
+              <input
+                id="app_name"
+                type="text"
+                value={targets.application_name ?? ''}
+                onChange={(e) => handleChange('application_name', e.target.value)}
+                placeholder="e.g. BusinessNext CRM"
+                autoComplete="off"
+                title="Shown in the report header. Blank = inferred from JMeter data."
+              />
+              <span className="target-hint">Report header; leave blank to infer from JMeter.</span>
+            </div>
+
             <div className="target-field">
               <label htmlFor="availability">Availability (%)</label>
               <input
@@ -106,12 +149,12 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 value={targets.availability_target ?? ''}
                 onChange={(e) => handleChange('availability_target', e.target.value)}
                 placeholder="99"
+                title="e.g. 99.9 for 99.9%"
               />
-              <span className="target-hint">e.g. 99.9 for 99.9%</span>
             </div>
 
             <div className="target-field">
-              <label htmlFor="avg_response">Average Response Time (ms)</label>
+              <label htmlFor="avg_response">Avg response (ms)</label>
               <input
                 id="avg_response"
                 type="number"
@@ -120,12 +163,12 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 value={targets.avg_response_time_target ?? ''}
                 onChange={(e) => handleChange('avg_response_time_target', e.target.value)}
                 placeholder="2000"
+                title="e.g. 2000 for 2 seconds"
               />
-              <span className="target-hint">e.g. 2000 for 2 seconds</span>
             </div>
 
             <div className="target-field">
-              <label htmlFor="error_rate">Error Rate (%)</label>
+              <label htmlFor="error_rate">Error rate (%)</label>
               <input
                 id="error_rate"
                 type="number"
@@ -135,12 +178,12 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 value={targets.error_rate_target ?? ''}
                 onChange={(e) => handleChange('error_rate_target', e.target.value)}
                 placeholder="1"
+                title="e.g. 1 for 1%"
               />
-              <span className="target-hint">e.g. 1 for 1%</span>
             </div>
 
             <div className="target-field">
-              <label htmlFor="throughput">Throughput (req/sec)</label>
+              <label htmlFor="throughput">Throughput (req/s)</label>
               <input
                 id="throughput"
                 type="number"
@@ -149,12 +192,12 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 value={targets.throughput_target ?? ''}
                 onChange={(e) => handleChange('throughput_target', e.target.value)}
                 placeholder="100"
+                title="Requests per second"
               />
-              <span className="target-hint">requests per second</span>
             </div>
 
             <div className="target-field">
-              <label htmlFor="p95">95th Percentile (ms)</label>
+              <label htmlFor="p95">95th percentile (ms)</label>
               <input
                 id="p95"
                 type="number"
@@ -163,12 +206,12 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 value={targets.p95_target ?? ''}
                 onChange={(e) => handleChange('p95_target', e.target.value)}
                 placeholder="3000"
+                title="e.g. 3000 for 3 seconds"
               />
-              <span className="target-hint">e.g. 3000 for 3 seconds</span>
             </div>
 
             <div className="target-field">
-              <label htmlFor="sla">SLA Compliance (%)</label>
+              <label htmlFor="sla">SLA compliance (%)</label>
               <input
                 id="sla"
                 type="number"
@@ -178,8 +221,8 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 value={targets.sla_compliance_target ?? ''}
                 onChange={(e) => handleChange('sla_compliance_target', e.target.value)}
                 placeholder="95"
+                title="% of requests meeting SLA"
               />
-              <span className="target-hint">% of requests meeting SLA</span>
             </div>
           </div>
         )}

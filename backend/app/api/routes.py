@@ -31,14 +31,33 @@ from app.report_generator.lighthouse_html_generator import LighthouseHTMLGenerat
 from app.report_generator.pdf_generator import PDFReportGenerator
 from app.report_generator.ppt_generator import PPTReportGenerator
 from app.report_generator.jmeter_ab_comparison_report import generate_jmeter_ab_comparison_html
-from app.comparison.engines.jmeter_ab_analyzer import analyze_jmeter_ab
+from app.integrations.jmeter_compare_v2 import (
+    build_jmeter_comparison_v2,
+    compact_analysis_for_api,
+    render_stored_v2_payload,
+)
 from app.database import get_db
-from app.database.service import DatabaseService
+from app.database.service import DatabaseService, _dominant_jmeter_base_url_for_files
 from app.database.models import UploadedFile, AnalysisResult, GeneratedReport
 from app.ai.chatbot_engine import PerformanceChatbot
 from app.utils.progress_tracker import ReportProgressTracker
+from app.utils.report_timeouts import (
+    compute_report_wait_timeout_seconds,
+    estimate_run_max_record_count,
+    estimate_run_total_bytes,
+)
 
 router = APIRouter()
+
+
+def _attach_jmeter_raw_source_path(metrics: Dict[str, Any], source_path: str) -> None:
+    """Store path to raw JTL/CSV on the summary so reports can re-parse for the combined HTML layout."""
+    if not source_path:
+        return
+    summary = dict(metrics.get("summary") or {})
+    summary["_jmeter_raw_source_path"] = str(source_path)
+    metrics["summary"] = summary
+
 
 # Timeout decorator for endpoints
 def timeout_handler(timeout_seconds: float):
@@ -151,7 +170,7 @@ async def jmeter_compare_ab(
             data_a = _load_jmeter_records_for_run(db, run_id_a or "")
             data_b = _load_jmeter_records_for_run(db, run_id_b or "")
 
-        analysis = analyze_jmeter_ab(
+        html, analysis = build_jmeter_comparison_v2(
             data_a,
             data_b,
             name_a=name_a,
@@ -161,7 +180,6 @@ async def jmeter_compare_ab(
             build_a=build_a,
             build_b=build_b,
         )
-        html = generate_jmeter_ab_comparison_html(analysis)
         exec_s = analysis.get("executive_summary") or {}
         verdict = exec_s.get("verdict")
         traffic = exec_s.get("traffic_signal")
@@ -203,17 +221,17 @@ async def jmeter_compare_ab(
                 headers["X-Comparison-Report-Id"] = comparison_report_id
             return HTMLResponse(content=html, headers=headers)
 
-        payload: Dict[str, Any] = dict(analysis)
+        api_body: Dict[str, Any] = compact_analysis_for_api(analysis)
         if comparison_report_id:
-            payload["comparison_report_id"] = comparison_report_id
-            payload["saved"] = True
-            payload["report_urls"] = {
+            api_body["comparison_report_id"] = comparison_report_id
+            api_body["saved"] = True
+            api_body["report_urls"] = {
                 "html": f"/api/jmeter/comparison-reports/{comparison_report_id}/html",
                 "html_download": f"/api/jmeter/comparison-reports/{comparison_report_id}/html?download=1",
             }
         else:
-            payload["saved"] = False
-        return JSONResponse(content=payload)
+            api_body["saved"] = False
+        return JSONResponse(content=api_body)
     finally:
         for p in tmp_paths:
             try:
@@ -268,6 +286,10 @@ async def regenerate_jmeter_comparison_report(comparison_report_id: str, db: Ses
     if not row:
         raise HTTPException(status_code=404, detail="Comparison report not found")
 
+    analysis = row.analysis_json
+    if not isinstance(analysis, dict):
+        analysis = {}
+
     if row.source_type == "runs" and row.run_id_a and row.run_id_b:
         try:
             data_a = _load_jmeter_records_for_run(db, row.run_id_a)
@@ -277,7 +299,7 @@ async def regenerate_jmeter_comparison_report(comparison_report_id: str, db: Ses
                 status_code=400,
                 detail="Could not reload JMeter data for one or both runs; runs may have been deleted.",
             )
-        analysis = analyze_jmeter_ab(
+        html, analysis = build_jmeter_comparison_v2(
             data_a,
             data_b,
             name_a=row.name_a,
@@ -287,12 +309,13 @@ async def regenerate_jmeter_comparison_report(comparison_report_id: str, db: Ses
             build_a=row.build_a,
             build_b=row.build_b,
         )
+    elif analysis.get("report_engine") == "comparison_v2" and analysis.get("report_payload"):
+        html = render_stored_v2_payload(analysis["report_payload"])
     else:
-        analysis = row.analysis_json
         if not analysis:
             raise HTTPException(status_code=500, detail="No stored analysis to regenerate from")
+        html = generate_jmeter_ab_comparison_html(analysis)
 
-    html = generate_jmeter_ab_comparison_html(analysis)
     path = Path(row.html_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")
@@ -379,6 +402,7 @@ async def generate_complete_report(file_id: str, db: Session = Depends(get_db)):
                 data = JSONParser.parse(file_path, category)
             metrics_obj = JMeterAnalyzerV2.analyze(data)
             metrics = metrics_obj.dict()
+            _attach_jmeter_raw_source_path(metrics, file_path)
             record_count = len(data) if isinstance(data, list) else 1
         elif category == "ui_performance":
             if file_path.endswith(".json"):
@@ -710,8 +734,8 @@ async def upload_files(
                 raise HTTPException(status_code=400, detail=f"Error parsing file {Path(file_path).name}: {e}")
         
         # JMeter merge: Simple concatenation (extend all records)
-        merged_data = JTLParserV2.merge_data(all_jmeter_data)
-        print(f"  ✓ Merged {len(merged_data):,} total records (concatenated)")
+        merged_data = JTLParserV2.merge_data(all_jmeter_data, tag_source_index=True)
+        print(f"  ✓ Merged {len(merged_data):,} total records (concatenated, source-index tagged)")
         
         # Save merged file as CSV (JTL format)
         MERGED_DIR.mkdir(exist_ok=True)
@@ -879,7 +903,8 @@ async def get_run(run_id: str, db: Session = Depends(get_db)):
         "categories": categories,
         "report_status": overall_status,
         "uploaded_at": files[0].uploaded_at.isoformat() if files else None,
-        "files": [f.to_dict() for f in files]
+        "files": [f.to_dict() for f in files],
+        "base_url": _dominant_jmeter_base_url_for_files(files),
     }
 
 @router.post("/runs/{run_id}/reset")
@@ -956,10 +981,18 @@ async def save_run_targets(
     db: Session = Depends(get_db),
     body: dict = Body(...)
 ):
-    """Save target values for a run (Availability, Avg Response Time, Error Rate, Throughput, P95, SLA Compliance)"""
+    """Save target values for a run (Availability, Avg Response Time, Error Rate, Throughput, P95, SLA Compliance, Application Name)"""
     files = DatabaseService.get_files_by_run_id(db, run_id)
     if not files:
         raise HTTPException(status_code=404, detail="Run not found")
+    update_app = "application_name" in body
+    raw_an = body.get("application_name")
+    an_val: Optional[str] = None
+    if isinstance(raw_an, str):
+        an_val = raw_an.strip() or None
+    elif raw_an is not None:
+        an_val = str(raw_an).strip() or None
+
     target = DatabaseService.save_run_targets(
         db=db,
         run_id=run_id,
@@ -968,7 +1001,9 @@ async def save_run_targets(
         error_rate_target=body.get("error_rate_target"),
         throughput_target=body.get("throughput_target"),
         p95_target=body.get("p95_target"),
-        sla_compliance_target=body.get("sla_compliance_target")
+        sla_compliance_target=body.get("sla_compliance_target"),
+        application_name=an_val,
+        update_application_name=update_app,
     )
     return {"run_id": run_id, "targets": target.to_dict()}
 
@@ -1093,14 +1128,13 @@ async def get_report_progress(run_id: str):
     return progress
 
 @router.post("/runs/{run_id}/generate-report")
-@timeout_handler(180.0)  # 3 minutes timeout for report generation
 async def generate_run_report(run_id: str, db: Session = Depends(get_db), regenerate: bool = Query(False, description="Regenerate reports from existing analysis")):
     """
     Generate consolidated report for a run (all files in the run)
     Analyzes all files and creates a single combined report
     If regenerate=True, regenerates reports from existing analysis
-    
-    Timeout: 3 minutes maximum
+
+    Wait budget scales with on-disk size (see app.utils.report_timeouts); large JTLs >500 MiB get proportionally longer.
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -1113,10 +1147,15 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
     
     if not files:
         raise HTTPException(status_code=404, detail="Run not found")
-    
-    # Set maximum timeout (3 minutes)
-    MAX_TIMEOUT = 180  # 3 minutes in seconds
-    
+
+    total_bytes = estimate_run_total_bytes(files)
+    rec_est = estimate_run_max_record_count(files)
+    MAX_TIMEOUT = compute_report_wait_timeout_seconds(total_bytes, rec_est)
+    print(
+        f"  Report wait budget: {MAX_TIMEOUT:.0f}s for ~{total_bytes / (1024 * 1024):.1f} MiB "
+        f"(unique paths), ~{rec_est:,} rows est."
+    )
+
     # CRITICAL: If regenerate=True, ALWAYS clear existing progress and start fresh
     print(f"\n{'='*60}")
     print(f"REPORT GENERATION REQUEST")
@@ -1306,6 +1345,9 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         # Fetch run targets (saved from Target Values modal) for report scoring
         run_targets = None
         db_target = DatabaseService.get_run_targets(db, run_id)
+        application_display_name = None
+        if db_target and (db_target.application_name or "").strip():
+            application_display_name = (db_target.application_name or "").strip()
         if db_target:
             run_targets = {
                 "availability_target": db_target.availability_target,
@@ -1391,8 +1433,13 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     print(f"Starting analysis of merged data ({len(merged_data):,} records)...")
                     analysis_start = time.time()
                     try:
-                        metrics_obj = JMeterAnalyzerV2.analyze(merged_data, targets=run_targets)
+                        metrics_obj = JMeterAnalyzerV2.analyze(
+                            merged_data,
+                            targets=run_targets,
+                            application_display_name=application_display_name,
+                        )
                         metrics = metrics_obj.dict()
+                        _attach_jmeter_raw_source_path(metrics, merged_file_path)
                         analysis_duration = time.time() - analysis_start
                         print(f"✓ Analysis complete in {analysis_duration:.1f}s. Total samples: {metrics.get('total_samples', 0):,}")
                         ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, f"Analysis completed: {metrics.get('total_samples', 0):,} samples")
@@ -1420,7 +1467,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                  (d.get("response_code") and str(d.get("response_code")).startswith(("4", "5"))))
                     timestamps = [d.get("timestamp") for d in merged_data if d.get("timestamp")]
                     duration = (max(timestamps) - min(timestamps)) / 1000 if timestamps and len(timestamps) > 1 else 1
-                    throughput = len(merged_data) / duration if duration > 0 else 0
+                    passed = len(merged_data) - errors
+                    throughput = passed / duration if duration > 0 else 0
                     
                     # Update file info with calculated values
                     for file_info in file_info_list:
@@ -1496,8 +1544,13 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     print(f"Starting analysis of data ({len(merged_data):,} records)...")
                     analysis_start = time.time()
                     try:
-                        metrics_obj = JMeterAnalyzerV2.analyze(merged_data, targets=run_targets)
+                        metrics_obj = JMeterAnalyzerV2.analyze(
+                            merged_data,
+                            targets=run_targets,
+                            application_display_name=application_display_name,
+                        )
                         metrics = metrics_obj.dict()
+                        _attach_jmeter_raw_source_path(metrics, single_file_path)
                         analysis_duration = time.time() - analysis_start
                         print(f"✓ Analysis complete in {analysis_duration:.1f}s. Total samples: {metrics.get('total_samples', 0):,}")
                         ReportProgressTracker.update_task(run_id, "analysis", "completed", 100, f"Analysis completed: {metrics.get('total_samples', 0):,} samples")
@@ -1513,7 +1566,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                  (d.get("response_code") and str(d.get("response_code")).startswith(("4", "5"))))
                     timestamps = [d.get("timestamp") for d in merged_data if d.get("timestamp")]
                     duration = (max(timestamps) - min(timestamps)) / 1000 if timestamps and len(timestamps) > 1 else 1
-                    throughput = len(merged_data) / duration if duration > 0 else 0
+                    passed = len(merged_data) - errors
+                    throughput = passed / duration if duration > 0 else 0
                     
                     file_info_list = [{
                         "filename": single_file.filename,
@@ -1592,7 +1646,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 timestamps.append(ts)
                         
                         duration = (max(timestamps) - min(timestamps)) / 1000 if timestamps and len(timestamps) > 1 else 1
-                        throughput = len(data) / duration if duration > 0 else 0
+                        passed = len(data) - errors
+                        throughput = passed / duration if duration > 0 else 0
                         
                         file_info_list.append({
                             "filename": db_file.filename,
@@ -1604,14 +1659,22 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     if all_jmeter_data:
                         # Merge all JTL data
                         print(f"Starting merge of {len(all_jmeter_data)} file(s)...")
-                        merged_data = JTLParserV2.merge_data(all_jmeter_data)
-                        print(f"✓ Merge complete: {len(merged_data):,} total records")
+                        merged_data = JTLParserV2.merge_data(all_jmeter_data, tag_source_index=True)
+                        print(f"✓ Merge complete: {len(merged_data):,} total records (source-index tagged)")
                         
                         # Analyze merged data once
                         print(f"Starting analysis of merged data ({len(merged_data):,} records)...")
                         try:
-                            metrics_obj = JMeterAnalyzerV2.analyze(merged_data, targets=run_targets)
+                            metrics_obj = JMeterAnalyzerV2.analyze(
+                                merged_data,
+                                targets=run_targets,
+                                application_display_name=application_display_name,
+                            )
                             metrics = metrics_obj.dict()
+                            _attach_jmeter_raw_source_path(
+                                metrics,
+                                category_files[0].file_path if category_files else "",
+                            )
                             print(f"✓ Analysis complete. Total samples: {metrics.get('total_samples', 0):,}")
                         except Exception as e:
                             print(f"✗ Analysis failed: {str(e)}")
@@ -2425,14 +2488,18 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     "Final Conclusion"
                 ]
             elif primary_category == "jmeter":
-                # JMeter specific sections (actual section headers from HTML generator)
-                # Note: JMeter uses emoji prefixes in section headers
+                # JMeter HTML layout (v3+): issues + deep health + resolution plan; business impact block removed.
+                # Action plan heading: classic HTML generator vs combined load report differ.
                 required_sections = [
-                    "⚠️ Issues",  # Actual header: "⚠️ Issues"
-                    "🚀 Recommended Action Plan",  # Actual header: "🚀 Recommended Action Plan"
-                    "💰 Business Impact Assessment",  # Actual header: "💰 Business Impact Assessment"
-                    "🎯 Success Metrics & Targets"  # Actual header: "🎯 Success Metrics & Targets"
+                    'id="section-issues"',
+                    'id="section-deep-assessment"',
+                    'id="section-resolution-plan"',
+                    "🎯 Success Metrics & Targets",
                 ]
+                _jmeter_action_plan_titles = (
+                    "🚀 Recommended Action Plan",
+                    "Phased optimisation plan",
+                )
             else:
                 # For other categories, skip section verification
                 required_sections = []
@@ -2440,6 +2507,13 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             
             if required_sections:
                 missing = [s for s in required_sections if s not in html_content_check]
+                if (
+                    primary_category == "jmeter"
+                    and not any(t in html_content_check for t in _jmeter_action_plan_titles)
+                ):
+                    missing.append(
+                        "Remediation roadmap (🚀 Recommended Action Plan or Phased optimisation plan)"
+                    )
                 if missing:
                     error_msg = f"Report saved but missing sections: {', '.join(missing)}"
                     print(f"\n  ✗ {error_msg}")
@@ -2639,6 +2713,7 @@ async def analyze_files(file_ids: List[str], db: Session = Depends(get_db)):
                 data = JSONParser.parse(file_path, category)
             metrics_obj = JMeterAnalyzerV2.analyze(data)
             metrics = metrics_obj.dict()
+            _attach_jmeter_raw_source_path(metrics, file_path)
         elif category == "ui_performance":
             if file_path.endswith(".json"):
                 data = JSONParser.parse(file_path, category)

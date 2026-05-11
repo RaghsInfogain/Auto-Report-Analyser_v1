@@ -1,11 +1,18 @@
 import numpy as np
 from typing import List, Dict, Tuple, Any
 from app.models.jmeter import JMeterMetrics
+from app.utils.jmeter_url import is_jmeter_transaction_controller_by_url
+from app.utils.jmeter_outcome import is_jmeter_error_outcome, include_in_response_time_stats
 from collections import Counter, defaultdict
 from datetime import datetime
 
 class JMeterAnalyzer:
     """Analyzer for JMeter test results with comprehensive metrics and grading"""
+
+    @staticmethod
+    def _include_in_response_time_stats(d: dict) -> bool:
+        """Response-time stats: exclude failed samples and HTTP 4xx/5xx (not only success=false)."""
+        return include_in_response_time_stats(d)
     
     # Grade definitions with descriptions
     GRADE_DEFINITIONS = {
@@ -211,9 +218,9 @@ class JMeterAnalyzer:
             
             interval["total_count"] += 1
             
-            # Add response time
+            # Add response time (successful samples only)
             sample_time = d.get("sample_time")
-            if sample_time is not None:
+            if sample_time is not None and JMeterAnalyzer._include_in_response_time_stats(d):
                 interval["response_times"].append(sample_time)
             
             # Add VUsers (all_threads)
@@ -221,8 +228,8 @@ class JMeterAnalyzer:
             if all_threads is not None:
                 interval["vusers"].append(all_threads)
             
-            # Count pass/fail
-            if d.get("success") is False or (d.get("response_code") and str(d.get("response_code")).startswith(("4", "5"))):
+            # Count pass/fail (align with global error rate)
+            if is_jmeter_error_outcome(d):
                 interval["fail_count"] += 1
             else:
                 interval["pass_count"] += 1
@@ -298,13 +305,16 @@ class JMeterAnalyzer:
                 "timeline": "2-4 weeks"
             })
         
-        # Issue 3: Identify slowest endpoints
-        slowest_endpoints = sorted(endpoint_stats.items(), 
-                                   key=lambda x: x[1].get("avg_response", 0), 
-                                   reverse=True)[:3]
+        # Issue 3: Identify slowest endpoints (only labels with at least one successful RT sample)
+        with_avg = [(k, v) for k, v in endpoint_stats.items() if v.get("avg_response") is not None]
+        slowest_endpoints = sorted(
+            with_avg,
+            key=lambda x: x[1].get("avg_response", 0),
+            reverse=True
+        )[:3]
         
         for endpoint, stats in slowest_endpoints:
-            avg_resp = stats.get("avg_response", 0) / 1000  # Convert to seconds
+            avg_resp = float(stats["avg_response"]) / 1000  # Convert to seconds
             if avg_resp > 10:
                 issues.append({
                     "title": f"Critical Endpoint Performance - {endpoint}",
@@ -447,14 +457,12 @@ class JMeterAnalyzer:
         if not data:
             raise ValueError("No data provided for analysis")
         
-        # Extract metrics
-        latency_values = [d.get("latency") for d in data if d.get("latency") is not None]
-        sample_time_values = [d.get("sample_time") for d in data if d.get("sample_time") is not None]
-        connect_time_values = [d.get("connect_time") for d in data if d.get("connect_time") is not None]
+        # Extract metrics (response-time family: success=true only)
+        latency_values = [d.get("latency") for d in data if d.get("latency") is not None and JMeterAnalyzer._include_in_response_time_stats(d)]
+        sample_time_values = [d.get("sample_time") for d in data if d.get("sample_time") is not None and JMeterAnalyzer._include_in_response_time_stats(d)]
+        connect_time_values = [d.get("connect_time") for d in data if d.get("connect_time") is not None and JMeterAnalyzer._include_in_response_time_stats(d)]
         
-        # Calculate errors
-        errors = sum(1 for d in data if d.get("success") is False or 
-                    (d.get("response_code") and str(d.get("response_code")).startswith(("4", "5"))))
+        errors = sum(1 for d in data if is_jmeter_error_outcome(d))
         
         # Calculate test duration
         if data and data[0].get("timestamp"):
@@ -462,7 +470,8 @@ class JMeterAnalyzer:
             if timestamps:
                 duration_seconds = (max(timestamps) - min(timestamps)) / 1000
                 duration_hours = duration_seconds / 3600
-                throughput = len(data) / duration_seconds if duration_seconds > 0 else 0
+                passed = len(data) - errors
+                throughput = passed / duration_seconds if duration_seconds > 0 else 0
             else:
                 duration_seconds = 0
                 duration_hours = 0
@@ -480,11 +489,12 @@ class JMeterAnalyzer:
         transactions = {}
         requests = {}
         
+        def _is_tx_controller_row(d: Dict) -> bool:
+            return is_jmeter_transaction_controller_by_url(d.get("url"))
+
         for d in data:
             label = d.get("label") or "Unknown"
-            is_transaction = label.startswith("T") or not label.startswith("api")
-            target_dict = transactions if is_transaction else requests
-            
+            target_dict = transactions if _is_tx_controller_row(d) else requests
             if label not in target_dict:
                 target_dict[label] = []
             target_dict[label].append(d)
@@ -493,8 +503,11 @@ class JMeterAnalyzer:
             """Analyze a group of endpoints (transactions or requests)"""
             endpoint_stats = {}
             for label, items in endpoint_data.items():
-                response_times = [d.get("sample_time") for d in items if d.get("sample_time") is not None]
-                label_errors = sum(1 for d in items if d.get("success") is False)
+                response_times = [
+                    d.get("sample_time") for d in items
+                    if d.get("sample_time") is not None and JMeterAnalyzer._include_in_response_time_stats(d)
+                ]
+                label_errors = sum(1 for d in items if is_jmeter_error_outcome(d))
                 
                 stats = JMeterAnalyzer.calculate_percentile_stats(response_times)
                 endpoint_stats[label] = {
@@ -521,27 +534,40 @@ class JMeterAnalyzer:
         response_time_stats = JMeterAnalyzer.calculate_percentile_stats(sample_time_values)
         
         # Calculate metrics for scoring
-        avg_response = response_time_stats.get("mean", 0)
-        avg_response_sec = avg_response / 1000 if avg_response else 0
-        p95_response = response_time_stats.get("p95", 0)
+        avg_response = response_time_stats.get("mean")
+        avg_response_sec = (float(avg_response) / 1000.0) if isinstance(avg_response, (int, float)) else 0.0
+        p95_response = response_time_stats.get("p95")
+        p95_response_val = float(p95_response) if isinstance(p95_response, (int, float)) else 0.0
         success_rate = (len(data) - errors) / len(data) * 100 if data else 0
         error_rate_pct = (errors / len(data) * 100) if data else 0
         
+        n_valid_rt = len(sample_time_values)
         # Calculate scores (out of 100)
         availability_score = JMeterAnalyzer.score_metric(success_rate, 99, "higher_is_better")
-        response_time_score = JMeterAnalyzer.score_metric(avg_response_sec, 2, "lower_is_better")
+        if n_valid_rt == 0:
+            # No successful latency data — do not treat as "perfect" 0s response time
+            response_time_score = 0
+            p95_score = 0
+        else:
+            response_time_score = JMeterAnalyzer.score_metric(avg_response_sec, 2, "lower_is_better")
+            p95_score = JMeterAnalyzer.score_metric(p95_response_val / 1000, 3, "lower_is_better")
         error_rate_score = JMeterAnalyzer.score_metric(error_rate_pct, 1, "lower_is_better")
         throughput_score = JMeterAnalyzer.score_metric(throughput, 100, "higher_is_better")
-        p95_score = JMeterAnalyzer.score_metric(p95_response / 1000, 3, "lower_is_better")
         
-        # SLA Compliance (requests < 2 seconds)
-        sla_compliant_2s = sum(1 for d in data if d.get("sample_time", 0) < 2000)
-        sla_compliant_3s = sum(1 for d in data if d.get("sample_time", 0) < 3000)
-        sla_compliant_5s = sum(1 for d in data if d.get("sample_time", 0) < 5000)
-        
-        sla_compliance_2s_pct = (sla_compliant_2s / len(data) * 100) if data else 0
-        sla_compliance_3s_pct = (sla_compliant_3s / len(data) * 100) if data else 0
-        sla_compliance_5s_pct = (sla_compliant_5s / len(data) * 100) if data else 0
+        # SLA Compliance among successful samples only
+        passed_sla = [d for d in data if JMeterAnalyzer._include_in_response_time_stats(d)]
+        n_p = len(passed_sla)
+        if n_p > 0:
+            sla_compliant_2s = sum(1 for d in passed_sla if d.get("sample_time", 0) < 2000)
+            sla_compliant_3s = sum(1 for d in passed_sla if d.get("sample_time", 0) < 3000)
+            sla_compliant_5s = sum(1 for d in passed_sla if d.get("sample_time", 0) < 5000)
+            sla_compliance_2s_pct = sla_compliant_2s / n_p * 100
+            sla_compliance_3s_pct = sla_compliant_3s / n_p * 100
+            sla_compliance_5s_pct = sla_compliant_5s / n_p * 100
+        else:
+            sla_compliance_2s_pct = 0
+            sla_compliance_3s_pct = 0
+            sla_compliance_5s_pct = 0
         
         sla_score = JMeterAnalyzer.score_metric(sla_compliance_2s_pct, 95, "higher_is_better")
         
@@ -595,7 +621,7 @@ class JMeterAnalyzer:
             "performance": {
                 "grade": perf_grade,
                 "score": round(performance_score, 1),
-                "reason": f"{avg_response_sec:.1f}s avg, {p95_response/1000:.1f}s 95th percentile",
+                "reason": f"{avg_response_sec:.1f}s avg, {p95_response_val/1000:.1f}s 95th percentile",
                 "class": perf_class,
                 "name": perf_category.get("name", "Performance"),
                 "icon": perf_category.get("icon", "⚡"),
@@ -656,14 +682,16 @@ class JMeterAnalyzer:
             "class": grade_class
         }
         
-        # Response time distribution for charts
+        # Response time distribution (successful samples only; % of passed per bucket)
+        _passed = [d for d in data if JMeterAnalyzer._include_in_response_time_stats(d)]
+        _n_p = len(_passed)
         rt_distribution = {
-            "under_1s": sum(1 for d in data if d.get("sample_time", 0) < 1000) / len(data) * 100 if data else 0,
-            "1_to_2s": sum(1 for d in data if 1000 <= d.get("sample_time", 0) < 2000) / len(data) * 100 if data else 0,
-            "2_to_3s": sum(1 for d in data if 2000 <= d.get("sample_time", 0) < 3000) / len(data) * 100 if data else 0,
-            "3_to_5s": sum(1 for d in data if 3000 <= d.get("sample_time", 0) < 5000) / len(data) * 100 if data else 0,
-            "5_to_10s": sum(1 for d in data if 5000 <= d.get("sample_time", 0) < 10000) / len(data) * 100 if data else 0,
-            "over_10s": sum(1 for d in data if d.get("sample_time", 0) >= 10000) / len(data) * 100 if data else 0,
+            "under_1s": sum(1 for d in _passed if d.get("sample_time", 0) < 1000) / _n_p * 100 if _n_p else 0,
+            "1_to_2s": sum(1 for d in _passed if 1000 <= d.get("sample_time", 0) < 2000) / _n_p * 100 if _n_p else 0,
+            "2_to_3s": sum(1 for d in _passed if 2000 <= d.get("sample_time", 0) < 3000) / _n_p * 100 if _n_p else 0,
+            "3_to_5s": sum(1 for d in _passed if 3000 <= d.get("sample_time", 0) < 5000) / _n_p * 100 if _n_p else 0,
+            "5_to_10s": sum(1 for d in _passed if 5000 <= d.get("sample_time", 0) < 10000) / _n_p * 100 if _n_p else 0,
+            "over_10s": sum(1 for d in _passed if d.get("sample_time", 0) >= 10000) / _n_p * 100 if _n_p else 0,
         }
         
         # Calculate time-series data for system behaviour graph

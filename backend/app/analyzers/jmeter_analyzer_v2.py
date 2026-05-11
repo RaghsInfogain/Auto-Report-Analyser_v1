@@ -2,36 +2,375 @@
 Simplified and efficient JMeter analyzer
 Fast, reliable, and produces comprehensive metrics
 """
-import numpy as np
-from typing import List, Dict, Any, Optional
+import math
+import re
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Tuple
 from collections import Counter, defaultdict
+from urllib.parse import urlparse
+
+import numpy as np
+
 from app.models.jmeter import JMeterMetrics
+from app.utils.jmeter_url import is_jmeter_transaction_controller_by_url, normalize_jmeter_url_value
+from app.utils.jmeter_outcome import is_jmeter_error_outcome, include_in_response_time_stats
 
 
 class JMeterAnalyzerV2:
     """Simplified JMeter analyzer with efficient calculations"""
+
+    @staticmethod
+    def _include_in_response_time_stats(d: Dict[str, Any]) -> bool:
+        """Response-time stats use successful outcomes only (excludes 4xx/5xx, not just success=false)."""
+        return include_in_response_time_stats(d)
+
+    @staticmethod
+    def _is_transaction_controller_row(d: Dict[str, Any]) -> bool:
+        """JMeter transaction controllers use empty/missing URL; HTTP samplers have a URL.
+        CSV often stores missing URL as the literal string \"null\" (not an empty cell)."""
+        return is_jmeter_transaction_controller_by_url(d.get("url"))
+
+    @staticmethod
+    def _rows_for_response_time_aggregation(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Use passed transaction-controller rows when enough exist; otherwise all passed rows
+        (standalone HTTP samples). Excludes HTTP error / failed outcomes.
+        """
+        tc_n = sum(1 for d in data if JMeterAnalyzerV2._is_transaction_controller_row(d))
+        total = len(data) or 1
+        prefer_tc = tc_n >= max(50, int(total * 0.03))
+        out: List[Dict[str, Any]] = []
+        for d in data:
+            if not JMeterAnalyzerV2._include_in_response_time_stats(d):
+                continue
+            if prefer_tc:
+                if JMeterAnalyzerV2._is_transaction_controller_row(d):
+                    out.append(d)
+            else:
+                out.append(d)
+        return out
+
+    @staticmethod
+    def _max_vu_and_peak_threshold(data: List[Dict[str, Any]]) -> Tuple[int, float]:
+        vu_vals = [float(d["all_threads"]) for d in data if d.get("all_threads") is not None]
+        if not vu_vals:
+            return 0, 0.0
+        mx = int(max(vu_vals))
+        thr = max(1.0, mx * 0.85)
+        return mx, thr
+
+    @staticmethod
+    def _vu_value_row(d: Dict[str, Any]) -> int:
+        """Effective VU count for one row (all_threads preferred, then grp_threads)."""
+        for k in ("all_threads", "allThreads", "grp_threads", "grpThreads"):
+            v = d.get(k)
+            if v is not None:
+                try:
+                    return int(float(v))
+                except (TypeError, ValueError):
+                    continue
+        return 0
+
+    @staticmethod
+    def _multi_source_peak_vusers_sum(data: List[Dict[str, Any]]) -> int:
+        """
+        For merged runs where each row has ``_merge_source_idx`` from N parallel JTL files,
+        return sum of (max VU observed in each source). Single source or missing tag → 0.
+        """
+        by_idx: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        for d in data:
+            if "_merge_source_idx" not in d:
+                return 0
+            try:
+                idx = int(d["_merge_source_idx"])
+            except (TypeError, ValueError):
+                return 0
+            by_idx[idx].append(d)
+        if len(by_idx) < 2:
+            return 0
+        total = 0
+        for rows in by_idx.values():
+            peak = max((JMeterAnalyzerV2._vu_value_row(x) for x in rows), default=0)
+            total += int(peak)
+        return total
+
+    @staticmethod
+    def _transaction_p90_sla_at_peak_load(
+        data: List[Dict[str, Any]],
+        transaction_stats: Dict[str, Any],
+        peak_vu_threshold: float,
+        sla_p90_ms: float = 3000.0,
+    ) -> Dict[str, Any]:
+        """Per-transaction P90 on passed samples in peak load (≥85% of max VU); fallback to full-run passed."""
+        labels = sorted(transaction_stats.keys(), key=lambda x: (x or "").lower())
+        passed_detail: List[Dict[str, Any]] = []
+        n_pass = 0
+        for label in labels:
+            def _collect(use_peak: bool) -> List[float]:
+                rows: List[float] = []
+                for d in data:
+                    if d.get("label") != label:
+                        continue
+                    if not JMeterAnalyzerV2._is_transaction_controller_row(d):
+                        continue
+                    if not JMeterAnalyzerV2._include_in_response_time_stats(d):
+                        continue
+                    if use_peak and peak_vu_threshold > 0:
+                        av = d.get("all_threads")
+                        if av is None or float(av) < peak_vu_threshold:
+                            continue
+                    st = d.get("sample_time")
+                    if st is not None:
+                        rows.append(float(st))
+                return rows
+
+            times = _collect(True)
+            if len(times) < 3:
+                times = _collect(False)
+            if not times:
+                passed_detail.append(
+                    {"label": label, "p90_ms": None, "sla_pass": False, "n_samples": 0}
+                )
+                continue
+            p90 = float(np.percentile(np.array(times, dtype=float), 90))
+            ok = p90 < sla_p90_ms
+            if ok:
+                n_pass += 1
+            passed_detail.append(
+                {
+                    "label": label,
+                    "p90_ms": round(p90, 1),
+                    "sla_pass": ok,
+                    "n_samples": len(times),
+                }
+            )
+        n_total = len(labels)
+        pct = (100.0 * n_pass / n_total) if n_total else 0.0
+        return {
+            "sla_p90_ms": sla_p90_ms,
+            "transactions_tested": n_total,
+            "transactions_pass": n_pass,
+            "transactions_fail": max(0, n_total - n_pass),
+            "pass_rate_pct": round(pct, 2),
+            "peak_vu_threshold": int(round(peak_vu_threshold)) if peak_vu_threshold else 0,
+            "details": passed_detail,
+        }
+
+    @staticmethod
+    def _strip_jmeter_thread_suffix(thread_name: str) -> str:
+        """Strip JMeter's trailing ' 9-123' (thread iteration) from threadName."""
+        if not thread_name:
+            return ""
+        s = str(thread_name).strip()
+        if not s:
+            return ""
+        m = re.search(r"^(.+?)\s+\d+-\d+$", s)
+        if m:
+            return m.group(1).strip()
+        return s
+
+    @staticmethod
+    def _is_generic_thread_group_label(name: str) -> bool:
+        """True for default JMeter / meaningless thread group titles."""
+        s = (name or "").strip().lower()
+        if len(s) < 2:
+            return True
+        generics = (
+            "thread group",
+            "threadgroup",
+            "tg",
+            "users",
+            "user",
+            "load test",
+            "scenario",
+            "setup",
+            "teardown",
+            "set up thread group",
+            "tear down thread group",
+        )
+        if s in generics:
+            return True
+        for g in ("thread group", "set up", "tear down"):
+            if s == g or (s.startswith(g) and len(s) <= len(g) + 3):
+                return True
+        return False
+
+    @staticmethod
+    def _prettify_hostname_as_app_name(host: str) -> str:
+        """Turn hostname (or first label) into a short display title."""
+        if not host:
+            return ""
+        host = host.strip().lower().split(":")[0]
+        first = host.split(".")[0]
+        parts = [p for p in re.split(r"[-_]+", first) if p]
+        if not parts:
+            return host
+        words: List[str] = []
+        for p in parts:
+            if len(p) <= 4 and p.isalpha():
+                words.append(p.upper())
+            else:
+                words.append(p[:1].upper() + p[1:].lower())
+        return " ".join(words)
+
+    @staticmethod
+    def infer_application_name_from_jmeter_data(data: List[Dict[str, Any]]) -> str:
+        """
+        Derive application name for report titles from JMeter rows:
+        1) Most common user-defined thread group name (after stripping JMeter suffixes)
+        2) Else most common HTTP host from URL column
+        """
+        if not data:
+            return ""
+        n = len(data)
+        min_hits = max(15, min(500, n // 50))
+
+        bases: List[str] = []
+        for d in data:
+            tn = d.get("thread_name") or d.get("threadName") or ""
+            base = JMeterAnalyzerV2._strip_jmeter_thread_suffix(str(tn).strip())
+            if not base:
+                continue
+            if " - " in base:
+                base = base.split(" - ")[0].strip()
+            if not base:
+                continue
+            bases.append(base)
+
+        if bases:
+            for name, cnt in Counter(bases).most_common(8):
+                if cnt < min_hits:
+                    break
+                if JMeterAnalyzerV2._is_generic_thread_group_label(name):
+                    continue
+                return name.strip()
+
+        hosts: List[str] = []
+        for d in data:
+            u = normalize_jmeter_url_value(d.get("url"))
+            if not u:
+                continue
+            if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", u):
+                u = "https://" + u.lstrip("/")
+            try:
+                host = urlparse(u).hostname
+            except Exception:
+                continue
+            if (
+                not host
+                or host == "localhost"
+                or re.match(r"^(\d{1,3}\.){3}\d{1,3}$", host)
+            ):
+                continue
+            hosts.append(host.lower())
+
+        if hosts:
+            hc = Counter(hosts)
+            best_host, cnt = hc.most_common(1)[0]
+            if cnt >= min_hits or len(hc) == 1:
+                return JMeterAnalyzerV2._prettify_hostname_as_app_name(best_host)
+
+        return ""
+
+    @staticmethod
+    def _build_report_header(
+        data: List[Dict[str, Any]],
+        total_samples: int,
+        duration_seconds: float,
+        max_vu: int,
+    ) -> Dict[str, Any]:
+        """Titles and time window for HTML report; application name is inferred from JMeter rows."""
+        application_name = JMeterAnalyzerV2.infer_application_name_from_jmeter_data(data)
+        line1_date = datetime.now().strftime("%d %b %Y")
+        t_start = ""
+        t_end = ""
+        tz_suffix = "IST"
+        try:
+            from zoneinfo import ZoneInfo
+
+            tz = ZoneInfo("Asia/Kolkata")
+            ts_list = [d.get("timestamp", 0) for d in data if d.get("timestamp")]
+            if ts_list:
+                t0 = datetime.fromtimestamp(min(ts_list) / 1000.0, tz=tz)
+                t1 = datetime.fromtimestamp(max(ts_list) / 1000.0, tz=tz)
+                t_start = t0.strftime("%H:%M")
+                t_end = t1.strftime("%H:%M")
+                line1_date = t0.strftime("%d %b %Y")
+        except Exception:
+            ts_list = [d.get("timestamp", 0) for d in data if d.get("timestamp")]
+            if ts_list:
+                t0 = datetime.fromtimestamp(min(ts_list) / 1000.0)
+                t1 = datetime.fromtimestamp(max(ts_list) / 1000.0)
+                t_start = t0.strftime("%H:%M")
+                t_end = t1.strftime("%H:%M")
+                line1_date = t0.strftime("%d %b %Y")
+
+        dur_min = duration_seconds / 60.0 if duration_seconds else 0.0
+        meta_parts = [
+            "JMeter Results",
+            f"{total_samples:,} samples",
+        ]
+        if dur_min > 0:
+            meta_parts.append(f"{dur_min:.1f} min")
+            if t_start and t_end:
+                meta_parts.append(f"{t_start}–{t_end} {tz_suffix}")
+        line1_parts = ["Performance Test Analysis Report"]
+        if application_name:
+            line1_parts.append(application_name)
+        line1_parts.append(line1_date)
+        line1 = " · ".join(line1_parts)
+        return {
+            "line1": line1,
+            "line2": (
+                f"Load Test: Stepped Up to {max_vu} Virtual Users"
+                if max_vu
+                else "Load Test Results"
+            ),
+            "line3": " · ".join(meta_parts),
+            "application_name": application_name,
+            "product": application_name,
+            "environment": "",
+            "report_date": line1_date,
+            "time_start": t_start,
+            "time_end": t_end,
+            "timezone_label": tz_suffix,
+        }
     
     @staticmethod
-    def analyze(data: List[Dict[str, Any]], targets: Optional[Dict[str, float]] = None) -> JMeterMetrics:
+    def analyze(
+        data: List[Dict[str, Any]],
+        targets: Optional[Dict[str, float]] = None,
+        application_display_name: Optional[str] = None,
+    ) -> JMeterMetrics:
         """
         Analyze JMeter data and return comprehensive metrics.
         targets: optional dict with keys availability_target, avg_response_time_target (ms),
                  error_rate_target (%), throughput_target, p95_target (ms), sla_compliance_target (%)
+        application_display_name: if set, overrides inferred JMeter thread/host name in report titles.
         """
         if not data:
             raise ValueError("No data provided for analysis")
         
         print(f"  Analyzing {len(data):,} records...")
         
-        # Extract arrays for efficient numpy operations
-        sample_times = np.array([d.get("sample_time", 0) for d in data if d.get("sample_time") is not None], dtype=float)
-        latencies = np.array([d.get("latency", 0) for d in data if d.get("latency") is not None], dtype=float)
-        connect_times = np.array([d.get("connect_time", 0) for d in data if d.get("connect_time") is not None], dtype=float)
-        
+        rt_rows = JMeterAnalyzerV2._rows_for_response_time_aggregation(data)
+        # Extract arrays for efficient numpy operations (passed TC rows when present, else passed requests)
+        sample_times = np.array(
+            [d.get("sample_time", 0) for d in rt_rows if d.get("sample_time") is not None],
+            dtype=float,
+        )
+        latencies = np.array(
+            [d.get("latency", 0) for d in rt_rows if d.get("latency") is not None],
+            dtype=float,
+        )
+        connect_times = np.array(
+            [d.get("connect_time", 0) for d in rt_rows if d.get("connect_time") is not None],
+            dtype=float,
+        )
+
         # Calculate basic metrics
         total_samples = len(data)
-        errors = sum(1 for d in data if not d.get("success", True) or 
-                    (d.get("response_code") and str(d.get("response_code", "")).startswith(("4", "5"))))
+        errors = sum(1 for d in data if is_jmeter_error_outcome(d))
         error_rate = (errors / total_samples) if total_samples > 0 else 0.0
         
         # Calculate duration and throughput
@@ -39,7 +378,11 @@ class JMeterAnalyzerV2:
         if timestamps:
             duration_seconds = (max(timestamps) - min(timestamps)) / 1000.0
             duration_hours = duration_seconds / 3600.0
-            throughput = total_samples / duration_seconds if duration_seconds > 0 else 0.0
+            # Throughput (req/s) = successful samples only (exclude failed / HTTP error rows)
+            passed_samples = total_samples - errors
+            throughput = (
+                passed_samples / duration_seconds if duration_seconds > 0 else 0.0
+            )
         else:
             duration_seconds = 0.0
             duration_hours = 0.0
@@ -71,24 +414,56 @@ class JMeterAnalyzerV2:
         
         # Analyze by label (transactions/requests)
         transaction_stats, request_stats = JMeterAnalyzerV2._analyze_by_label(data)
+
+        max_vu, peak_thr = JMeterAnalyzerV2._max_vu_and_peak_threshold(data)
+        multi_vu_sum = JMeterAnalyzerV2._multi_source_peak_vusers_sum(data)
+        header_vu = int(multi_vu_sum) if multi_vu_sum > 0 else int(max_vu)
+        display_targets = JMeterAnalyzerV2._resolve_display_targets(targets)
+        sla_p90_ms = float(display_targets.get("p95_percentile") or 3000)
+        tx_sla_peak = JMeterAnalyzerV2._transaction_p90_sla_at_peak_load(
+            data, transaction_stats, peak_thr, sla_p90_ms=sla_p90_ms
+        )
+        report_header = JMeterAnalyzerV2._build_report_header(
+            data, total_samples, duration_seconds, header_vu
+        )
+        _disp = (application_display_name or "").strip()
+        if _disp:
+            report_header = dict(report_header)
+            report_header["application_name"] = _disp
+            report_header["product"] = _disp
+            rd = str(report_header.get("report_date") or "").strip()
+            line1_parts = ["Performance Test Analysis Report", _disp]
+            if rd:
+                line1_parts.append(rd)
+            report_header["line1"] = " · ".join(line1_parts)
         
         # Calculate scores and grades
-        avg_response_sec = sample_time_stats.get("mean", 0) / 1000.0
-        p95_response = sample_time_stats.get("p95", 0)
+        _mean_ms = sample_time_stats.get("mean")
+        avg_response_sec = (float(_mean_ms) / 1000.0) if isinstance(_mean_ms, (int, float)) else 0.0
+        _p95_ms = sample_time_stats.get("p95")
+        p95_response = float(_p95_ms) if isinstance(_p95_ms, (int, float)) else 0.0
         success_rate = ((total_samples - errors) / total_samples * 100) if total_samples > 0 else 0.0
         
-        # SLA compliance
-        sla_2s = sum(1 for d in data if d.get("sample_time", 0) < 2000)
-        sla_3s = sum(1 for d in data if d.get("sample_time", 0) < 3000)
-        sla_5s = sum(1 for d in data if d.get("sample_time", 0) < 5000)
-        sla_compliance_2s_pct = (sla_2s / total_samples * 100) if total_samples > 0 else 0.0
-        sla_compliance_3s_pct = (sla_3s / total_samples * 100) if total_samples > 0 else 0.0
-        sla_compliance_5s_pct = (sla_5s / total_samples * 100) if total_samples > 0 else 0.0
+        # SLA compliance (% of successful samples under each threshold) — same basis as RT aggregates
+        passed_for_sla = list(rt_rows)
+        n_passed_sla = len(passed_for_sla)
+        if n_passed_sla > 0:
+            sla_2s = sum(1 for d in passed_for_sla if d.get("sample_time", 0) < 2000)
+            sla_3s = sum(1 for d in passed_for_sla if d.get("sample_time", 0) < 3000)
+            sla_5s = sum(1 for d in passed_for_sla if d.get("sample_time", 0) < 5000)
+            sla_compliance_2s_pct = (sla_2s / n_passed_sla * 100)
+            sla_compliance_3s_pct = (sla_3s / n_passed_sla * 100)
+            sla_compliance_5s_pct = (sla_5s / n_passed_sla * 100)
+        else:
+            sla_compliance_2s_pct = 0.0
+            sla_compliance_3s_pct = 0.0
+            sla_compliance_5s_pct = 0.0
         
         # Calculate scores (0-100) - use run targets if provided
         score_targets = JMeterAnalyzerV2._resolve_score_targets(targets)
+        p95_response_sec = p95_response / 1000.0
         scores = JMeterAnalyzerV2._calculate_scores(
-            success_rate, error_rate, avg_response_sec, p95_response / 1000.0,
+            success_rate, error_rate, avg_response_sec, p95_response_sec,
             throughput, sla_compliance_2s_pct,
             score_targets=score_targets
         )
@@ -111,20 +486,26 @@ class JMeterAnalyzerV2:
         improvement_roadmap = JMeterAnalyzerV2._generate_roadmap(overall_score)
         
         # Grade descriptions
-        grade_reasons = JMeterAnalyzerV2._build_grade_reasons(scores, avg_response_sec, success_rate, 
-                                                               error_rate * 100, throughput, p95_response / 1000.0,
-                                                               sla_compliance_2s_pct, grade, grade_class)
+        grade_reasons = JMeterAnalyzerV2._build_grade_reasons(
+            scores, avg_response_sec, success_rate,
+            error_rate * 100, throughput, p95_response_sec,
+            sla_compliance_2s_pct, grade, grade_class
+        )
         
         # Skewness interpretation for response time with DYNAMIC root cause analysis
         response_time_skewness = sample_time_stats.get("skewness", 0)
+        _p99_ms = sample_time_stats.get("p99")
+        _max_ms = sample_time_stats.get("max")
+        p99_response_sec = (float(_p99_ms) / 1000.0) if isinstance(_p99_ms, (int, float)) else 0.0
+        max_response_sec = (float(_max_ms) / 1000.0) if isinstance(_max_ms, (int, float)) else 0.0
         skewness_interpretation = JMeterAnalyzerV2._interpret_skewness(
             response_time_skewness, 
             "response time",
             {
                 "avg_response": avg_response_sec,
-                "p95_response": p95_response / 1000.0,
-                "p99_response": sample_time_stats.get("p99", 0) / 1000.0,
-                "max_response": sample_time_stats.get("max", 0) / 1000.0,
+                "p95_response": p95_response_sec,
+                "p99_response": p99_response_sec,
+                "max_response": max_response_sec,
                 "error_rate": error_rate * 100,
                 "throughput": throughput,
                 "transaction_stats": transaction_stats,
@@ -140,7 +521,7 @@ class JMeterAnalyzerV2:
         # Generate PHASED improvement plan to reach A+
         phased_improvement_plan = JMeterAnalyzerV2._generate_phased_improvement_plan(
             grade, overall_score, scores, avg_response_sec, error_rate * 100, 
-            throughput, p95_response / 1000.0, sla_compliance_2s_pct, 
+            throughput, p95_response_sec, sla_compliance_2s_pct, 
             transaction_stats, request_stats
         )
         
@@ -176,7 +557,12 @@ class JMeterAnalyzerV2:
             "recommendations": recommendations,
             "improvement_roadmap": improvement_roadmap,
             "scores": scores,
-            "targets": JMeterAnalyzerV2._resolve_display_targets(targets)
+            "targets": display_targets,
+            "max_concurrent_users": max_vu,
+            "multi_source_peak_vusers_sum": int(multi_vu_sum),
+            "peak_load_vu_threshold": int(round(peak_thr)) if peak_thr else 0,
+            "transaction_sla_p90_peak": tx_sla_peak,
+            "report_header": report_header,
         }
         
         return JMeterMetrics(
@@ -196,10 +582,11 @@ class JMeterAnalyzerV2:
     def _calculate_stats(values: np.ndarray) -> Dict[str, float]:
         """Calculate percentile statistics efficiently with skewness"""
         if len(values) == 0:
+            # None = no successful samples — do not treat as 0 ms "excellent" latency
             return {
-                "mean": 0.0, "median": 0.0, "p70": 0.0, "p75": 0.0, "p80": 0.0,
-                "p90": 0.0, "p95": 0.0, "p99": 0.0, "min": 0.0, "max": 0.0,
-                "std": 0.0, "skewness": 0.0
+                "mean": None, "median": None, "p70": None, "p75": None, "p80": None,
+                "p90": None, "p95": None, "p99": None, "min": None, "max": None,
+                "std": None, "skewness": 0.0
             }
         
         # Calculate skewness using scipy's formula if available, else manual
@@ -483,14 +870,13 @@ class JMeterAnalyzerV2:
     
     @staticmethod
     def _analyze_by_label(data: List[Dict]) -> tuple:
-        """Analyze data grouped by label (transactions vs requests)"""
+        """Group by label: transaction controllers (URL empty/null) vs HTTP samples (URL set)."""
         transactions = defaultdict(list)
         requests = defaultdict(list)
         
         for d in data:
             label = d.get("label", "Unknown")
-            # Simple heuristic: transactions start with "T" or don't start with "api"
-            if label.startswith("T") or not label.startswith("api"):
+            if JMeterAnalyzerV2._is_transaction_controller_row(d):
                 transactions[label].append(d)
             else:
                 requests[label].append(d)
@@ -498,8 +884,11 @@ class JMeterAnalyzerV2:
         def analyze_group(group_data: Dict[str, List]) -> Dict:
             stats = {}
             for label, items in group_data.items():
-                response_times = [d.get("sample_time", 0) for d in items if d.get("sample_time") is not None]
-                errors = sum(1 for d in items if not d.get("success", True))
+                response_times = [
+                    d.get("sample_time", 0) for d in items
+                    if d.get("sample_time") is not None and JMeterAnalyzerV2._include_in_response_time_stats(d)
+                ]
+                errors = sum(1 for d in items if is_jmeter_error_outcome(d))
                 
                 if response_times:
                     rt_stats = JMeterAnalyzerV2._calculate_stats(np.array(response_times, dtype=float))
@@ -519,12 +908,14 @@ class JMeterAnalyzerV2:
                         "max": rt_stats["max"]
                     }
                 else:
+                    # No successful samples: do not use 0 ms as a "fast" result in reports
+                    na = None
                     stats[label] = {
                         "count": len(items),
                         "errors": errors,
                         "error_rate": (errors / len(items) * 100) if items else 0.0,
-                        "avg_response": 0.0, "median": 0.0, "p70": 0.0, "p75": 0.0, "p80": 0.0,
-                        "p90": 0.0, "p95": 0.0, "p99": 0.0, "min": 0.0, "max": 0.0
+                        "avg_response": na, "median": na, "p70": na, "p75": na, "p80": na,
+                        "p90": na, "p95": na, "p99": na, "min": na, "max": na
                     }
             return stats
         
@@ -580,8 +971,13 @@ class JMeterAnalyzerV2:
         def score_metric(value: float, target: float, higher_better: bool) -> float:
             if higher_better:
                 return min(100, max(0, (value / target) * 100)) if target > 0 else 0
-            else:
-                return min(100, max(0, (target / value) * 100)) if value > 0 else 0
+            # Lower is better (error rate as decimal, latency in seconds).
+            # value == 0 is best achievable (e.g. 0% errors) and must score 100, not 0.
+            if value <= 0:
+                return 100.0
+            if target <= 0:
+                return 0.0
+            return min(100.0, max(0.0, (target / value) * 100.0))
 
         t = score_targets or JMeterAnalyzerV2._resolve_score_targets(None)
         availability_score = score_metric(success_rate, t["availability"], True)
@@ -638,119 +1034,119 @@ class JMeterAnalyzerV2:
             return "F", "danger"
     
     @staticmethod
-    def _calculate_time_series(data: List[Dict], duration: float, max_points: int = 500) -> List[Dict]:
-        """Calculate time series data - sample if too large, including per-transaction/request data"""
+    def _calculate_time_series(data: List[Dict], duration: float) -> List[Dict]:
+        """
+        One row per time bucket (default: 1 minute) for reports/tables. Uses all JTL rows (no pre-sampling).
+        Adds throughput_pass / throughput_fail (req/s) per bucket. Downsample to ~50–55 points for the main chart
+        is done in the HTML generator.
+        """
         if not data or duration <= 0:
             return []
-        
-        # Sample data if too large
-        if len(data) > max_points * 2:
-            step = len(data) // max_points
-            sampled_data = data[::step]
-        else:
-            sampled_data = data
-        
-        interval_size = max(1.0, duration / max_points)
+        ts_list = [d.get("timestamp", 0) for d in data if d.get("timestamp")]
+        if not ts_list:
+            return []
+        min_ts = min(ts_list)
+        # Bucket size: 60s for tests ≥1 min; otherwise one bucket over the run
+        bucket_sec = 60.0 if duration >= 60.0 else max(1e-6, float(duration))
+        n_buckets = max(1, int(math.ceil(duration / bucket_sec)))
+
         intervals = defaultdict(lambda: {
-            "response_times": [], 
-            "vusers": [], 
-            "pass_count": 0, 
+            "response_times": [],
+            "vusers": [],
+            "pass_count": 0,
             "fail_count": 0,
             "by_label": defaultdict(lambda: {"response_times": [], "pass_count": 0, "fail_count": 0, "has_url": False})
         })
-        
-        timestamps = [d.get("timestamp", 0) for d in sampled_data if d.get("timestamp")]
-        if not timestamps:
-            return []
-        
-        min_ts = min(timestamps)
-        
-        for d in sampled_data:
+
+        for d in data:
             ts = d.get("timestamp", 0)
             if not ts:
                 continue
-            
             time_offset = (ts - min_ts) / 1000.0
-            interval_idx = int(time_offset / interval_size)
-            
+            interval_idx = int(time_offset / bucket_sec)
+            interval_idx = min(max(0, interval_idx), n_buckets - 1)
+
             interval = intervals[interval_idx]
-            interval["time"] = interval_idx * interval_size
-            
+            interval["time"] = interval_idx * bucket_sec
             label = d.get("label", "Unknown")
-            
-            # Overall metrics
-            if d.get("sample_time"):
+
+            if d.get("sample_time") and JMeterAnalyzerV2._include_in_response_time_stats(d):
                 interval["response_times"].append(d.get("sample_time", 0))
-            if d.get("all_threads"):
+            if d.get("all_threads") is not None:
                 interval["vusers"].append(d.get("all_threads", 0))
-            
-            if not d.get("success", True):
+
+            if is_jmeter_error_outcome(d):
                 interval["fail_count"] += 1
             else:
                 interval["pass_count"] += 1
-            
-            # Per-label (transaction/request) metrics
+
             label_data = interval["by_label"][label]
-            if d.get("sample_time"):
+            if d.get("sample_time") and JMeterAnalyzerV2._include_in_response_time_stats(d):
                 label_data["response_times"].append(d.get("sample_time", 0))
-            if not d.get("success", True):
+            if is_jmeter_error_outcome(d):
                 label_data["fail_count"] += 1
             else:
                 label_data["pass_count"] += 1
-            
-            # Track if this is a Transaction Controller or Request
-            # Transaction Controllers: URL is NULL/empty OR response_message contains "Number of samples in transaction"
-            # Requests: URL has value AND response_message doesn't contain transaction info
-            url = d.get("url", "")
+
             response_msg = d.get("response_message", "")
-            is_transaction_controller = (not url or not url.strip()) or ("Number of samples in transaction" in response_msg)
-            
+            is_transaction_controller = is_jmeter_transaction_controller_by_url(
+                d.get("url")
+            ) or ("Number of samples in transaction" in str(response_msg))
             if not is_transaction_controller:
-                label_data["has_url"] = True  # Mark as request (not transaction controller)
-        
+                label_data["has_url"] = True
+
         time_series = []
         for idx in sorted(intervals.keys()):
             interval = intervals[idx]
             rt_values = interval["response_times"]
             vuser_values = interval["vusers"]
-            
-            # Calculate per-transaction/request response times and throughput
+            p = interval["pass_count"]
+            f = interval["fail_count"]
+            tot = p + f
             by_label_data = {}
             for label, label_info in interval["by_label"].items():
                 label_rt_values = label_info["response_times"]
-                label_count = label_info["pass_count"] + label_info["fail_count"]  # Count of samples for this label
+                label_count = label_info["pass_count"] + label_info["fail_count"]
                 by_label_data[label] = {
                     "avg_response_time": round(np.mean(label_rt_values) / 1000.0, 2) if label_rt_values else 0.0,
-                    "throughput": label_count,  # Use raw count instead of rate (count/interval)
+                    "throughput": label_count,
                     "has_url": label_info.get("has_url", False)
                 }
-            
+
+            tput_total = (tot / bucket_sec) if bucket_sec > 0 else 0.0
+            tput_pass = (p / bucket_sec) if bucket_sec > 0 else 0.0
+            tput_fail = (f / bucket_sec) if bucket_sec > 0 else 0.0
             time_series.append({
                 "time": round(interval["time"], 1),
+                "bucket_seconds": round(bucket_sec, 3),
                 "avg_response_time": round(np.mean(rt_values) / 1000.0, 2) if rt_values else 0.0,
-                "vusers": round(np.mean(vuser_values), 0) if vuser_values else 0.0,
-                "throughput": round((interval["pass_count"] + interval["fail_count"]) / interval_size, 2) if interval_size > 0 else 0.0,
-                "pass_count": interval["pass_count"],
-                "fail_count": interval["fail_count"],
+                "vusers": round(float(np.mean(vuser_values)), 0) if vuser_values else 0.0,
+                "throughput": round(tput_total, 2),
+                "throughput_pass": round(tput_pass, 2),
+                "throughput_fail": round(tput_fail, 2),
+                "pass_count": p,
+                "fail_count": f,
+                "error_rate_pct": round(100.0 * f / tot, 2) if tot else 0.0,
                 "by_label": by_label_data
             })
-        
+
         return time_series
     
     @staticmethod
     def _calculate_response_time_distribution(data: List[Dict]) -> Dict[str, float]:
-        """Calculate response time distribution buckets"""
-        total = len(data)
+        """Distribution of response times among successful samples only (percent of passed samples per bucket)."""
+        passed = [d for d in data if JMeterAnalyzerV2._include_in_response_time_stats(d)]
+        total = len(passed)
         if total == 0:
             return {"under_1s": 0, "1_to_2s": 0, "2_to_3s": 0, "3_to_5s": 0, "5_to_10s": 0, "over_10s": 0}
         
         return {
-            "under_1s": (sum(1 for d in data if d.get("sample_time", 0) < 1000) / total * 100),
-            "1_to_2s": (sum(1 for d in data if 1000 <= d.get("sample_time", 0) < 2000) / total * 100),
-            "2_to_3s": (sum(1 for d in data if 2000 <= d.get("sample_time", 0) < 3000) / total * 100),
-            "3_to_5s": (sum(1 for d in data if 3000 <= d.get("sample_time", 0) < 5000) / total * 100),
-            "5_to_10s": (sum(1 for d in data if 5000 <= d.get("sample_time", 0) < 10000) / total * 100),
-            "over_10s": (sum(1 for d in data if d.get("sample_time", 0) >= 10000) / total * 100)
+            "under_1s": (sum(1 for d in passed if d.get("sample_time", 0) < 1000) / total * 100),
+            "1_to_2s": (sum(1 for d in passed if 1000 <= d.get("sample_time", 0) < 2000) / total * 100),
+            "2_to_3s": (sum(1 for d in passed if 2000 <= d.get("sample_time", 0) < 3000) / total * 100),
+            "3_to_5s": (sum(1 for d in passed if 3000 <= d.get("sample_time", 0) < 5000) / total * 100),
+            "5_to_10s": (sum(1 for d in passed if 5000 <= d.get("sample_time", 0) < 10000) / total * 100),
+            "over_10s": (sum(1 for d in passed if d.get("sample_time", 0) >= 10000) / total * 100)
         }
     
     @staticmethod
@@ -849,7 +1245,10 @@ class JMeterAnalyzerV2:
         # Check for slow transactions/requests
         all_stats = {**transaction_stats, **request_stats}
         for label, stats in all_stats.items():
-            avg_rt = stats.get('avg_response', 0) / 1000.0  # Convert to seconds
+            ar = stats.get("avg_response")
+            if ar is None:
+                continue
+            avg_rt = float(ar) / 1000.0
             error_rate_label = stats.get('error_rate', 0)
             
             if avg_rt > 5:
@@ -1003,7 +1402,10 @@ class JMeterAnalyzerV2:
             "A+": "The application is not just stable — it is a competitive advantage. Pages feel instant, users trust the platform, leading to higher conversion rates and engagement.",
             "A": "System meets and slightly exceeds expected customer experience standards. Fast response with minor delays only under peak usage.",
             "B+": "Customers will use it… but they will notice slowness. Occasional slow pages and some frustration, especially for mobile users.",
-            "B": "Customers can complete journeys, but experience is frustrating. Noticeable delays and page reload attempts lead to increased bounce rates.",
+            "B": (
+                "Customers can complete journeys, but the experience is frustrating. "
+                "Noticeable delays and page reload attempts lead to increased bounce rates."
+            ),
             "C+": "The system is working… but customers are silently leaving. Slow checkout and timeout during payment cause major cart abandonment.",
             "C": "System has severe performance degradation. Multiple critical issues affecting user experience and revenue.",
             "D": "Launching this version will directly impact revenue and reputation. Users cannot complete journeys, experiencing frequent errors/timeouts.",
@@ -1094,7 +1496,7 @@ class JMeterAnalyzerV2:
             },
             "B": {
                 "score_range": "70-74",
-                "executive_meaning": "Customers can complete journeys, but experience is frustrating",
+                "executive_meaning": "Customers can complete journeys, but the experience is frustrating",
                 "customer_impact": [
                     "Noticeable delays",
                     "Page reload attempts",
@@ -1271,8 +1673,15 @@ class JMeterAnalyzerV2:
         slowest_transactions = []
         if all_transactions:
             slowest_transactions = sorted(
-                [(name, stats.get("avg_response", 0) / 1000.0, stats.get("p95", 0) / 1000.0) 
-                 for name, stats in all_transactions.items()],
+                [
+                    (
+                        name,
+                        float(stats["avg_response"]) / 1000.0,
+                        (float(stats["p95"]) / 1000.0) if stats.get("p95") is not None else 0.0,
+                    )
+                    for name, stats in all_transactions.items()
+                    if stats.get("avg_response") is not None
+                ],
                 key=lambda x: x[1],
                 reverse=True
             )[:5]
@@ -1339,13 +1748,20 @@ class JMeterAnalyzerV2:
             })
             phase1_impact += 4
         
+        ts1 = min(90, round(current_score + phase1_impact, 1))
+        gr1 = JMeterAnalyzerV2._calculate_grade(ts1)[0]
         phases.append({
             "phase": "Phase 1: Critical Fixes",
             "timeline": "Week 1-2",
             "priority": "🔴 High",
             "actions": phase1_actions,
-            "target_score": min(90, round(current_score + phase1_impact, 1)),
-            "expected_grade": JMeterAnalyzerV2._calculate_grade(min(90, current_score + phase1_impact))[0]
+            "target_score": ts1,
+            "expected_grade": gr1,
+            "expected_outcome": (
+                "Address the highest-impact errors and slow paths first. "
+                f"After fixes and a targeted rerun, overall health score should move toward ~{ts1} ({gr1}) "
+                "(exact gain depends on environment and fixes shipped)."
+            ),
         })
         
         # PHASE 2: Major Improvements (Week 3-4)
@@ -1410,13 +1826,19 @@ class JMeterAnalyzerV2:
                 })
                 phase2_impact += 3
         
+        ts2 = min(90, round(current_after_phase1 + phase2_impact, 1))
+        gr2 = JMeterAnalyzerV2._calculate_grade(ts2)[0]
         phases.append({
             "phase": "Phase 2: Major Improvements",
             "timeline": "Week 3-4",
             "priority": "🟡 Medium",
             "actions": phase2_actions,
-            "target_score": min(90, round(current_after_phase1 + phase2_impact, 1)),
-            "expected_grade": JMeterAnalyzerV2._calculate_grade(min(90, current_after_phase1 + phase2_impact))[0]
+            "target_score": ts2,
+            "expected_grade": gr2,
+            "expected_outcome": (
+                "Broaden improvements across SLA compliance, tail latency, and sustained throughput. "
+                f"Indicative post-phase score ~{ts2} ({gr2}), confirmed by a full regression load test."
+            ),
         })
         
         # PHASE 3: Fine-tuning & Excellence (Week 5-6)
@@ -1450,13 +1872,23 @@ class JMeterAnalyzerV2:
                 "expected_impact": "Maintain 90+ score"
             }]
         
+        if current_after_phase2 < 90:
+            eo3 = (
+                "Close remaining gaps to the A+ target using infrastructure, caching, and operational guardrails. "
+                f"Goal: reach ~90 (A+) from the current ~{current_after_phase2:.1f} trajectory."
+            )
+        else:
+            eo3 = (
+                "Sustain A+ levels with monitoring, regression load testing, and capacity reviews so improvements do not erode."
+            )
         phases.append({
             "phase": "Phase 3: Excellence & Sustainability",
             "timeline": "Week 5-6",
             "priority": "🟢 Low",
             "actions": phase3_actions,
             "target_score": 90,
-            "expected_grade": "A+"
+            "expected_grade": "A+",
+            "expected_outcome": eo3,
         })
         
         # Calculate total estimated improvement

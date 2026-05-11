@@ -85,15 +85,23 @@ class PDFReportGenerator:
         overall_score = summary.get("overall_score", 0)
         success_rate = summary.get("success_rate", 0)
         
+        def _ms_to_sec(m):
+            if m is None:
+                return None
+            try:
+                return float(m) / 1000.0
+            except (TypeError, ValueError):
+                return None
+        
         sample_time = metrics.get("sample_time", {})
-        avg_response = sample_time.get("mean", 0) / 1000
-        p70 = sample_time.get("p70", 0) / 1000
-        p80 = sample_time.get("p80", 0) / 1000
-        p90 = sample_time.get("p90", 0) / 1000
-        p95 = sample_time.get("p95", 0) / 1000
-        p99 = sample_time.get("p99", 0) / 1000
-        median = sample_time.get("median", 0) / 1000
-        max_time = sample_time.get("max", 0) / 1000
+        avg_response = _ms_to_sec(sample_time.get("mean"))
+        p70 = _ms_to_sec(sample_time.get("p70"))
+        p80 = _ms_to_sec(sample_time.get("p80"))
+        p90 = _ms_to_sec(sample_time.get("p90"))
+        p95 = _ms_to_sec(sample_time.get("p95"))
+        p99 = _ms_to_sec(sample_time.get("p99"))
+        median = _ms_to_sec(sample_time.get("median"))
+        max_time = _ms_to_sec(sample_time.get("max"))
         
         error_rate = metrics.get("error_rate", 0) * 100
         throughput = metrics.get("throughput", 0)
@@ -131,7 +139,7 @@ class PDFReportGenerator:
         summary_data = [
             ["Metric", "Value"],
             ["Success Rate", f"{success_rate:.1f}%"],
-            ["Avg Response Time", f"{avg_response:.2f}s"],
+            ["Avg Response Time", f"{avg_response:.2f}s" if avg_response is not None else "N/A"],
             ["Error Rate", f"{error_rate:.2f}%"],
             ["Throughput", f"{throughput:.1f} req/s"],
         ]
@@ -217,6 +225,8 @@ class PDFReportGenerator:
         elements.append(Paragraph("📋 Detailed Performance Metrics", heading2_style))
         
         def get_status(value, target, lower_is_better=True):
+            if value is None:
+                return "N/A"
             if lower_is_better:
                 if value <= target:
                     return "✓ PASS"
@@ -236,13 +246,13 @@ class PDFReportGenerator:
             ["Metric", "Result", "Target", "Status", "Score"],
             ["Availability", f"{success_rate:.1f}%", f"{targets.get('availability', 99)}%", 
              get_status(success_rate, 99, False), f"{scores.get('availability', 0):.0f}/100"],
-            ["Avg Response", f"{avg_response:.2f}s", "<2s", 
+            ["Avg Response", f"{avg_response:.2f}s" if avg_response is not None else "N/A", "<2s", 
              get_status(avg_response, 2), f"{scores.get('response_time', 0):.0f}/100"],
             ["Error Rate", f"{error_rate:.2f}%", "<1%", 
              get_status(error_rate, 1), f"{scores.get('error_rate', 0):.0f}/100"],
             ["Throughput", f"{throughput:.1f}/s", "100/s", 
              get_status(throughput, 100, False), f"{scores.get('throughput', 0):.0f}/100"],
-            ["95th Percentile", f"{p95:.2f}s", "<3s", 
+            ["95th Percentile", f"{p95:.2f}s" if p95 is not None else "N/A", "<3s", 
              get_status(p95, 3), f"{scores.get('p95_percentile', 0):.0f}/100"],
             ["SLA Compliance", f"{sla_2s:.1f}%", ">95%", 
              get_status(sla_2s, 95, False), f"{scores.get('sla_compliance', 0):.0f}/100"],
@@ -282,17 +292,20 @@ class PDFReportGenerator:
         elements.append(PageBreak())
         elements.append(Paragraph("📊 Test Overview", heading1_style))
         
+        def _ssec(v):
+            return f"{v:.2f}s" if v is not None else "N/A"
+        
         test_data = [
             ["Metric", "Value"],
             ["Total Requests", f"{total_samples:,}"],
             ["Test Duration", f"{test_duration:.2f} hours"],
             ["Average Throughput", f"{throughput:.1f} req/s"],
             ["Success Rate", f"{success_rate:.2f}%"],
-            ["Median Response", f"{median:.2f}s"],
-            ["90th Percentile", f"{p90:.2f}s"],
-            ["95th Percentile", f"{p95:.2f}s"],
-            ["99th Percentile", f"{p99:.2f}s"],
-            ["Max Response", f"{max_time:.2f}s"],
+            ["Median Response", _ssec(median)],
+            ["90th Percentile", _ssec(p90)],
+            ["95th Percentile", _ssec(p95)],
+            ["99th Percentile", _ssec(p99)],
+            ["Max Response", _ssec(max_time)],
         ]
         
         test_table = Table(test_data, colWidths=[2.5*inch, 2.5*inch])
@@ -320,22 +333,35 @@ class PDFReportGenerator:
                 table_elements.append(Paragraph("No data available", body_style))
                 return table_elements
             
-            # Sort by avg response time
-            sorted_stats = sorted(stats_dict.items(), key=lambda x: x[1].get('avg_response', 0) or 0, reverse=True)[:10]
+            def _fmt_ms_stat(v) -> str:
+                if v is None:
+                    return "N/A"
+                try:
+                    return f"{float(v) / 1000:.2f}s"
+                except (TypeError, ValueError):
+                    return "N/A"
+            
+            def _avg_sort_key(item):
+                m = item[1].get("avg_response")
+                if isinstance(m, (int, float)):
+                    return (1, float(m))
+                return (0, 0.0)
+            
+            # Sort by avg response (numeric rows first); missing RT not treated as 0
+            sorted_stats = sorted(stats_dict.items(), key=_avg_sort_key, reverse=True)[:10]
             
             perf_data = [
                 ["Endpoint", "Avg", "70%", "80%", "90%", "95%", "Error%", "Calls"]
             ]
             
             for label, data in sorted_stats:
-                avg = data.get('avg_response', 0)
                 perf_data.append([
                     label[:30] + '...' if len(label) > 30 else label,
-                    f"{avg/1000:.2f}s" if avg else "N/A",
-                    f"{data.get('p70', 0)/1000:.2f}s",
-                    f"{data.get('p80', 0)/1000:.2f}s",
-                    f"{data.get('p90', 0)/1000:.2f}s",
-                    f"{data.get('p95', 0)/1000:.2f}s",
+                    _fmt_ms_stat(data.get("avg_response")),
+                    _fmt_ms_stat(data.get("p70")),
+                    _fmt_ms_stat(data.get("p80")),
+                    _fmt_ms_stat(data.get("p90")),
+                    _fmt_ms_stat(data.get("p95")),
                     f"{data.get('error_rate', 0):.2f}%",
                     f"{data.get('count', 0):,}"
                 ])
@@ -409,11 +435,18 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 0.2*inch))
         
         elements.append(Paragraph("<b>Cost of Inaction:</b>", body_style))
+        _perf = (
+            f"({avg_response:.1f}s avg)"
+            if avg_response is not None
+            else "(no successful latency samples)"
+        )
+        _prod = "Significant" if (avg_response is not None and avg_response > 5) else "Moderate"
+        _aban = "High" if (avg_response is not None and avg_response > 5) else "Medium"
         cost_text = f"""
         • Error Rate ({error_rate:.2f}%): {'Major' if error_rate > 5 else 'Moderate'} revenue loss from failed operations<br/>
-        • Poor Performance ({avg_response:.1f}s avg): {'Significant' if avg_response > 5 else 'Moderate'} productivity loss<br/>
+        • Performance {_perf}: {_prod} productivity loss<br/>
         • Support Overhead: {'Increased' if error_rate > 3 else 'Moderate'} operational costs<br/>
-        • User Abandonment Risk: {'High' if avg_response > 5 else 'Medium'} opportunity cost
+        • User Abandonment Risk: {_aban} opportunity cost
         """
         elements.append(Paragraph(cost_text, body_style))
         elements.append(Spacer(1, 0.1*inch))
@@ -441,13 +474,22 @@ class PDFReportGenerator:
         elements.append(PageBreak())
         elements.append(Paragraph("🎯 Success Metrics & Targets", heading1_style))
         
-        target_3m_avg = max(2.0, avg_response * 0.6)
-        target_6m_avg = max(0.8, avg_response * 0.3)
+        if avg_response is not None:
+            target_3m_avg = max(2.0, avg_response * 0.6)
+            target_6m_avg = max(0.8, avg_response * 0.3)
+            _ar1, _a3, _a6 = f"{avg_response:.1f}s", f"{target_3m_avg:.1f}s", f"{target_6m_avg:.1f}s"
+        else:
+            _ar1, _a3, _a6 = "N/A", "2.0s", "1.0s"
+        if p95 is not None:
+            p95_3, p95_6 = f"{max(5.0, p95*0.4):.1f}s", f"{max(2.5, p95*0.2):.1f}s"
+            p95_1 = f"{p95:.1f}s"
+        else:
+            p95_1, p95_3, p95_6 = "N/A", "5.0s", "3.0s"
         
         success_data = [
             ["Metric", "Current", "3-Month Target", "6-Month Target", "Industry Std"],
-            ["Avg Response", f"{avg_response:.1f}s", f"{target_3m_avg:.1f}s", f"{target_6m_avg:.1f}s", "<2s"],
-            ["95th Percentile", f"{p95:.1f}s", f"{max(5.0, p95*0.4):.1f}s", f"{max(2.5, p95*0.2):.1f}s", "<3s"],
+            ["Avg Response", _ar1, _a3, _a6, "<2s"],
+            ["95th Percentile", p95_1, p95_3, p95_6, "<3s"],
             ["Error Rate", f"{error_rate:.2f}%", f"{max(0.8, error_rate*0.4):.1f}%", "0.3%", "<0.5%"],
             ["Success Rate", f"{success_rate:.1f}%", "99%", "99.5%", ">99%"],
             ["SLA Compliance", f"{sla_2s:.1f}%", f"{min(95, sla_2s+20):.0f}%", "95%", ">95%"],

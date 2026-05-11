@@ -16,7 +16,7 @@
 
 .page-header p {
   margin: 0;
-  color: #666;
+  color: var(--report-gray);
   font-size: 0.875rem;
 }
 
@@ -57,7 +57,7 @@
 .score-card {
   background: white;
   border-radius: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--report-rule);
   padding: 1.5rem;
   display: flex;
   align-items: center;
@@ -80,7 +80,7 @@
 
 .score-label {
   font-size: 0.875rem;
-  color: #666;
+  color: var(--report-gray);
   font-weight: 600;
   margin-bottom: 0.5rem;
 }
@@ -142,7 +142,7 @@
 
 .metric-label {
   font-size: 0.875rem;
-  color: #666;
+  color: var(--report-gray);
   font-weight: 600;
 }
 
@@ -150,7 +150,7 @@
 .executive-summary {
   background: white;
   border-radius: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--report-rule);
   padding: 2rem;
   margin-bottom: 2rem;
 }
@@ -181,7 +181,7 @@
 .regressions-section {
   background: white;
   border-radius: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--report-rule);
   padding: 2rem;
 }
 
@@ -288,7 +288,7 @@
 .no-results {
   text-align: center;
   padding: 2rem;
-  color: #666;
+  color: var(--report-gray);
 }
 
 /* Empty State */
@@ -297,7 +297,7 @@
   padding: 4rem 2rem;
   background: white;
   border-radius: 12px;
-  border: 1px dashed #e0e0e0;
+  border: 1px dashed var(--report-rule);
 }
 
 .empty-icon {
@@ -313,7 +313,7 @@
 
 .empty-state p {
   margin: 0 0 1.5rem;
-  color: #666;
+  color: var(--report-gray);
 }
 
 /* Loading State */

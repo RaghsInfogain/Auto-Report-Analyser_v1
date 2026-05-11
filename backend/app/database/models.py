@@ -336,6 +336,7 @@ class RunTarget(Base):
     throughput_target = Column(Float)  # req/sec e.g. 100
     p95_target = Column(Float)  # ms e.g. 3000
     sla_compliance_target = Column(Float)  # % e.g. 95
+    application_name = Column(String(500), nullable=True)  # Shown in report title (overrides JMeter-inferred name)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -348,6 +349,7 @@ class RunTarget(Base):
             "throughput_target": self.throughput_target,
             "p95_target": self.p95_target,
             "sla_compliance_target": self.sla_compliance_target,
+            "application_name": self.application_name,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

@@ -167,7 +167,7 @@ const FilesPage: React.FC = () => {
       progressPollInterval.current = setInterval(pollProgress, 2000);
 
       // Call the unified backend endpoint (this will take time)
-      const result = await generateRunReport(run.run_id, regenerate);
+      const result = await generateRunReport(run.run_id, regenerate, run.total_size, run.total_records);
 
       // Stop polling
       if (progressPollInterval.current) {

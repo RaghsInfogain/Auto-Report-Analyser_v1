@@ -114,20 +114,23 @@ def extend_jmeter_ab_analysis(
 
     targets_disp = JMeterAnalyzerV2._resolve_display_targets(None)
 
+    def _ms_to_s(ms: float) -> str:
+        return f"{float(ms) / 1000.0:.3f} s"
+
     executive_cards = [
         {
             "title": "P95 latency",
             "arrow": a95[0],
             "trend": a95[1],
             "value": f"{p95_c:+.1f}%" if p95_c is not None else "—",
-            "detail": f"Baseline {ka['sample_time']['p95']:.0f} ms → Candidate {kb['sample_time']['p95']:.0f} ms",
+            "detail": f"Baseline {_ms_to_s(ka['sample_time']['p95'])} → Candidate {_ms_to_s(kb['sample_time']['p95'])}",
         },
         {
             "title": "P99 latency",
             "arrow": a99[0],
             "trend": a99[1],
             "value": f"{p99_c:+.1f}%" if p99_c is not None else "—",
-            "detail": f"Baseline {ka['sample_time']['p99']:.0f} ms → Candidate {kb['sample_time']['p99']:.0f} ms",
+            "detail": f"Baseline {_ms_to_s(ka['sample_time']['p99'])} → Candidate {_ms_to_s(kb['sample_time']['p99'])}",
         },
         {
             "title": "Error rate",
@@ -149,10 +152,10 @@ def extend_jmeter_ab_analysis(
     sla_b = sb["sla_2s_pct"]
     key_findings = [
         (
-            f"Response time: baseline avg {ka['sample_time']['mean']:.0f} ms; candidate {kb['sample_time']['mean']:.0f} ms "
+            f"Response time: baseline avg {_ms_to_s(ka['sample_time']['mean'])}; candidate {_ms_to_s(kb['sample_time']['mean'])} "
             f"({pct.get('avg_ms'):+.1f}% vs baseline)."
             if pct.get("avg_ms") is not None
-            else f"Response time: baseline avg {ka['sample_time']['mean']:.0f} ms; candidate {kb['sample_time']['mean']:.0f} ms."
+            else f"Response time: baseline avg {_ms_to_s(ka['sample_time']['mean'])}; candidate {_ms_to_s(kb['sample_time']['mean'])}."
         ),
         f"Error rate: {ka['error_pct']:.3f}% (baseline) vs {kb['error_pct']:.3f}% (candidate) — {err_dir}.",
         (
@@ -304,7 +307,7 @@ def extend_jmeter_ab_analysis(
         early_b = sum(chart_data["mean_rt_b"][:3]) / 3
         if late_b > early_b * 1.15:
             chart_insights.append(
-                f"Candidate mean response time rises in later windows (~{early_b:.0f} → ~{late_b:.0f} ms) — check saturation or warm-up."
+                f"Candidate mean response time rises in later windows (~{early_b / 1000.0:.3f} s → ~{late_b / 1000.0:.3f} s) — check saturation or warm-up."
             )
         late_e = sum(chart_data["err_b"][-3:]) / 3
         early_e = sum(chart_data["err_b"][:3]) / 3
@@ -423,6 +426,20 @@ def extend_jmeter_ab_analysis(
         "classification": "Internal — Performance testing",
     }
 
+    _sig = exec_s.get("traffic_signal") or "green"
+    if _sig not in ("red", "amber", "green"):
+        _sig = "green"
+    chart_analysis = {
+        "verdict": verdict or "See executive summary.",
+        "verdict_signal": _sig,
+        "summary": (
+            " ".join(chart_insights[:3])
+            if chart_insights
+            else "Not enough aligned windows to describe time-based trends."
+        ),
+        "bullets": chart_insights,
+    }
+
     return {
         "executive_dashboard": {
             "cards": executive_cards,
@@ -447,6 +464,7 @@ def extend_jmeter_ab_analysis(
         "detailed_metric_table": detailed_rows,
         "chart_data": chart_data,
         "chart_insights": chart_insights,
+        "chart_analysis": chart_analysis,
         "structured_issues": structured_issues[:12],
         "action_plan": phased,
         "success_metrics_targets": success_metrics,

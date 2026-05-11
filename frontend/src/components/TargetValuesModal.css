@@ -9,83 +9,101 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 0.5rem;
+  box-sizing: border-box;
 }
 
 .target-modal-content {
-  background: white;
+  background: var(--report-paper);
   border-radius: 8px;
-  max-width: 520px;
-  width: 95%;
-  max-height: 90vh;
-  overflow-y: auto;
+  max-width: min(560px, calc(100vw - 1rem));
+  width: 100%;
+  max-height: calc(100vh - 1rem);
+  overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
 }
 
 .target-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem;
+  padding: 0.65rem 1rem;
   border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
 }
 
 .target-modal-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  color: #333;
+  color: var(--report-ink);
+  line-height: 1.2;
 }
 
 .target-modal-close {
   background: none;
   border: none;
-  font-size: 1.5rem;
-  color: #666;
+  font-size: 1.35rem;
+  color: var(--report-gray);
   cursor: pointer;
   padding: 0 0.25rem;
   line-height: 1;
 }
 
 .target-modal-close:hover {
-  color: #333;
+  color: var(--report-ink);
 }
 
 .target-modal-subtitle {
-  padding: 0 1.5rem 1rem;
+  padding: 0.35rem 1rem 0.4rem;
   margin: 0;
-  font-size: 0.875rem;
-  color: #666;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--report-gray);
+  flex-shrink: 0;
 }
 
 .target-modal-loading {
-  padding: 2rem 1.5rem;
+  padding: 1.25rem 1rem;
   text-align: center;
-  color: #666;
+  color: var(--report-gray);
+  font-size: 0.8125rem;
 }
 
 .target-modal-form {
-  padding: 0 1.5rem 1rem;
+  padding: 0 1rem 0.35rem;
   display: grid;
-  gap: 1rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.85rem;
+  flex-shrink: 0;
+}
+
+.target-field.target-field-full {
+  grid-column: 1 / -1;
 }
 
 .target-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.15rem;
 }
 
 .target-field label {
-  font-size: 0.875rem;
+  font-size: 0.72rem;
   font-weight: 500;
   color: #444;
+  line-height: 1.2;
 }
 
 .target-field input {
-  padding: 0.5rem 0.75rem;
+  padding: 0.32rem 0.45rem;
   border: 1px solid #ddd;
   border-radius: 4px;
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
+  line-height: 1.25;
 }
 
 .target-field input:focus {
@@ -95,48 +113,52 @@
 }
 
 .target-hint {
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   color: #888;
+  line-height: 1.25;
+  margin-top: 0.05rem;
 }
 
 .target-modal-error {
-  margin: 0 1.5rem 1rem;
-  padding: 0.5rem 0.75rem;
+  margin: 0 1rem 0.35rem;
+  padding: 0.35rem 0.5rem;
   background: #fee;
   color: #c33;
   border-radius: 4px;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .target-modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
   border-top: 1px solid #e8e8e8;
+  flex-shrink: 0;
 }
 
 .target-btn-cancel {
-  padding: 0.5rem 1rem;
+  padding: 0.38rem 0.85rem;
   border: 1px solid #ccc;
-  background: white;
+  background: var(--report-paper);
   border-radius: 4px;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   cursor: pointer;
   color: #555;
 }
 
 .target-btn-cancel:hover {
-  background: #f5f5f5;
+  background: var(--report-paper);
 }
 
 .target-btn-confirm {
-  padding: 0.5rem 1.25rem;
+  padding: 0.38rem 0.9rem;
   border: none;
   background: #6c5ce7;
-  color: white;
+  color: #fff;
   border-radius: 4px;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
 }
@@ -148,4 +170,12 @@
 .target-btn-confirm:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+/* Very short viewport: allow inner scroll so content is not clipped */
+@media (max-height: 500px) {
+  .target-modal-content {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }

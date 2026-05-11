@@ -10,12 +10,40 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.report_generator.html_report_generator import HTMLReportGenerator
+from app.report_generator.report_navigation import (
+    build_report_navigation_html,
+    report_navigation_css,
+    report_navigation_js,
+)
 
 
 def _esc(x: Any) -> str:
     if x is None:
         return ""
     return html_module.escape(str(x))
+
+
+def _fmt_s_from_ms(v: Optional[float]) -> str:
+    if v is None:
+        return "—"
+    x = float(v) / 1000.0
+    if x >= 100:
+        return f"{x:.1f} s"
+    if x >= 10:
+        return f"{x:.2f} s"
+    return f"{x:.3f} s"
+
+
+def _grade_change_class(score_a: Any, score_b: Any) -> str:
+    try:
+        a, b = float(score_a), float(score_b)
+    except (TypeError, ValueError):
+        return "grade-tile-neutral"
+    if b > a + 0.01:
+        return "grade-tile-improved"
+    if b < a - 0.01:
+        return "grade-tile-worse"
+    return "grade-tile-neutral"
 
 
 def _metric_traffic_tier(
@@ -147,7 +175,7 @@ def _insight_for_metric(key: str, pct: Optional[float], ka: Dict[str, Any], kb: 
 
 COMPARE_SUPPLEMENT_CSS = """
 <style>
-/* Traffic legend */
+/* Traffic legend — 12px colored O as key (not full bar) */
 .traffic-legend {
     display: flex; flex-wrap: wrap; align-items: center; gap: 1.25rem;
     margin: 0 0 1.5rem 0; padding: 0.85rem 1.25rem;
@@ -155,11 +183,11 @@ COMPARE_SUPPLEMENT_CSS = """
     border: 1px solid var(--border-color); font-size: 0.88rem;
 }
 .traffic-legend strong { margin-right: 0.5rem; color: var(--text-primary); }
-.traffic-legend-item { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--text-secondary); }
-.tl-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
-.tl-dot-red { background: #dc2626; }
-.tl-dot-amber { background: #d97706; }
-.tl-dot-green { background: #059669; }
+.traffic-legend-item { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text-secondary); }
+.tl-key-o { font-size: 12px; font-weight: 800; line-height: 1; font-family: Georgia, 'Times New Roman', serif; }
+.tl-o-green { color: #059669; }
+.tl-o-amber { color: #d97706; }
+.tl-o-red { color: #dc2626; }
 
 /* KPI table & white sections */
 .traffic-val { font-weight: 700; }
@@ -168,22 +196,67 @@ COMPARE_SUPPLEMENT_CSS = """
 .traffic-val.traffic-red { color: #b91c1c; }
 .traffic-val.traffic-neutral { color: #64748b; font-weight: 600; }
 
-/* Executive banner by overall outcome */
-.executive-summary.exec-traffic-red {
-    background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%) !important;
+/* Executive summary — neutral card (traffic colors only in legend / values) */
+.executive-summary.comparison-exec-neutral {
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
-.executive-summary.exec-traffic-amber {
-    background: linear-gradient(135deg, #78350f 0%, #d97706 100%) !important;
+.executive-summary.comparison-exec-neutral h2 {
+    color: #0f172a !important;
+    border-bottom-color: #e2e8f0 !important;
 }
-.executive-summary.exec-traffic-green {
-    background: linear-gradient(135deg, #064e3b 0%, #059669 100%) !important;
+.executive-summary.comparison-exec-neutral .key-findings-box {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0;
 }
+.executive-summary.comparison-exec-neutral .key-findings-box h3 { color: #0f172a !important; }
+.executive-summary.comparison-exec-neutral .key-findings-box li { color: #334155 !important; }
+.executive-summary.comparison-exec-neutral .exec-card {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #1e293b;
+}
+.executive-summary.comparison-exec-neutral .exec-card h3 { color: #334155 !important; }
+.executive-summary.comparison-exec-neutral .ec-detail { color: #475569 !important; }
+.executive-summary.comparison-exec-neutral .summary-item .traffic-val.traffic-green { color: #047857; }
+.executive-summary.comparison-exec-neutral .summary-item .traffic-val.traffic-amber { color: #b45309; }
+.executive-summary.comparison-exec-neutral .summary-item .traffic-val.traffic-red { color: #b91c1c; }
+.executive-summary.comparison-exec-neutral .summary-item .traffic-val.traffic-neutral { color: #64748b; }
+.executive-summary.comparison-exec-neutral .summary-item .metric-label { color: #64748b; }
+.executive-summary.comparison-exec-neutral .summary-value { color: #0f172a; }
 
-/* Summary tiles: high-contrast value colors on gradient */
-.executive-summary .summary-item .traffic-val.traffic-green { color: #bbf7d0; }
-.executive-summary .summary-item .traffic-val.traffic-amber { color: #fde68a; }
-.executive-summary .summary-item .traffic-val.traffic-red { color: #fecaca; }
-.executive-summary .summary-item .traffic-val.traffic-neutral { color: rgba(255,255,255,0.85); }
+.grade-tile-improved { border-color: #059669 !important; background: #ecfdf5 !important; }
+.grade-tile-improved .big { color: #047857 !important; }
+.grade-tile-worse { border-color: #dc2626 !important; background: #fef2f2 !important; }
+.grade-tile-worse .big { color: #b91c1c !important; }
+.grade-tile-neutral { }
+
+.ab-endpoint-table-wrap { overflow-x: auto; max-width: 100%; }
+.ab-endpoint-table-wrap table.endpoint-table {
+    font-size: 0.72rem;
+    table-layout: fixed;
+    width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+}
+.ab-endpoint-table-wrap th, .ab-endpoint-table-wrap td { padding: 0.45rem 0.35rem; vertical-align: top; }
+
+.chart-analysis-verdict {
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0 1.25rem 0;
+    border: 2px solid #6366f1;
+    background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
+}
+.chart-analysis-verdict.verdict-green { border-color: #059669; background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%); }
+.chart-analysis-verdict.verdict-amber { border-color: #d97706; background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%); }
+.chart-analysis-verdict.verdict-red { border-color: #dc2626; background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%); }
+.chart-analysis-verdict .cv-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin: 0 0 0.35rem 0; }
+.chart-analysis-verdict .cv-verdict { font-size: 1.25rem; font-weight: 800; color: #1e293b; margin: 0 0 0.5rem 0; }
+.chart-analysis-verdict .cv-summary { font-size: 0.95rem; color: #334155; line-height: 1.55; margin: 0; }
 
 .compare-header-sub { font-size: 1.05rem; opacity: 0.95; margin-top: 0.35rem; }
 .bottleneck-item {
@@ -439,54 +512,9 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
     kb = analysis.get("test_b", {}).get("kpis", {})
     pct = analysis.get("kpi_percent_change", {})
     exec_s = analysis.get("executive_summary", {})
-    _ta = analysis.get("test_a") or {}
-    _tb = analysis.get("test_b") or {}
-    _tr = analysis.get("trend") or {}
     _hi = analysis.get("highlights") or {}
-    _rec = analysis.get("recommendations") or {}
-    _con = analysis.get("conclusion") or {}
 
     css_content = HTMLReportGenerator._generate_css()
-
-    def kpi_rows() -> str:
-        keys = [
-            ("avg_ms", "Average response time (ms)", True),
-            ("median_ms", "Median / P50 (ms)", True),
-            ("p90_ms", "P90 (ms)", True),
-            ("p95_ms", "P95 (ms)", True),
-            ("p99_ms", "P99 (ms)", True),
-            ("max_ms", "Max (ms)", True),
-            ("throughput_rps", "Throughput (req/s)", False),
-            ("error_pct", "Error %", True),
-            ("latency_avg_ms", "Avg latency (ms)", True),
-            ("connect_avg_ms", "Avg connect time (ms)", True),
-        ]
-        rows = []
-        st_a, st_b = ka.get("sample_time", {}), kb.get("sample_time", {})
-        lat_a, lat_b = ka.get("latency", {}), kb.get("latency", {})
-        conn_a, conn_b = ka.get("connect_time", {}), kb.get("connect_time", {})
-        values_a = {
-            "avg_ms": st_a.get("mean"), "median_ms": st_a.get("median"), "p90_ms": st_a.get("p90"),
-            "p95_ms": st_a.get("p95"), "p99_ms": st_a.get("p99"), "max_ms": st_a.get("max"),
-            "throughput_rps": ka.get("throughput_rps"), "error_pct": ka.get("error_pct"),
-            "latency_avg_ms": lat_a.get("mean"), "connect_avg_ms": conn_a.get("mean"),
-        }
-        values_b = {
-            "avg_ms": st_b.get("mean"), "median_ms": st_b.get("median"), "p90_ms": st_b.get("p90"),
-            "p95_ms": st_b.get("p95"), "p99_ms": st_b.get("p99"), "max_ms": st_b.get("max"),
-            "throughput_rps": kb.get("throughput_rps"), "error_pct": kb.get("error_pct"),
-            "latency_avg_ms": lat_b.get("mean"), "connect_avg_ms": conn_b.get("mean"),
-        }
-        for k, label, lb in keys:
-            va, vb = values_a.get(k), values_b.get(k)
-            pc = pct.get(k)
-            insight = _insight_for_metric(k, pc, ka, kb, lb)
-            rows.append(
-                f"<tr><td>{_esc(label)}</td><td>{_esc(f'{va:.2f}' if va is not None else '—')}</td>"
-                f"<td>{_esc(f'{vb:.2f}' if vb is not None else '—')}</td>"
-                f"<td>{_fmt_pct_traffic(k, pc, lb, ka, kb)}</td><td>{_esc(insight)}</td></tr>"
-            )
-        return "\n".join(rows)
 
     def workload_rows() -> str:
         lines = []
@@ -506,10 +534,14 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
             btp = r.get("b_tput")
             atp_s = f"{float(atp):.2f}" if atp is not None else "—"
             btp_s = f"{float(btp):.2f}" if btp is not None else "—"
+            aa = float(r.get("a_avg") or 0)
+            ba = float(r.get("b_avg") or 0)
+            ap95 = float(r.get("a_p95") or 0)
+            bp95 = float(r.get("b_p95") or 0)
             out.append(
                 f"<tr><td>{_esc(r.get('label'))}</td>"
-                f"<td>{r.get('a_avg'):.2f}</td><td>{r.get('b_avg'):.2f}</td>"
-                f"<td>{r.get('a_p95'):.2f}</td><td>{r.get('b_p95'):.2f}</td>"
+                f"<td>{_fmt_s_from_ms(aa)}</td><td>{_fmt_s_from_ms(ba)}</td>"
+                f"<td>{_fmt_s_from_ms(ap95)}</td><td>{_fmt_s_from_ms(bp95)}</td>"
                 f"<td>{atp_s}</td><td>{btp_s}</td>"
                 f"<td>{r.get('a_err_pct'):.4f}</td><td>{r.get('b_err_pct'):.4f}</td>"
                 f"<td>{_fmt_pct_traffic('p95_ms', pc, True, ka, kb)}</td></tr>"
@@ -526,21 +558,6 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
             f'<div class="alert {alert_class}" style="margin-top:1rem;">'
             f"<h3 style=\"margin-top:0;font-size:1.1rem;\">{_esc(title)}</h3>"
             f'<ul class="inner-list">{lis}</ul></div>'
-        )
-
-    def bottleneck_cards() -> str:
-        cards = []
-        for b in analysis.get("bottlenecks", []):
-            cards.append(
-                f'<div class="bottleneck-item"><h4>{_esc(b.get("type", ""))}</h4>'
-                f'<p><strong>Evidence:</strong> {_esc(b.get("evidence", ""))}</p>'
-                f'<p><strong>Impact:</strong> {_esc(b.get("impact", ""))}</p>'
-                f'<p><strong>When:</strong> {_esc(b.get("when", ""))}</p></div>'
-            )
-        return (
-            "\n".join(cards)
-            if cards
-            else '<p class="muted">No strong bottleneck pattern detected from JTL fields alone.</p>'
         )
 
     apples = da.get("apples_to_apples", True)
@@ -621,6 +638,10 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
 
     br = analysis.get("business_release") or {}
     business_html = f"""
+        <p class="muted" style="margin-bottom:1rem;line-height:1.65;">
+            This section explains—in plain language—whether the new build (candidate) is safe to ship from a business and user perspective,
+            and what it means for customers and operations.
+        </p>
         <p><strong>Release decision:</strong> {_esc(br.get("release_decision", exec_s.get("verdict", "")))}</p>
         <p><strong>Recommendation:</strong> {_esc(br.get("recommendation", exec_s.get("recommendation", "")))}</p>
         <p><strong>Customer impact:</strong> {_esc(br.get("customer_impact", ""))}</p>
@@ -633,27 +654,32 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
 
     dd = analysis.get("distribution_deep") or {}
     dist_html = f"""
-        <p><strong>Observations</strong></p>
+        <p class="muted" style="margin-bottom:1rem;line-height:1.65;">
+            Response times are rarely identical for every request. This section describes the <em>shape</em> of the data—whether most requests are fast with a few slow ones,
+            or whether delays are widespread—and what that usually means in practice.
+        </p>
+        <p><strong>What we observed</strong></p>
         <ul class="inner-list">{"".join(f"<li>{_esc(o)}</li>" for o in (dd.get("observations") or analysis.get("observations") or []))}</ul>
-        <p><strong>Interpretations</strong></p>
+        <p><strong>What it means in plain terms</strong></p>
         <ul class="inner-list">{"".join(f"<li>{_esc(i)}</li>" for i in (dd.get("interpretations") or []))}</ul>
-        <p><strong>Possible root causes</strong></p>
+        <p><strong>Possible causes to investigate</strong></p>
         <ul class="inner-list">{"".join(f"<li>{_esc(r)}</li>" for r in (dd.get("root_causes") or []) if r)}</ul>
-        <p><strong>Business impact:</strong> {_esc(dd.get("business_impact", ""))}</p>
+        <p><strong>Why this matters for the business:</strong> {_esc(dd.get("business_impact", ""))}</p>
     """
 
     gr = analysis.get("grades") or {}
     ga, gb = gr.get("baseline") or {}, gr.get("candidate") or {}
     dims = gr.get("dimensions") or []
+    overall_cls = _grade_change_class(ga.get("overall_score"), gb.get("overall_score"))
     dim_tiles = "".join(
-        f'<div class="grade-tile"><h4>{_esc(d.get("label", ""))}</h4>'
+        f'<div class="grade-tile {_grade_change_class(d.get("score_a"), d.get("score_b"))}"><h4>{_esc(d.get("label", ""))}</h4>'
         f'<div class="big">{_esc(d.get("grade_a", ""))} ({d.get("score_a", "")}) → {_esc(d.get("grade_b", ""))} ({d.get("score_b", "")})</div>'
         f'<p class="muted" style="margin:0.35rem 0 0 0;">Δ {_esc(d.get("delta", ""))} pts</p></div>'
         for d in dims
     )
     grades_html = f"""
         <div class="grades-grid">
-            <div class="grade-tile"><h4>Overall</h4>
+            <div class="grade-tile {overall_cls}"><h4>Overall</h4>
                 <div class="big">{_esc(ga.get("grade", "—"))} ({ga.get("overall_score", "—")}) → {_esc(gb.get("grade", "—"))} ({gb.get("overall_score", "—")})</div>
                 <p class="muted" style="margin:0.35rem 0 0 0;">Δ {_esc(gr.get("delta_overall", "—"))} pts (candidate vs baseline)</p></div>
             {dim_tiles}
@@ -683,6 +709,43 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
     issues_table_html = "\n".join(iss_rows) if iss_rows else (
         "<tr><td colspan='6'>No structured issues.</td></tr>"
     )
+    issues_intro_html = (
+        '<p class="muted" style="margin-bottom:1rem;line-height:1.65;">'
+        "These are the main problem areas we noticed when comparing the two runs. "
+        "Each row is written so you can see what is wrong, why it matters, and what to do next—without jargon."
+        "</p>"
+    )
+
+    def _hi_ms(v: Any) -> float:
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    endpoint_highlights_html = f"""
+            <p class="muted">Short list of endpoints that stood out—see the <strong>Performance test summary</strong> table for full numbers.</p>
+            <h3>Slowest on candidate (by P99)</h3>
+            <ul class="inner-list">
+                {"".join(
+                    f"<li>{_esc(h.get('label'))}: P99 {_fmt_s_from_ms(_hi_ms(h.get('p99_ms')))}, P95 {_fmt_s_from_ms(_hi_ms(h.get('p95_ms')))}</li>"
+                    for h in _hi.get("top_slowest_apis_b", [])
+                )}
+            </ul>
+            <h3>Most improved (P95 change)</h3>
+            <ul class="inner-list">
+                {"".join(
+                    f"<li>{_esc(h.get('label'))}: {_esc(h.get('p95_change_pct'))}%</li>"
+                    for h in _hi.get("most_improved_p95", [])
+                )}
+            </ul>
+            <h3>Most degraded (P95 change)</h3>
+            <ul class="inner-list">
+                {"".join(
+                    f"<li>{_esc(h.get('label'))}: {_esc(h.get('p95_change_pct'))}%</li>"
+                    for h in _hi.get("most_degraded_p95", [])
+                )}
+            </ul>
+    """
 
     fc = analysis.get("final_conclusion") or {}
     conclusion_cards_html = f"""
@@ -715,14 +778,38 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
 
     chart_data = analysis.get("chart_data") or {}
     chart_insights = analysis.get("chart_insights") or []
-    chart_insights_html = "<ul class='inner-list'>" + "".join(f"<li>{_esc(i)}</li>" for i in chart_insights) + "</ul>"
+    ca = analysis.get("chart_analysis") or {}
+    if not ca.get("verdict"):
+        ca = {
+            "verdict": exec_s.get("verdict", "Review latency, throughput, and error trends in the charts below."),
+            "verdict_signal": exec_s.get("traffic_signal", "green"),
+            "summary": (" ".join(chart_insights[:3]) if chart_insights else "Charts compare baseline and candidate over matching time windows."),
+            "bullets": chart_insights,
+        }
+    _vs = ca.get("verdict_signal") or "green"
+    if _vs not in ("red", "amber", "green"):
+        _vs = "green"
+    _vclass = f"verdict-{_vs}"
+    chart_analysis_html = f"""
+        <div class="chart-analysis-verdict {_vclass}">
+            <p class="cv-title">Chart analysis — verdict</p>
+            <p class="cv-verdict">{_esc(ca.get("verdict", ""))}</p>
+            <p class="cv-summary">{_esc(ca.get("summary", ""))}</p>
+        </div>
+    """
+    bullets = ca.get("bullets") or chart_insights
+    chart_insights_html = "<ul class='inner-list'>" + "".join(f"<li>{_esc(i)}</li>" for i in bullets) + "</ul>"
+
+    def _sec_series(xs: List[Any]) -> List[float]:
+        return [float(x) / 1000.0 for x in (xs or [])]
+
     chart_json = json.dumps(
         {
             "labels": chart_data.get("labels") or [],
-            "mean_rt_a": chart_data.get("mean_rt_a") or [],
-            "mean_rt_b": chart_data.get("mean_rt_b") or [],
-            "p95_a": chart_data.get("p95_a") or [],
-            "p95_b": chart_data.get("p95_b") or [],
+            "mean_rt_a": _sec_series(chart_data.get("mean_rt_a")),
+            "mean_rt_b": _sec_series(chart_data.get("mean_rt_b")),
+            "p95_a": _sec_series(chart_data.get("p95_a")),
+            "p95_b": _sec_series(chart_data.get("p95_b")),
             "tput_a": chart_data.get("tput_a") or [],
             "tput_b": chart_data.get("tput_b") or [],
             "err_a": chart_data.get("err_a") or [],
@@ -742,6 +829,26 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
         else ""
     )
 
+    nav_html = build_report_navigation_html(
+        [
+            ("section-exec-summary", "Executive summary"),
+            ("section-data-prep", "Data preparation & fairness"),
+            ("section-workload", "Workload comparison"),
+            ("section-business-impact", "Business impact & release"),
+            ("section-dist-analysis", "Statistical distribution"),
+            ("section-grades", "Grade comparison"),
+            ("section-detailed-metrics", "Detailed performance metrics"),
+            ("section-perf-endpoint", "Performance summary (per endpoint)"),
+            ("section-endpoint-highlights", "Endpoint highlights"),
+            ("section-charts", "Comparative charts"),
+            ("section-issues", "Highlighted issues"),
+            ("section-action-plan", "Recommended action plan"),
+            ("section-final-conclusion", "Final conclusion"),
+            ("section-next-steps", "Next steps & contacts"),
+        ],
+        title="On this page",
+    )
+
     html_out = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -750,9 +857,12 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
     <title>Performance Test Comparison Report</title>
     {css_content}
     {COMPARE_SUPPLEMENT_CSS}
+    {report_navigation_css()}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 </head>
 <body>
+{nav_html}
+<div class="report-main-with-nav">
     <div class="header">
         <div class="container">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
@@ -771,42 +881,59 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
     <div class="container">
         <div class="traffic-legend no-print">
             <strong>Color key</strong>
-            <span class="traffic-legend-item"><span class="tl-dot tl-dot-green"></span>Green — within SLA / acceptable</span>
-            <span class="traffic-legend-item"><span class="tl-dot tl-dot-amber"></span>Amber — degraded; business approval may allow proceed</span>
-            <span class="traffic-legend-item"><span class="tl-dot tl-dot-red"></span>Red — blocker; remediation before release</span>
+            <span class="traffic-legend-item"><span class="tl-key-o tl-o-green">O</span> Green — within SLA / acceptable</span>
+            <span class="traffic-legend-item"><span class="tl-key-o tl-o-amber">O</span> Amber — degraded; business approval may allow proceed</span>
+            <span class="traffic-legend-item"><span class="tl-key-o tl-o-red">O</span> Red — blocker; remediation before release</span>
         </div>
 
-        <div class="executive-summary exec-traffic-{_esc(exec_signal)}">
-            <h2 style="color: white; margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.35); padding-bottom: 0.5rem;">Executive summary</h2>
-            <p style="font-size: 1.25rem; font-weight: 700; margin: 0.75rem 0;">{_esc(exec_s.get("verdict", "N/A"))}</p>
-            <p style="opacity: 0.95; margin-bottom: 1rem;">{_esc(exec_s.get("recommendation", ""))}</p>
+        <div id="section-exec-summary" class="section executive-summary comparison-exec-neutral">
+            <h2 style="margin-top: 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; color: #0f172a;">Executive summary</h2>
+            <p style="font-size: 1.25rem; font-weight: 700; margin: 0.75rem 0; color: #0f172a;">{_esc(exec_s.get("verdict", "N/A"))}</p>
+            <p style="margin-bottom: 1rem; color: #334155;">{_esc(exec_s.get("recommendation", ""))}</p>
             {executive_cards_html}
             <div class="key-findings-box">
                 <h3>Key findings</h3>
                 {key_findings_html}
             </div>
-            <p style="margin-top: 1rem; opacity: 0.95;"><strong>Key improvements:</strong> {_esc("; ".join(exec_s.get("improvements") or ["None flagged"]))}</p>
-            <p style="opacity: 0.95;"><strong>Risks:</strong> {_esc("; ".join(exec_s.get("risks") or ["None flagged"]))}</p>
-            <p style="opacity: 0.9; font-size: 0.95rem;">{_esc(apples_note)}</p>
+            <p style="margin-top: 1rem; color: #334155;"><strong>Key improvements:</strong> {_esc("; ".join(exec_s.get("improvements") or ["None flagged"]))}</p>
+            <p style="color: #334155;"><strong>Risks:</strong> {_esc("; ".join(exec_s.get("risks") or ["None flagged"]))}</p>
+            <p style="font-size: 0.95rem; color: #64748b;">{_esc(apples_note)}</p>
         </div>
 
-        <div class="section">
+        <div id="section-data-prep" class="section">
+            <h2>Data preparation &amp; fairness</h2>
+            <p><strong>Apples-to-apples:</strong> {"Yes" if apples else "No — review warnings below"}</p>
+            <p><strong>Label overlap:</strong> {_esc(da.get("label_overlap_pct"))}%</p>
+            {list_block("Fairness / workload warnings", da.get("fairness_warnings") or [])}
+            {list_block("Test A data issues", da.get("issues_a") or [], "alert-danger")}
+            {list_block("Test B data issues", da.get("issues_b") or [], "alert-danger")}
+        </div>
+
+        <div id="section-workload" class="section">
+            <h2>Workload comparison</h2>
+            <table class="endpoint-table">
+                <thead><tr><th>Parameter</th><th>{_esc(name_a)}</th><th>{_esc(name_b)}</th><th>Remarks</th></tr></thead>
+                <tbody>{workload_rows()}</tbody>
+            </table>
+        </div>
+
+        <div id="section-business-impact" class="section">
             <h2>Business impact analysis &amp; release decision</h2>
             {business_html}
         </div>
 
-        <div class="section">
+        <div id="section-dist-analysis" class="section">
             <h2>Statistical distribution analysis</h2>
             {dist_html}
         </div>
 
-        <div class="section">
+        <div id="section-grades" class="section">
             <h2>Grade comparison</h2>
-            <p class="muted">Overall and by dimension (baseline → candidate). Higher scores are better.</p>
+            <p class="muted">Overall and by dimension (baseline → candidate). Higher scores are better. Green = candidate improved; red = candidate worse; unchanged = neutral.</p>
             {grades_html}
         </div>
 
-        <div class="section">
+        <div id="section-detailed-metrics" class="section">
             <h2>Detailed performance metrics</h2>
             <p class="muted">Baseline vs candidate vs display targets; dimension scores for each run.</p>
             <table class="endpoint-table">
@@ -820,37 +947,47 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
             </table>
         </div>
 
-        <div class="section">
+        <div id="section-perf-endpoint" class="section">
             <h2>Performance test summary (per endpoint)</h2>
-            <p class="muted">Overlapping transaction labels only. Sorted by candidate P95 (descending).</p>
+            <p class="muted">Overlapping labels only. Response times in seconds. <strong>BT</strong> = baseline test, <strong>CT</strong> = candidate test, <strong>TP</strong> = throughput (req/s), <strong>ERR</strong> = error rate.</p>
+            <div class="ab-endpoint-table-wrap">
             <table class="endpoint-table">
                 <thead>
                     <tr>
-                        <th>Label</th><th>Avg RT (baseline)</th><th>Avg RT (candidate)</th>
-                        <th>P95 (baseline)</th><th>P95 (candidate)</th>
-                        <th>Throughput (baseline) req/s</th><th>Throughput (candidate) req/s</th>
-                        <th>Error % (baseline)</th><th>Error % (candidate)</th><th>P95 Δ%</th>
+                        <th>Label</th>
+                        <th>Avg RT (BT)</th><th>Avg RT (CT)</th>
+                        <th>P95 (BT)</th><th>P95 (CT)</th>
+                        <th>TP (BT)</th><th>TP (CT)</th>
+                        <th>ERR (BT)</th><th>ERR (CT)</th><th>P95 Δ%</th>
                     </tr>
                 </thead>
                 <tbody>{api_rows()}</tbody>
             </table>
+            </div>
         </div>
 
-        <div class="section">
+        <div id="section-endpoint-highlights" class="section">
+            <h2>Endpoint highlights</h2>
+            {endpoint_highlights_html}
+        </div>
+
+        <div id="section-charts" class="section">
             <h2>Comparative charts</h2>
-            <p class="muted">Time windows are aligned by bucket index where both runs have samples. Read trends relative to the same window label.</p>
+            <p class="muted">Time windows are aligned by bucket index where both runs have samples. Response time lines use <strong>seconds</strong>.</p>
+            {chart_analysis_html}
             <h3>Average response time &amp; P95 over time</h3>
             <div class="chart-wrap chart-grid-1"><canvas id="abChartLatency"></canvas></div>
             <h3>Throughput over time</h3>
             <div class="chart-wrap chart-grid-1"><canvas id="abChartTput"></canvas></div>
             <h3>Error rate over time</h3>
             <div class="chart-wrap chart-grid-1"><canvas id="abChartErr"></canvas></div>
-            <h3>Chart observations &amp; insights</h3>
+            <h3>Chart details &amp; notes</h3>
             {chart_insights_html}
         </div>
 
-        <div class="section">
+        <div id="section-issues" class="section">
             <h2>Highlighted issues</h2>
+            {issues_intro_html}
             <table class="endpoint-table">
                 <thead>
                     <tr>
@@ -861,155 +998,27 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
             </table>
         </div>
 
-        <div class="section">
+        <div id="section-action-plan" class="section">
             <h2>Recommended action plan</h2>
             <p class="muted">Phased plan derived from candidate scores and weakest dimensions (same engine as the main JMeter report).</p>
             {action_plan_html}
             {success_targets_extra}
         </div>
 
-        <div class="section">
+        <div id="section-final-conclusion" class="section">
             <h2>Final conclusion</h2>
             {conclusion_cards_html}
         </div>
 
-        <div class="section">
+        <div id="section-next-steps" class="section">
             <h2>Next steps &amp; contacts</h2>
             {next_steps_html}
         </div>
 
-        <div class="section">
-            <h2>Test overview</h2>
-            <table class="endpoint-table">
-                <thead><tr><th>Field</th><th>{_esc(name_a)}</th><th>{_esc(name_b)}</th></tr></thead>
-                <tbody>
-                    <tr><td>Environment</td><td>{_esc(meta.get("environment_a") or "—")}</td><td>{_esc(meta.get("environment_b") or "—")}</td></tr>
-                    <tr><td>Build / version</td><td>{_esc(meta.get("build_a") or "—")}</td><td>{_esc(meta.get("build_b") or "—")}</td></tr>
-                    <tr><td>Tooling</td><td colspan="2">JMeter JTL / CSV / XML · Auto Report Analyzer</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div class="section">
-            <h2>Data preparation &amp; fairness</h2>
-            <p><strong>Apples-to-apples:</strong> {"Yes" if apples else "No — review warnings below"}</p>
-            <p><strong>Label overlap:</strong> {_esc(da.get("label_overlap_pct"))}%</p>
-            {list_block("Fairness / workload warnings", da.get("fairness_warnings") or [])}
-            {list_block("Test A data issues", da.get("issues_a") or [], "alert-danger")}
-            {list_block("Test B data issues", da.get("issues_b") or [], "alert-danger")}
-        </div>
-
-        <div class="section">
-            <h2>Workload comparison</h2>
-            <table class="endpoint-table">
-                <thead><tr><th>Parameter</th><th>{_esc(name_a)}</th><th>{_esc(name_b)}</th><th>Remarks</th></tr></thead>
-                <tbody>{workload_rows()}</tbody>
-            </table>
-        </div>
-
-        <div class="section">
-            <h2>KPI comparison</h2>
-            <p class="muted">Percent change = (B − A) / A × 100. For latency and errors, lower is better. For throughput, higher is better.
-            Cell colors follow the legend: green = acceptable vs baseline, amber = degraded (business sign-off), red = release blocker.</p>
-            <table class="endpoint-table">
-                <thead><tr><th>Metric</th><th>{_esc(name_a)}</th><th>{_esc(name_b)}</th><th>% change</th><th>Insight</th></tr></thead>
-                <tbody>{kpi_rows()}</tbody>
-            </table>
-        </div>
-
-        <div class="section">
-            <h2>Distribution &amp; variability (quick index)</h2>
-            <p><strong>Variability index (P99 / P50)</strong> — {_esc(name_a)}: {_esc(_ta.get("variability_index"))},
-            {_esc(name_b)}: {_esc(_tb.get("variability_index"))}</p>
-            <p class="muted">Deeper observations and interpretations are in <strong>Statistical distribution analysis</strong> above.</p>
-        </div>
-
-        <div class="section">
-            <h2>Trend analysis</h2>
-            <ul class="inner-list">
-                {"".join(f"<li>{_esc(n)}</li>" for n in _tr.get("notes", []))}
-            </ul>
-            <p class="muted">See <strong>Comparative charts</strong> for window-by-window latency, throughput, and error trends.</p>
-        </div>
-
-        <div class="section">
-            <h2>Correlation insights</h2>
-            <ul class="inner-list">
-                {"".join(f"<li>{_esc(i)}</li>" for i in analysis.get("correlation_insights") or ["No correlation statements met detection thresholds."])}
-            </ul>
-        </div>
-
-        <div class="section">
-            <h2>Bottleneck analysis (hypothesis)</h2>
-            <p class="muted">Inferred from JTL patterns — validate with traces, JVM/GC, database, and dependency dashboards.</p>
-            {bottleneck_cards()}
-        </div>
-
-        <div class="section">
-            <h2>Endpoint highlights</h2>
-            <p class="muted">Supplement to the <strong>Performance test summary</strong> table above.</p>
-            <h3>Highlights</h3>
-            <p><strong>Top slowest APIs (B, by P99):</strong></p>
-            <ul class="inner-list">
-                {"".join(
-                    f"<li>{_esc(h.get('label'))}: P99 {_esc(h.get('p99_ms'))} ms, P95 {_esc(h.get('p95_ms'))} ms</li>"
-                    for h in _hi.get("top_slowest_apis_b", [])
-                )}
-            </ul>
-            <p><strong>Most improved (P95):</strong></p>
-            <ul class="inner-list">
-                {"".join(
-                    f"<li>{_esc(h.get('label'))}: {_esc(h.get('p95_change_pct'))}%</li>"
-                    for h in _hi.get("most_improved_p95", [])
-                )}
-            </ul>
-            <p><strong>Most degraded (P95):</strong></p>
-            <ul class="inner-list">
-                {"".join(
-                    f"<li>{_esc(h.get('label'))}: {_esc(h.get('p95_change_pct'))}%</li>"
-                    for h in _hi.get("most_degraded_p95", [])
-                )}
-            </ul>
-        </div>
-
-        <div class="section">
-            <h2>Observations</h2>
-            <ul class="inner-list">{"".join(f"<li>{_esc(o)}</li>" for o in analysis.get("observations", []))}</ul>
-        </div>
-
-        <div class="section">
-            <h2>SLO recommendations</h2>
-            <ul class="inner-list">{"".join(f"<li>{_esc(s)}</li>" for s in analysis.get("slo_recommendations", []))}</ul>
-        </div>
-
-        <div class="section">
-            <h2>Alert thresholds (starting points)</h2>
-            <ul class="inner-list">{"".join(f"<li>{_esc(s)}</li>" for s in analysis.get("alert_thresholds", []))}</ul>
-        </div>
-
-        <div class="section">
-            <h2>Auto-remediation suggestions</h2>
-            <ul class="inner-list">{"".join(f"<li>{_esc(s)}</li>" for s in analysis.get("auto_remediation", []))}</ul>
-        </div>
-
-        <div class="section">
-            <h2>Recommendations</h2>
-            <h3>Immediate</h3>
-            <ul class="inner-list">{"".join(f"<li>{_esc(i)}</li>" for i in _rec.get("immediate", []) or ["—"])}</ul>
-            <h3>Medium-term</h3>
-            <ul class="inner-list">{"".join(f"<li>{_esc(i)}</li>" for i in _rec.get("medium", []) or ["—"])}</ul>
-            <h3>Long-term</h3>
-            <ul class="inner-list">{"".join(f"<li>{_esc(i)}</li>" for i in _rec.get("long", []) or ["—"])}</ul>
-        </div>
-
-        <div class="section section-conclusion-traffic-{_esc(exec_signal)}">
-            <h2>Conclusion</h2>
-            <p><strong>Decision:</strong> {_esc(_con.get("decision", ""))}</p>
-            <p><strong>Production readiness:</strong> {_esc(_con.get("production_readiness", ""))}</p>
-        </div>
-
         {footer_html}
     </div>
+</div>
+{report_navigation_js()}
     <script type="application/json" id="ab-chart-data">{chart_json}</script>
     <script>
     (function() {{
@@ -1034,10 +1043,10 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
             data: {{
                 labels: D.labels,
                 datasets: [
-                    {{ label: na + ' avg RT (ms)', data: D.mean_rt_a, borderColor: '#6366f1', tension: 0.2, fill: false }},
-                    {{ label: nb + ' avg RT (ms)', data: D.mean_rt_b, borderColor: '#0ea5e9', tension: 0.2, fill: false }},
-                    {{ label: na + ' P95 (ms)', data: D.p95_a, borderColor: '#7c3aed', borderDash: [6,4], tension: 0.2, fill: false }},
-                    {{ label: nb + ' P95 (ms)', data: D.p95_b, borderColor: '#059669', borderDash: [6,4], tension: 0.2, fill: false }}
+                    {{ label: na + ' avg RT (s)', data: D.mean_rt_a, borderColor: '#6366f1', tension: 0.2, fill: false }},
+                    {{ label: nb + ' avg RT (s)', data: D.mean_rt_b, borderColor: '#0ea5e9', tension: 0.2, fill: false }},
+                    {{ label: na + ' P95 (s)', data: D.p95_a, borderColor: '#7c3aed', borderDash: [6,4], tension: 0.2, fill: false }},
+                    {{ label: nb + ' P95 (s)', data: D.p95_b, borderColor: '#059669', borderDash: [6,4], tension: 0.2, fill: false }}
                 ]
             }},
             options: common

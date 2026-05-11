@@ -5,9 +5,15 @@ import './FileUpload.css';
 interface FileUploadProps {
   onFilesUploaded: (files: UploadedFile[]) => void;
   defaultCategory?: string;
+  /** Tighter horizontal layout for pages like JMeter (title + row) */
+  compact?: boolean;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded, defaultCategory = 'web_vitals' }) => {
+const FileUpload: React.FC<FileUploadProps> = ({
+  onFilesUploaded,
+  defaultCategory = 'web_vitals',
+  compact = false,
+}) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -99,7 +105,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesUploaded, defaultCategor
   };
 
   return (
-    <div className="file-upload-container">
+    <div className={`file-upload-container${compact ? ' file-upload-compact' : ''}`}>
       <div className="upload-area">
         <label className="file-input-label">
           <input

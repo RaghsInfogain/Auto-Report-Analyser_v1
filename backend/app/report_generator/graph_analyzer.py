@@ -23,9 +23,9 @@ class GraphAnalyzer:
         - System stability assessment
         - Capacity limit analysis
         """
-        if not time_series_data or len(time_series_data) < 10:
+        if not time_series_data or len(time_series_data) < 5:
             return {
-                "analysis": "Insufficient data points for comprehensive analysis.",
+                "analysis": "Insufficient data points for comprehensive analysis (need at least 5 time buckets).",
                 "test_type": "Unknown",
                 "disturbances": [],
                 "stability": "Unknown",
@@ -213,6 +213,9 @@ class GraphAnalyzer:
                         "avg_throughput": float(np.mean(throughput[start_idx:end_idx])),
                         "avg_vusers": float(np.mean(vusers[start_idx:end_idx]))
                     })
+                # Always advance past this segment; otherwise if inner while broke on first
+                # check with i unchanged, the outer while would repeat the same i forever.
+                i = max(end_idx, i + 1)
             else:
                 i += 1
         
@@ -377,7 +380,10 @@ class GraphAnalyzer:
         total_duration = len(response_times)
         
         # Calculate steady period coverage
-        steady_coverage = sum(p['duration'] for p in steady_periods) / (response_times[-1] - response_times[0]) if len(response_times) > 1 else 0
+        tspan = float(response_times[-1] - response_times[0]) if len(response_times) > 1 else 0.0
+        if tspan and abs(tspan) < 1e-9:
+            tspan = 1.0
+        steady_coverage = (sum(p["duration"] for p in steady_periods) / tspan) if tspan and len(response_times) > 1 else 0.0
         
         # Calculate disturbance impact
         disturbance_count = len(disturbances)

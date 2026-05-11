@@ -1,12 +1,12 @@
 .perf-compare-page {
-  background: #f5f5f5;
+  background: var(--report-paper);
   min-height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
 }
 
 .page-header {
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--report-paper);
+  border-bottom: 1px solid var(--report-rule);
   padding: 1rem 2rem;
   margin-bottom: 1.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -29,7 +29,7 @@
 
 .btn-secondary {
   background: #fff;
-  color: #333;
+  color: var(--report-ink);
   border: 1px solid #ccc;
   padding: 0.5rem 1rem;
   border-radius: 4px;
@@ -38,27 +38,27 @@
 }
 
 .btn-secondary:hover {
-  background: #f5f5f5;
+  background: var(--report-paper);
 }
 
 .page-header h1 {
   font-size: 1.5rem;
   font-weight: 500;
-  color: #333;
+  color: var(--report-ink);
   margin: 0 0 0.5rem;
 }
 
 .page-lead {
   margin: 0;
   font-size: 0.9rem;
-  color: #666;
+  color: var(--report-gray);
   max-width: 52rem;
   line-height: 1.5;
 }
 
 .btn-primary {
   background: #6c5ce7;
-  color: white;
+  color: #fff;
   border: none;
   padding: 0.5rem 1rem;
   border-radius: 4px;
@@ -94,7 +94,7 @@
 }
 
 .content-section {
-  background: white;
+  background: var(--report-paper);
   border-radius: 4px;
   padding: 1.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -113,12 +113,12 @@
 .section-header h2 {
   margin: 0;
   font-size: 1.15rem;
-  color: #333;
+  color: var(--report-ink);
 }
 
 .section-meta {
   font-size: 0.8125rem;
-  color: #666;
+  color: var(--report-gray);
 }
 
 .save-library-toggle {
@@ -152,14 +152,14 @@
 
 .saved-comparison-table thead {
   background: #f8f9fa;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 2px solid var(--report-rule);
 }
 
 .saved-comparison-table th {
   padding: 0.65rem 0.75rem;
   text-align: left;
   font-weight: 600;
-  color: #666;
+  color: var(--report-gray);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -187,7 +187,7 @@
 }
 
 .cell-muted {
-  color: #666;
+  color: var(--report-gray);
   font-size: 0.8rem;
   white-space: nowrap;
 }
@@ -319,7 +319,7 @@
 .hint-muted {
   margin-top: 1rem;
   font-size: 0.875rem;
-  color: #666;
+  color: var(--report-gray);
 }
 
 .loading-container {
@@ -333,7 +333,7 @@
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #e0e0e0;
+  border: 3px solid var(--report-rule);
   border-top-color: #6c5ce7;
   border-radius: 50%;
   animation: perf-compare-spin 1s linear infinite;

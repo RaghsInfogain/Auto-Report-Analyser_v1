@@ -149,7 +149,7 @@ const WebVitalsPage: React.FC = () => {
       }
       progressPollInterval.current = setInterval(pollProgress, 2000);
 
-      await generateRunReport(run.run_id, regenerate);
+      await generateRunReport(run.run_id, regenerate, run.total_size, run.total_records);
       await pollProgress();
     } catch (error: any) {
       console.error('Error generating report:', error);

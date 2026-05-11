@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ data.meta.title|e }} — {{ data.meta.run_id_1|e }} vs {{ data.meta.run_id_2|e }}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{
+  --ink:#0D0D0B;--paper:#F5F3EE;--cream:#EDE9E1;--rule:#D5D0C5;
+  --red:#C0392B;--red-l:#FDF0EE;--red-m:#E8A09A;
+  --amber:#B45309;--amber-l:#FEF7EC;--amber-m:#F5D78A;
+  --green:#2D6A2D;--green-l:#F0F7E6;--green-m:#A3D17E;
+  --blue:#1A4E8C;--blue-l:#EAF1FB;--blue-m:#6FA3E0;
+  --gray:#6B6860;--gray-l:#F7F5F1;
+  --mono:'DM Mono',monospace;--sans:'Instrument Sans',sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{--ink:#F5F3EE;--paper:#1A1A18;--cream:#242420;--rule:#35342F;--gray:#9A9890;--gray-l:#222220}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px;scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+.hdr{background:var(--ink);color:var(--paper);padding:2.5rem 3rem}
+.hdr-eye{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(245,243,238,.4);margin-bottom:.5rem}
+.hdr-title{font-size:2rem;font-weight:600;line-height:1.15;margin-bottom:.3rem}
+.hdr-sub{font-size:12px;color:rgba(245,243,238,.55);margin-bottom:1.5rem}
+.hdr-meta{display:flex;gap:2rem;flex-wrap:wrap;padding-top:1.2rem;border-top:1px solid rgba(245,243,238,.1)}
+.hdr-m{display:flex;flex-direction:column;gap:2px}
+.hdr-ml{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:rgba(245,243,238,.35)}
+.hdr-mv{font-family:var(--mono);font-size:11px;color:rgba(245,243,238,.8)}
+.verdict-strip-hdr{display:flex;align-items:flex-start;gap:1rem;margin-top:1.5rem;padding-top:1.2rem;border-top:1px solid rgba(245,243,238,.12)}
+.verdict-pill-hdr{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.08em;padding:5px 14px;border-radius:2px;color:#fff}
+.verdict-pill-hdr.green{background:var(--green)}.verdict-pill-hdr.amber{background:var(--amber)}.verdict-pill-hdr.red{background:var(--red)}
+.verdict-text-hdr{font-size:13px;color:rgba(245,243,238,.7);font-style:italic;line-height:1.6;max-width:52rem}
+
+.nav{position:sticky;top:0;z-index:100;background:var(--paper);border-bottom:1px solid var(--rule);display:flex;overflow-x:auto;padding:0 3rem}
+.nb{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:.7rem 1rem;border:none;background:none;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s,border-color .15s}
+.nb:hover{color:var(--ink)}
+.nb.on{color:var(--ink);border-bottom-color:var(--ink)}
+
+.panel{display:none}.panel.on{display:block}
+.page{padding:2.5rem 3rem;max-width:1180px;margin-left:auto;margin-right:auto}
+
+.sl{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin-bottom:.8rem;display:flex;align-items:center;gap:.6rem}
+.sl::after{content:'';flex:1;height:1px;background:var(--rule)}
+.st{font-size:1.2rem;font-weight:600;margin-bottom:.4rem}
+.sd{font-size:12px;color:var(--gray);margin-bottom:1.2rem;line-height:1.7;max-width:700px}
+.section{margin-bottom:2.5rem}
+
+.verdict{display:flex;align-items:flex-start;gap:1.2rem;padding:1.2rem 1.5rem;margin-bottom:2rem;border-radius:6px;border:.5px solid}
+.verdict.go{background:var(--green-l);border-color:var(--green-m)}
+.verdict.nogo{background:var(--red-l);border-color:var(--red-m)}
+.verdict.cond{background:var(--amber-l);border-color:var(--amber-m)}
+.verdict-icon{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;font-weight:700}
+.verdict.go .verdict-icon{background:var(--green);color:#fff}
+.verdict.nogo .verdict-icon{background:var(--red);color:#fff}
+.verdict.cond .verdict-icon{background:var(--amber);color:#fff}
+.verdict.cond.risk-red{background:var(--red-l);border-color:var(--red-m)}
+.verdict.cond.risk-red .verdict-icon{background:var(--red);color:#fff}
+.verdict.cond.risk-red .verdict-title{color:var(--red)}
+.verdict-title{font-size:15px;font-weight:600;margin-bottom:.3rem}
+.verdict.go .verdict-title{color:var(--green)}
+.verdict.nogo .verdict-title{color:var(--red)}
+.verdict.cond .verdict-title{color:var(--amber)}
+.verdict-text{font-size:12px;line-height:1.75;color:var(--ink)}
+
+.kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:1.5rem}
+.kpi{background:var(--paper);padding:1rem 1.1rem}
+.kl{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin-bottom:.3rem}
+.kv{font-size:1.6rem;font-weight:600;line-height:1;margin-bottom:.15rem}
+.ks{font-family:var(--mono);font-size:9px;color:var(--gray)}
+.kv.g{color:var(--green)}.kv.r{color:var(--red)}.kv.a{color:var(--amber)}
+
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem}
+.cmp-head{padding:.7rem 1rem;font-family:var(--mono);font-size:10px;font-weight:500;border-bottom:.5px solid var(--rule)}
+.cmp-head.t1{background:#f0ede6;color:var(--gray)}
+.cmp-head.t2{background:var(--green-l);color:var(--green)}
+.cmp-body{padding:.9rem 1rem}
+
+.dt{width:100%;border-collapse:collapse;font-size:11px}
+.dt th{font-family:var(--mono);font-size:8px;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);padding:6px 8px;border-bottom:.5px solid var(--rule);text-align:left;font-weight:400;background:var(--gray-l);white-space:nowrap}
+.dt td{padding:5px 8px;border-bottom:.5px solid var(--rule);vertical-align:middle}
+.dt tr:last-child td{border-bottom:none}
+.dt tr:hover td{background:var(--cream)}
+.mono{font-family:var(--mono);font-size:10px}
+.gr{color:var(--green);font-weight:600}
+.rd{color:var(--red);font-weight:600}
+.am{color:var(--amber);font-weight:600}
+.delta{font-family:var(--mono);font-size:10px}
+.delta.imp{color:var(--green)}.delta.reg{color:var(--red)}.delta.neu{color:var(--gray)}
+
+.badge{display:inline-block;font-family:var(--mono);font-size:8px;letter-spacing:.05em;padding:2px 7px;border-radius:2px;font-weight:500;white-space:nowrap}
+.bg{background:var(--green);color:#fff}.br{background:var(--red);color:#fff}
+.ba{background:var(--amber);color:#fff}.bb{background:var(--blue);color:#fff}
+.bgr{background:var(--gray);color:#fff}
+.bgo{background:var(--green-l);color:var(--green);border:1px solid var(--green-m)}
+.bro{background:var(--red-l);color:var(--red);border:1px solid var(--red-m)}
+.bao{background:var(--amber-l);color:var(--amber);border:1px solid var(--amber-m)}
+
+.cc{border:.5px solid var(--rule);padding:1.1rem 1.2rem;margin-bottom:1rem;border-radius:4px}
+.ct{font-size:12px;font-weight:600;margin-bottom:.2rem}
+.cd{font-family:var(--mono);font-size:8px;color:var(--gray);margin-bottom:.8rem;letter-spacing:.03em}
+.cw{position:relative;width:100%}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+
+.ev{background:var(--cream);border:1px solid var(--rule);padding:.7rem .9rem;font-family:var(--mono);font-size:10px;line-height:1.7;color:var(--gray);margin-top:.5rem;border-radius:3px}
+.ev strong{color:var(--ink);font-weight:500}
+
+.zone{border-left:3px solid;padding:.8rem 1rem;margin-bottom:.6rem;border-radius:0 4px 4px 0}
+.zone.g{border-color:var(--green);background:var(--green-l)}
+.zone.a{border-color:var(--amber);background:var(--amber-l)}
+.zone.r{border-color:var(--red);background:var(--red-l)}
+.zh{display:flex;align-items:center;gap:.6rem;margin-bottom:.3rem}
+.zt{font-size:12px;font-weight:600}
+.zb{font-size:11px;line-height:1.7;color:var(--ink)}
+
+.heat-0{background:#F5F3EE;color:#aaa}.heat-1{background:#E8F0FB;color:var(--blue)}.heat-2{background:#d0e4f8;color:#0D3F7C}.heat-3{background:#b0cef0;color:#0D3F7C}
+.heat-4{background:#EAF3DA;color:var(--green)}.heat-5{background:#FEF3C7;color:var(--amber)}.heat-6{background:#FDEBD0;color:#924D0B}
+.heat-7{background:#F9E8E7;color:var(--red)}.heat-8{background:#f2c7c5;color:#8B1F1C}.heat-9{background:#E8A09A;color:#fff}
+
+.ftr{background:var(--ink);color:rgba(245,243,238,.4);padding:1rem 3rem;font-family:var(--mono);font-size:9px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:.4rem;margin-top:2rem}
+
+@media(max-width:768px){
+  .page{padding:1.5rem}.hdr{padding:2rem 1.5rem}.nav{padding:0 1rem}
+  .two,.three,.cmp-grid{grid-template-columns:1fr}.kgrid{grid-template-columns:1fr 1fr}
+}
+@media print{.nav{display:none}.panel{display:block!important}.page{page-break-before:always}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-eye">Performance Engineering · Comparative Test Analysis · Confidential</div>
+  <h1 class="hdr-title">{{ data.meta.title|e }}</h1>
+  <div class="hdr-sub">{{ data.meta.run_id_1|e }} vs {{ data.meta.run_id_2|e }} · JMeter · Max {{ data.meta.max_vu }} VU</div>
+  <div class="hdr-meta">
+    <div class="hdr-m"><span class="hdr-ml">Baseline (T1)</span><span class="hdr-mv">{{ data.meta.t1_start|e }} · {{ data.meta.t1_duration_min }} min · {{ "{:,}".format(data.kpis_t1.total_samples|int) }} samples</span></div>
+    <div class="hdr-m"><span class="hdr-ml">Current (T2)</span><span class="hdr-mv">{{ data.meta.t2_start|e }} · {{ data.meta.t2_duration_min }} min · {{ "{:,}".format(data.kpis_t2.total_samples|int) }} samples</span></div>
+    <div class="hdr-m"><span class="hdr-ml">Environment</span><span class="hdr-mv">{{ data.meta.env|e }}</span></div>
+    <div class="hdr-m"><span class="hdr-ml">Max VU</span><span class="hdr-mv">{{ data.meta.max_vu }} concurrent users</span></div>
+    <div class="hdr-m"><span class="hdr-ml">Analyst</span><span class="hdr-mv">{{ data.meta.analyst|e }}</span></div>
+  </div>
+  <div class="verdict-strip-hdr">
+    <span class="verdict-pill-hdr {{ data.verdict.pill_class }}">{{ data.verdict.header_pill_text|e }}</span>
+    <span class="verdict-text-hdr">{{ data.verdict.strip_text|e }}</span>
+  </div>
+</div>
+
+<nav class="nav">
+  <button class="nb on" type="button" data-tab="ov">Overview &amp; Verdict</button>
+  <button class="nb" type="button" data-tab="kpi">KPI Comparison</button>
+  <button class="nb" type="button" data-tab="rt">Response Time</button>
+  <button class="nb" type="button" data-tab="tps">Throughput</button>
+  <button class="nb" type="button" data-tab="err">Error Analysis</button>
+  <button class="nb" type="button" data-tab="tx">Transaction Scorecard</button>
+  <button class="nb" type="button" data-tab="rca">Root Cause Delta</button>
+</nav>
+
+<div id="ov" class="panel on"><div class="page">
+<div class="section">
+  <div class="sl">Overall Verdict</div>
+  <div class="verdict {{ data.verdict.card_class }}">
+    <div class="verdict-icon">{{ data.verdict.icon }}</div>
+    <div>
+      <div class="verdict-title">{{ data.verdict.title|e }}</div>
+      {% if data.go_nogo.grading %}
+      <p class="sd" style="margin-bottom:.75rem">Release decision follows <strong>scoring &amp; grading</strong> (Performance 30%, Reliability 25%, User experience 25%, Scalability 20% vs targets):
+        grade <strong>{{ data.go_nogo.grading.grade|e }}</strong> ({{ data.go_nogo.grading.overall_score }}/100);
+        pillars — performance {{ data.go_nogo.grading.pillars.performance }}, reliability {{ data.go_nogo.grading.pillars.reliability }},
+        UX {{ data.go_nogo.grading.pillars.user_experience }}, scalability {{ data.go_nogo.grading.pillars.scalability }}.
+        Weighted gate checklist (reference): {{ data.go_nogo.weighted_gate_score_pct|default('—') }}%.
+      </p>
+      {% endif %}
+      <div class="verdict-text">{{ data.verdict_narrative_lead|e }}{% if data.verdict_narrative_caveats %}<br><br>{{ data.verdict_narrative_caveats|e }}{% endif %}</div>
+    </div>
+  </div>
+</div>
+<div class="section">
+  <div class="sl">Executive KPI Summary</div>
+  <div class="st">Head-to-head: the numbers that matter</div>
+  <div class="kgrid">
+    {% for k in data.executive_kpis %}
+    <div class="kpi"><div class="kl">{{ k.kl|e }}</div><div class="kv {{ k.kvc }}">{{ k.kv|e }}</div><div class="ks">{{ k.ks|e }}</div></div>
+    {% endfor %}
+  </div>
+</div>
+<div class="section">
+  <div class="sl">What Changed</div>
+  <div class="st">Evidence between runs</div>
+  {% for z in data.what_changed_zones %}
+  <div class="zone {{ z.cls }}"><div class="zh"><span class="badge {{ z.badge_cls }}">{{ z.badge|e }}</span><span class="zt">{{ z.title|e }}</span></div><div class="zb">{{ z.body|e }}</div></div>
+  {% endfor %}
+</div>
+</div></div>
+
+<div id="kpi" class="panel"><div class="page">
+<div class="section"><div class="sl">KPI Comparison</div><div class="st">Side-by-side</div></div>
+<div class="cmp-grid">
+  <div style="border:.5px solid var(--rule);border-radius:4px;overflow:hidden">
+    <div class="cmp-head t1">BASELINE — {{ data.meta.run_id_1|e }}</div>
+    <div class="cmp-body" style="font-size:11px;line-height:2">
+      <div>Samples: <strong>{{ "{:,}".format(data.kpis_t1.total_samples|int) }}</strong></div>
+      <div>Duration: <strong>{{ "%.1f"|format(data.meta.t1_duration_min) }} min</strong></div>
+      <div>Error rate: <strong>{{ "%.2f"|format(data.kpis_t1.error_rate_pct) }}%</strong></div>
+      <div>404 errors: <strong>{{ data.kpis_t1.count_404 }}</strong></div>
+      <div>504 timeouts: <strong>{{ data.kpis_t1.count_504 }}</strong></div>
+      <div>NoHTTP drops: <strong>{{ data.kpis_t1.count_nohttpresponse }}</strong></div>
+      <div>Mean RT: <strong>{{ "%.0f"|format(data.kpis_t1.mean_rt) }} ms</strong></div>
+      <div>P90: <strong>{{ "%.0f"|format(data.kpis_t1.p90_rt) }} ms</strong></div>
+      <div>P95: <strong>{{ "%.0f"|format(data.kpis_t1.p95_rt) }} ms</strong></div>
+      <div>P99: <strong>{{ "%.0f"|format(data.kpis_t1.p99_rt) }} ms</strong></div>
+      <div>Max RT: <strong>{{ "%.0f"|format(data.kpis_t1.max_rt) }} ms</strong></div>
+      <div>TPS: <strong>{{ "%.1f"|format(data.kpis_t1.overall_tps) }}</strong></div>
+    </div>
+  </div>
+  <div style="border:.5px solid var(--green-m);border-radius:4px;overflow:hidden">
+    <div class="cmp-head t2">CURRENT — {{ data.meta.run_id_2|e }}</div>
+    <div class="cmp-body" style="font-size:11px;line-height:2">
+      <div>Samples: <strong>{{ "{:,}".format(data.kpis_t2.total_samples|int) }}</strong></div>
+      <div>Duration: <strong>{{ "%.1f"|format(data.meta.t2_duration_min) }} min</strong></div>
+      <div>Error rate: <strong>{{ "%.2f"|format(data.kpis_t2.error_rate_pct) }}%</strong></div>
+      <div>404 errors: <strong>{{ data.kpis_t2.count_404 }}</strong></div>
+      <div>504 timeouts: <strong>{{ data.kpis_t2.count_504 }}</strong></div>
+      <div>NoHTTP drops: <strong>{{ data.kpis_t2.count_nohttpresponse }}</strong></div>
+      <div>Mean RT: <strong>{{ "%.0f"|format(data.kpis_t2.mean_rt) }} ms</strong></div>
+      <div>P90: <strong>{{ "%.0f"|format(data.kpis_t2.p90_rt) }} ms</strong></div>
+      <div>P95: <strong>{{ "%.0f"|format(data.kpis_t2.p95_rt) }} ms</strong></div>
+      <div>P99: <strong>{{ "%.0f"|format(data.kpis_t2.p99_rt) }} ms</strong></div>
+      <div>Max RT: <strong>{{ "%.0f"|format(data.kpis_t2.max_rt) }} ms</strong></div>
+      <div>TPS: <strong>{{ "%.1f"|format(data.kpis_t2.overall_tps) }}</strong></div>
+    </div>
+  </div>
+</div>
+<div class="section">
+  <div class="sl">Load Band Matrix</div>
+  <div style="overflow-x:auto">
+  <table class="dt">
+    <thead><tr><th>Band</th><th>T1 Mean</th><th>T2 Mean</th><th>Δ Mean</th><th>T1 P90</th><th>T2 P90</th><th>Δ P90</th><th>T1 Err%</th><th>T2 Err%</th><th>T1 504</th><th>T2 504</th><th>Verdict</th></tr></thead>
+    <tbody>
+    {% for r in data.band_compare %}
+      <tr>
+        <td><strong>{{ r.load_band|e }}</strong></td>
+        <td class="mono">{{ "%.0f"|format(r.mean_rt_t1|default(0)) }}</td>
+        <td class="mono">{{ "%.0f"|format(r.mean_rt_t2|default(0)) }}</td>
+        <td class="delta {{ 'imp' if (r.delta_mean_rt|default(0)) < 0 else 'reg' if (r.delta_mean_rt|default(0)) > 0 else 'neu' }}">{{ "%.0f"|format(r.delta_mean_rt|default(0)) }}</td>
+        <td class="mono">{{ "%.0f"|format(r.p90_rt_t1|default(0)) }}</td>
+        <td class="mono">{{ "%.0f"|format(r.p90_rt_t2|default(0)) }}</td>
+        <td class="delta {{ 'imp' if (r.delta_p90_rt|default(0)) < 0 else 'reg' }}">{{ "%.0f"|format(r.delta_p90_rt|default(0)) }}</td>
+        <td>{{ "%.2f"|format(r.error_rate_t1|default(0)) }}</td>
+        <td>{{ "%.2f"|format(r.error_rate_t2|default(0)) }}</td>
+        <td>{{ r.count_504_t1|default(0) }}</td>
+        <td>{{ r.count_504_t2|default(0) }}</td>
+        <td><span class="badge bg">{{ r.verdict_label|e }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<div class="section">
+  <div class="sl">Apdex by band</div>
+  <div class="cc">
+    <div class="ct">Apdex (T=3s)</div>
+    <div class="cd">T1 gray bars · T2 green bars</div>
+    <div class="cw" style="height:220px"><canvas id="apdexChart" role="img" aria-label="Apdex comparison"></canvas></div>
+  </div>
+</div>
+</div></div>
+
+<div id="rt" class="panel"><div class="page">
+<div class="section"><div class="sl">Response Time</div><div class="st">Trends and distribution</div></div>
+<div class="cc">
+  <div class="ct">Mean RT vs per-minute &amp; VU</div>
+  <div class="cw" style="height:280px"><canvas id="rtChart" role="img" aria-label="Mean response time trend"></canvas></div>
+</div>
+<div class="two">
+  <div class="cc">
+    <div class="ct">P90 by band</div>
+    <div class="cw" style="height:200px"><canvas id="p90Chart" role="img" aria-label="P90 by band"></canvas></div>
+  </div>
+  <div class="cc">
+    <div class="ct">T2 percentiles @ peak band</div>
+    <div class="cw" style="height:200px"><canvas id="t2pctChart" role="img" aria-label="T2 peak percentiles"></canvas></div>
+  </div>
+</div>
+<div class="section">
+  <div class="sl">RT distribution heatmap (T2)</div>
+  <p class="sd">{{ data.heatmap_bucket_note|default('')|e }}</p>
+  <div style="overflow-x:auto">
+  <table class="dt">
+    <thead><tr><th>Band</th>{% for b in data.heatmap_buckets %}<th class="mono">{{ b|e }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in data.heatmap_rows_t2 %}
+      <tr><th>{{ row.load_band|e }}</th>{% for c in row.cells %}<td class="{{ c.heat }}">{{ "%.1f"|format(c.pct) }}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+</div></div>
+
+<div id="tps" class="panel"><div class="page">
+<div class="section"><div class="sl">Throughput</div><div class="st">TPS analysis</div></div>
+<div class="cc">
+  <div class="ct">TPS over time</div>
+  <div class="cw" style="height:280px"><canvas id="tpsChart" role="img" aria-label="TPS trend"></canvas></div>
+</div>
+<div class="two">
+  <div class="cc">
+    <div class="ct">TPS by band</div>
+    <div class="cw" style="height:200px"><canvas id="tpsBandChart" role="img"></canvas></div>
+  </div>
+  <div class="cc">
+    <div class="ct">TPS coefficient of variation</div>
+    <div class="cw" style="height:200px"><canvas id="covChart" role="img"></canvas></div>
+  </div>
+</div>
+<div class="ev"><strong>Throughput evidence:</strong><br>
+{{ data.throughput_evidence_html|default('')|safe }}
+</div>
+</div></div>
+
+<div id="err" class="panel"><div class="page">
+<div class="section"><div class="sl">Error Analysis</div><div class="st">Composition and band error rate</div></div>
+<div class="kgrid" style="margin-bottom:1rem">
+  <div class="kpi"><div class="kl">T2 total errors</div><div class="kv">{{ data.error_analysis.t2.total_errors }}</div><div class="ks">T1 was {{ data.error_analysis.t1.total_errors }}</div></div>
+  <div class="kpi"><div class="kl">Client 4xx</div><div class="kv">{{ data.error_analysis.t2.client_4xx_count }}</div><div class="ks">delta {{ data.error_analysis.compare.client_4xx_delta|default(0) }}</div></div>
+  <div class="kpi"><div class="kl">Server 5xx</div><div class="kv">{{ data.error_analysis.t2.server_5xx_count }}</div><div class="ks">delta {{ data.error_analysis.compare.server_5xx_delta|default(0) }}</div></div>
+  <div class="kpi"><div class="kl">Connection</div><div class="kv">{{ data.error_analysis.t2.connection_count }}</div><div class="ks">delta {{ data.error_analysis.compare.connection_delta|default(0) }}</div></div>
+  <div class="kpi"><div class="kl">Onset minute</div><div class="kv mono" style="font-size:11px">{{ data.error_analysis.t2.error_onset_minute|default('—') }}</div></div>
+  <div class="kpi"><div class="kl">Peak err rate</div><div class="kv">{{ "%.2f"|format(data.error_analysis.t2.error_peak_rate|default(0)) }}%</div></div>
+</div>
+<div class="two">
+  <div class="cc">
+    <div class="ct">Error composition</div>
+    <div class="cw" style="height:200px"><canvas id="errCompChart" role="img"></canvas></div>
+  </div>
+  <div class="cc">
+    <div class="ct">Error rate by band</div>
+    <div class="cw" style="height:200px"><canvas id="errBandChart" role="img"></canvas></div>
+  </div>
+</div>
+<div class="section">
+  <div class="sl">Errors by transaction (sample)</div>
+  <div style="overflow-x:auto">
+  <table class="dt">
+    <thead><tr><th>Transaction</th><th>T2 Err</th><th>T2 %</th><th>Type</th><th>T1 Err</th><th>T1 %</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in data.err_by_tx_table %}
+    <tr><td>{{ r.label|e }}</td><td>{{ r.e2 }}</td><td>{{ "%.1f"|format(r.er2) }}</td><td><span class="badge br">{{ r.dom|e }}</span></td><td>{{ r.e1 }}</td><td>{{ "%.1f"|format(r.er1) }}</td><td>{{ r.st|e }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+</div></div>
+
+<div id="tx" class="panel"><div class="page">
+<div class="section"><div class="sl">Transaction scorecard</div></div>
+<div class="kgrid" style="margin-bottom:1rem">
+  <div class="kpi"><div class="kl">Critical</div><div class="kv r">{{ data.tx_counts.critical }}</div></div>
+  <div class="kpi"><div class="kl">Warning</div><div class="kv a">{{ data.tx_counts.warning }}</div></div>
+  <div class="kpi"><div class="kl">Slow</div><div class="kv a">{{ data.tx_counts.slow }}</div></div>
+  <div class="kpi"><div class="kl">Healthy</div><div class="kv g">{{ data.tx_counts.healthy }}</div></div>
+</div>
+<div style="overflow-x:auto">
+<table class="dt">
+  <thead><tr><th>Tx</th><th>T1 P90</th><th>T2 P90</th><th>Δ</th><th>T1 Err%</th><th>T2 Err%</th><th>T1 A</th><th>T2 A</th><th>T1 SLA</th><th>T2 SLA</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for r in data.transactions %}
+  <tr>
+    <td>{{ r.label|e }}</td>
+    <td class="mono">{{ "%.0f"|format(r.p90_t1|default(0)) if r.p90_t1 is not none else "—" }}</td>
+    <td class="mono">{{ "%.0f"|format(r.p90_t2|default(0)) if r.p90_t2 is not none else "—" }}</td>
+    <td class="mono">{{ "%.0f"|format(r.dp90|default(0)) }}</td>
+    <td>{{ "%.2f"|format(r.er1|default(0)) if r.er1 is not none else "—" }}</td>
+    <td>{{ "%.2f"|format(r.er2|default(0)) if r.er2 is not none else "—" }}</td>
+    <td class="mono">{{ "%.3f"|format(r.a1|default(0)) if r.a1 is not none else "—" }}</td>
+    <td class="mono">{{ "%.3f"|format(r.a2|default(0)) if r.a2 is not none else "—" }}</td>
+    <td><span class="badge {{ 'bgo' if r.s1 == 'PASS' else 'bro' }}">{{ r.s1|e }}</span></td>
+    <td><span class="badge {{ 'bgo' if r.s2 == 'PASS' else 'bro' }}">{{ r.s2|e }}</span></td>
+    <td><span class="badge bgr">{{ r.badgestatus|e }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</div></div>
+
+<div id="rca" class="panel"><div class="page">
+<div class="section"><div class="sl">Root cause delta</div></div>
+{% for r in data.rca_changes %}
+<div class="zone {{ 'g' if r.t2_status == 'resolved' else 'a' if r.t2_status in ['partial','unclear'] else 'r' }}">
+  <div class="zh"><span class="badge {{ 'bg' if r.badge_color == 'green' else 'ba' if r.badge_color == 'amber' else 'br' }}">{{ r.rca_id|e }} {{ r.t2_status|upper|e }}</span><span class="zt">{{ r.title|e }}</span></div>
+  <div class="zb">{{ r.evidence_t1|e }} → {{ r.evidence_t2|e }}</div>
+</div>
+{% endfor %}
+</div></div>
+
+<div class="ftr">
+  <span>{{ data.meta.title|e }} · {{ data.meta.run_id_1|e }} vs {{ data.meta.run_id_2|e }}</span>
+  <span>Verdict: {{ data.go_nogo.verdict|e }}{% if data.go_nogo.grading and data.go_nogo.grading.release_header_label %} — {{ data.go_nogo.grading.release_header_label|e }}{% endif %} · Generated {{ data.meta.generated_at|e }} · Confidential</span>
+</div>
+
+<script>
+const REPORT_DATA = __REPORT_DATA_JSON__;
+{{ data.chart_defaults_js|safe }}
+
+function bandLabels(){return (REPORT_DATA.bands_t1||[]).map(b=>b.load_band);}
+
+document.querySelectorAll('.nb').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    document.querySelectorAll('.panel').forEach(p=>{
+      p.classList.remove('on');
+    });
+    const tid = btn.getAttribute('data-tab');
+    const el = document.getElementById(tid);
+    if(el) el.classList.add('on');
+  });
+});
+
+function initCharts(){
+  const bl = bandLabels();
+  const apT1 = (REPORT_DATA.apdex_t1||[]).map(x=>x.apdex);
+  const apT2 = (REPORT_DATA.apdex_t2||[]).map(x=>x.apdex);
+  if(_canvas('apdexChart')) new Chart(_canvas('apdexChart'), {
+    type:'bar',
+    data:{labels:bl,datasets:[
+      {data:apT1,backgroundColor:'#D5D0C5',borderRadius:3},
+      {data:apT2,backgroundColor:'#2D6A2D',borderRadius:3}
+    ]},
+    options:{...CHART_DEFAULTS, scales:{
+      y:{min:0.8,max:1,ticks:TICK_STYLE,grid:{color:GRID_COLOR}},
+      x:{ticks:TICK_STYLE,grid:{display:false}}
+    }}
+  });
+
+  const pm1 = REPORT_DATA.per_minute_t1||[];
+  const pm2 = REPORT_DATA.per_minute_t2||[];
+  const lab = pm2.map((_,i)=>String(i));
+  if(_canvas('rtChart')) new Chart(_canvas('rtChart'), {
+    type:'line',
+    data:{labels:lab,datasets:[
+      {label:'T1 mean',data:pm1.map(r=>r.mean_rt),borderColor:'#C0392B',fill:false,yAxisID:'y',pointRadius:0},
+      {label:'T2 mean',data:pm2.map(r=>r.mean_rt),borderColor:'#1A4E8C',fill:true,backgroundColor:'rgba(26,78,140,0.05)',yAxisID:'y',pointRadius:0},
+      {label:'VU',data:pm2.map(r=>r.max_threads),borderColor:'#2D6A2D',borderDash:[2,4],yAxisID:'y1',pointRadius:0}
+    ]},
+    options:{...CHART_DEFAULTS, scales:{
+      y:{position:'left',ticks:{...TICK_STYLE,callback:RT_CALLBACK},grid:{color:GRID_COLOR}},
+      y1:{position:'right',grid:{display:false},ticks:{...TICK_STYLE,color:'#2D6A2D'}},
+      x:{ticks:{...TICK_STYLE,maxTicksLimit:12},grid:{color:GRID_COLOR}}
+    }}
+  });
+
+  const b1 = REPORT_DATA.bands_t1||[];
+  const b2 = REPORT_DATA.bands_t2||[];
+  if(_canvas('p90Chart')) new Chart(_canvas('p90Chart'), {
+    type:'bar',
+    data:{labels:bl,datasets:[
+      {data:b1.map(b=>b.p90_rt),backgroundColor:'#C0392B',borderRadius:3},
+      {data:b2.map(b=>b.p90_rt),backgroundColor:'#1A4E8C',borderRadius:3}
+    ]},
+    options:{...CHART_DEFAULTS, scales:{y:{ticks:{...TICK_STYLE,callback:RT_CALLBACK},grid:{color:GRID_COLOR}},x:{ticks:TICK_STYLE}}}
+  });
+
+  const sp = REPORT_DATA.t2_pct_spread_peak||{};
+  if(_canvas('t2pctChart') && Object.keys(sp).length) new Chart(_canvas('t2pctChart'), {
+    type:'bar',
+    data:{
+      labels:['Median','P75','P90','P95','P99'],
+      datasets:[{data:[sp.median,sp.p75,sp.p90,sp.p95,sp.p99],backgroundColor:['#2D6A2D','#6FA3E0','#F5D78A','#B45309','#C0392B'],borderRadius:3}]
+    },
+    options:{...CHART_DEFAULTS, scales:{y:{ticks:{...TICK_STYLE,callback:RT_CALLBACK}},x:{ticks:TICK_STYLE}}}
+  });
+
+  if(_canvas('tpsChart')) new Chart(_canvas('tpsChart'), {
+    type:'line',
+    data:{labels:lab,datasets:[
+      {data:pm1.map(r=>r.tps),borderColor:'#D5D0C5',borderWidth:1.5,fill:false,pointRadius:0},
+      {data:pm2.map(r=>r.tps),borderColor:'#2D6A2D',borderWidth:2,fill:true,backgroundColor:'rgba(45,106,45,0.06)',pointRadius:0}
+    ]},
+    options:{...CHART_DEFAULTS, scales:{y:{ticks:TICK_STYLE,grid:{color:GRID_COLOR}},x:{ticks:{maxTicksLimit:12}}}}
+  });
+
+  if(_canvas('tpsBandChart')) new Chart(_canvas('tpsBandChart'), {
+    type:'bar',
+    data:{labels:bl,datasets:[
+      {data:b1.map(b=>b.tps_mean),backgroundColor:'#D5D0C5',borderRadius:3},
+      {data:b2.map(b=>b.tps_mean),backgroundColor:'#2D6A2D',borderRadius:3}
+    ]},
+    options:{...CHART_DEFAULTS}
+  });
+
+  if(_canvas('covChart')) new Chart(_canvas('covChart'), {
+    type:'bar',
+    data:{labels:bl,datasets:[
+      {data:b1.map(b=>(b.tps_cov||0)*100),backgroundColor:'#C0392B',borderRadius:3},
+      {data:b2.map(b=>(b.tps_cov||0)*100),backgroundColor:'#2D6A2D',borderRadius:3}
+    ]},
+    options:{...CHART_DEFAULTS}
+  });
+
+  const e1 = REPORT_DATA.error_analysis.t1;
+  const e2 = REPORT_DATA.error_analysis.t2;
+  if(_canvas('errCompChart')) new Chart(_canvas('errCompChart'), {
+    type:'bar',
+    data:{labels:['T1 baseline','T2 current'],
+      datasets:[
+        {label:'404',data:[e1.count_404||0,e2.count_404||0],backgroundColor:'#C0392B'},
+        {label:'504',data:[REPORT_DATA.kpis_t1.count_504||0,REPORT_DATA.kpis_t2.count_504||0],backgroundColor:'#B45309'},
+        {label:'Conn',data:[e1.connection_count||0,e2.connection_count||0],backgroundColor:'#6B6860'}
+      ]
+    },
+    options:{...CHART_DEFAULTS, scales:{x:{stacked:true},y:{stacked:true}}}
+  });
+
+  if(_canvas('errBandChart')) new Chart(_canvas('errBandChart'), {
+    type:'bar',
+    data:{labels:bl,datasets:[
+      {data:b1.map(b=>b.error_rate),backgroundColor:'#C0392B',borderRadius:3},
+      {data:b2.map(b=>b.error_rate),backgroundColor:'#2D6A2D',borderRadius:3}
+    ]},
+    options:{...CHART_DEFAULTS}
+  });
+}
+
+function _canvas(id){return document.getElementById(id);}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initCharts); else initCharts();
+</script>
+</body>
+</html>
