@@ -175,47 +175,48 @@ class GraphAnalyzer:
             return steady_periods
         
         i = 0
-        while i < len(response_times) - window_size:
-            window_rt = response_times[i:i+window_size]
-            window_tp = throughput[i:i+window_size]
-            window_vu = vusers[i:i+window_size]
-            
-            # Calculate coefficients of variation
+        n = len(response_times)
+        while i < n - window_size:
+            window_rt = response_times[i:i + window_size]
+            window_tp = throughput[i:i + window_size]
+            window_vu = vusers[i:i + window_size]
+
             rt_cv = np.std(window_rt) / np.mean(window_rt) if np.mean(window_rt) > 0 else 0
             tp_cv = np.std(window_tp) / np.mean(window_tp) if np.mean(window_tp) > 0 else 0
             vu_cv = np.std(window_vu) / np.mean(window_vu) if np.mean(window_vu) > 0 else 0
-            
-            # Consider steady if all CVs are low
+
             if rt_cv < 0.2 and tp_cv < 0.2 and vu_cv < 0.15:
                 start_idx = i
-                # Extend the period forward
-                while i < len(response_times) - window_size:
-                    next_window_rt = response_times[i+1:i+window_size+1]
-                    next_window_tp = throughput[i+1:i+window_size+1]
-                    next_window_vu = vusers[i+1:i+window_size+1]
-                    
+                while i < n - window_size:
+                    next_window_rt = response_times[i + 1:i + window_size + 1]
+                    next_window_tp = throughput[i + 1:i + window_size + 1]
+                    next_window_vu = vusers[i + 1:i + window_size + 1]
+
                     next_rt_cv = np.std(next_window_rt) / np.mean(next_window_rt) if np.mean(next_window_rt) > 0 else 0
                     next_tp_cv = np.std(next_window_tp) / np.mean(next_window_tp) if np.mean(next_window_tp) > 0 else 0
                     next_vu_cv = np.std(next_window_vu) / np.mean(next_window_vu) if np.mean(next_window_vu) > 0 else 0
-                    
+
                     if next_rt_cv < 0.2 and next_tp_cv < 0.2 and next_vu_cv < 0.15:
                         i += 1
                     else:
                         break
-                
-                end_idx = i + window_size
+
+                end_idx = min(i + window_size, n)
                 if end_idx - start_idx >= window_size:
+                    end_idx_clamped = min(end_idx, n)
                     steady_periods.append({
                         "start_time": float(times[start_idx]),
-                        "end_time": float(times[min(end_idx, len(times)-1)]),
-                        "duration": float(times[min(end_idx, len(times)-1)] - times[start_idx]),
-                        "avg_response_time": float(np.mean(response_times[start_idx:end_idx])),
-                        "avg_throughput": float(np.mean(throughput[start_idx:end_idx])),
-                        "avg_vusers": float(np.mean(vusers[start_idx:end_idx]))
+                        "end_time": float(times[end_idx_clamped - 1]),
+                        "duration": float(times[end_idx_clamped - 1] - times[start_idx]),
+                        "avg_response_time": float(np.mean(response_times[start_idx:end_idx_clamped])),
+                        "avg_throughput": float(np.mean(throughput[start_idx:end_idx_clamped])),
+                        "avg_vusers": float(np.mean(vusers[start_idx:end_idx_clamped])),
                     })
+                # Always advance — otherwise i can stall at the tail and loop forever
+                i = max(i + 1, end_idx)
             else:
                 i += 1
-        
+
         return steady_periods
     
     @staticmethod

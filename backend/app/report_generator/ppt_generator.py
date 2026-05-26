@@ -340,83 +340,67 @@ class PPTReportGenerator:
         
         # ==================== SLIDE 6: PERFORMANCE TABLES ====================
         slide = prs.slides.add_slide(blank_slide_layout)
-        
-        # Title
+
+        if transaction_stats:
+            endpoint_stats = transaction_stats
+            table_title = "📊 Transactions — Top Slowest"
+            name_header = "Transaction"
+            header_rgb = RGBColor(37, 99, 235)
+        elif request_stats:
+            endpoint_stats = request_stats
+            table_title = "📊 HTTP Requests — Top Slowest"
+            name_header = "Request / Endpoint"
+            header_rgb = RGBColor(5, 150, 105)
+        else:
+            endpoint_stats = None
+            table_title = "📊 Performance Summary"
+            name_header = "Endpoint"
+            header_rgb = RGBColor(37, 99, 235)
+
         title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.5))
         title_frame = title_box.text_frame
-        title_frame.text = "📊 Performance Summary - Top Slowest"
+        title_frame.text = table_title
         title_para = title_frame.paragraphs[0]
         title_para.font.size = Pt(28)
         title_para.font.bold = True
         title_para.font.color.rgb = RGBColor(37, 99, 235)
-        
-        # Transaction table
-        if transaction_stats:
-            sorted_trans = sorted(transaction_stats.items(), 
-                                 key=lambda x: x[1].get('avg_response', 0) or 0, 
-                                 reverse=True)[:5]
-            
-            rows_trans = len(sorted_trans) + 1
-            trans_table = slide.shapes.add_table(rows_trans, 4, Inches(0.5), Inches(1), Inches(9), Inches(2.5)).table
-            
-            # Headers
-            headers = ["Transaction", "Avg Time", "95th %ile", "Error %"]
-            for j, header in enumerate(headers):
-                trans_table.cell(0, j).text = header
-                cell = trans_table.cell(0, j)
+
+        table_headers = [name_header, "Avg Time", "95th %ile", "Error %"]
+
+        if endpoint_stats:
+            sorted_rows = sorted(
+                endpoint_stats.items(),
+                key=lambda x: x[1].get("avg_response", 0) or 0,
+                reverse=True,
+            )[:8]
+
+            perf_table = slide.shapes.add_table(
+                len(sorted_rows) + 1, 4, Inches(0.5), Inches(1), Inches(9), Inches(5.5)
+            ).table
+
+            for j, header in enumerate(table_headers):
+                perf_table.cell(0, j).text = header
+                cell = perf_table.cell(0, j)
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor(37, 99, 235)
+                cell.fill.fore_color.rgb = header_rgb
                 for paragraph in cell.text_frame.paragraphs:
                     for run in paragraph.runs:
                         run.font.color.rgb = RGBColor(255, 255, 255)
                         run.font.bold = True
                         run.font.size = Pt(10)
-            
-            # Data
-            for i, (label, data) in enumerate(sorted_trans, 1):
-                trans_table.cell(i, 0).text = label[:35]
-                trans_table.cell(i, 1).text = f"{data.get('avg_response', 0)/1000:.2f}s"
-                trans_table.cell(i, 2).text = f"{data.get('p95', 0)/1000:.2f}s"
-                trans_table.cell(i, 3).text = f"{data.get('error_rate', 0):.2f}%"
-                
-                # Set font size
+
+            for i, (label, data) in enumerate(sorted_rows, 1):
+                perf_table.cell(i, 0).text = label[:35]
+                perf_table.cell(i, 1).text = f"{data.get('avg_response', 0) / 1000:.2f}s"
+                perf_table.cell(i, 2).text = f"{data.get('p95', 0) / 1000:.2f}s"
+                perf_table.cell(i, 3).text = f"{data.get('error_rate', 0):.2f}%"
                 for j in range(4):
-                    for paragraph in trans_table.cell(i, j).text_frame.paragraphs:
+                    for paragraph in perf_table.cell(i, j).text_frame.paragraphs:
                         for run in paragraph.runs:
                             run.font.size = Pt(9)
-        
-        # Request table
-        if request_stats:
-            sorted_req = sorted(request_stats.items(), 
-                               key=lambda x: x[1].get('avg_response', 0) or 0, 
-                               reverse=True)[:5]
-            
-            rows_req = len(sorted_req) + 1
-            req_table = slide.shapes.add_table(rows_req, 4, Inches(0.5), Inches(4), Inches(9), Inches(2.5)).table
-            
-            # Headers
-            for j, header in enumerate(headers):
-                req_table.cell(0, j).text = header if j == 0 else headers[j]
-                cell = req_table.cell(0, j)
-                cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor(5, 150, 105)
-                for paragraph in cell.text_frame.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.color.rgb = RGBColor(255, 255, 255)
-                        run.font.bold = True
-                        run.font.size = Pt(10)
-            
-            # Data
-            for i, (label, data) in enumerate(sorted_req, 1):
-                req_table.cell(i, 0).text = label[:35]
-                req_table.cell(i, 1).text = f"{data.get('avg_response', 0)/1000:.2f}s"
-                req_table.cell(i, 2).text = f"{data.get('p95', 0)/1000:.2f}s"
-                req_table.cell(i, 3).text = f"{data.get('error_rate', 0):.2f}%"
-                
-                for j in range(4):
-                    for paragraph in req_table.cell(i, j).text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.size = Pt(9)
+        else:
+            note = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(1))
+            note.text_frame.text = "No transaction or request breakdown available for this run."
         
         # ==================== SLIDE 7: CRITICAL ISSUES ====================
         if critical_issues:

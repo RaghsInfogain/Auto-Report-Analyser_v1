@@ -7,7 +7,19 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import html as html_module
 
-from app.report_generator.enterprise_styles import ENTERPRISE_FONT_LINKS, get_enterprise_css
+from app.report_generator.enterprise_styles import (
+    COMPARISON_REPORT_NAV,
+    ENTERPRISE_FONT_LINKS,
+    get_enterprise_css,
+    render_colour_legend,
+    render_report_body_close,
+    render_report_body_open,
+    render_report_header,
+    render_report_navigation_script,
+    render_report_shell_close,
+    render_report_shell_open,
+    section_anchor,
+)
 
 
 def _get_jmeter_stats(metrics: Optional[Dict]) -> tuple:
@@ -102,6 +114,23 @@ def generate_comparison_html_report(
     regressions_section = _build_regressions_section(comparison_data)
     improvements_section = _build_improvements_section(comparison_data)
 
+    baseline_esc = html_module.escape(baseline_run_id)
+    current_esc = html_module.escape(current_run_id)
+    type_esc = html_module.escape(comparison_type)
+    page_header = render_report_header(
+        "Performance Comparison Report",
+        (
+            f"Baseline: {baseline_esc} vs Current: {current_esc} · "
+            f"{type_esc} · {current_date}"
+        ),
+        icon_class="ti ti-arrows-left-right",
+        icon_tone="pu",
+        actions_html=(
+            '<button type="button" onclick="window.print()" class="btn bp no-print">'
+            '<i class="ti ti-download"></i> Save as PDF</button>'
+        ),
+    )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -118,20 +147,15 @@ def generate_comparison_html_report(
         .score-card .label {{ font-size: 9.5px; color: var(--ink4); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }}
         .two-cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
         @media (max-width: 768px) {{ .two-cols {{ grid-template-columns: 1fr; }} }}
-        .pdf-button {{ background: var(--bl); color: #fff; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 11.5px; margin-top: 8px; }}
         @media print {{ .no-print {{ display: none !important; }} }}
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Performance Comparison Report</h1>
-            <p>Baseline: <strong>{html_module.escape(baseline_run_id)}</strong> &nbsp; vs &nbsp; Current: <strong>{html_module.escape(current_run_id)}</strong></p>
-            <p style="margin-top: 0.5rem; font-size: 0.9rem;">Comparison type: {html_module.escape(comparison_type)} &nbsp;|&nbsp; {current_date}</p>
-            <button onclick="window.print()" class="pdf-button no-print">Save as PDF</button>
-        </div>
-
-        <div class="section">
+{render_report_shell_open(COMPARISON_REPORT_NAV)}
+{page_header}
+{render_colour_legend()}
+{render_report_body_open()}
+        {section_anchor("report-executive", '''<div class="section report-readable">
             <h2>Executive Summary</h2>
             <div class="verdict-badge" style="background: {verdict_color};">
                 {html_module.escape(verdict_display)}
@@ -166,17 +190,19 @@ def generate_comparison_html_report(
                     <div class="label">Stable</div>
                 </div>
             </div>
-            {f'<div style="margin-top: 1rem; padding: 1rem; background: var(--bg-light); border-radius: 8px; white-space: pre-wrap; font-size: 0.9rem;">{html_module.escape(summary_text or "")}</div>' if summary_text else ""}
-        </div>
+            {f'<div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 8px; white-space: pre-wrap; font-size: 0.9rem; color: var(--ink2);">{html_module.escape(summary_text or "")}</div>' if summary_text else ""}
+        </div>''')}
 
-        {jmeter_section}
+        {section_anchor("report-jmeter", jmeter_section)}
 
-        {lighthouse_section}
+        {section_anchor("report-webvitals", lighthouse_section)}
 
-        {regressions_section}
+        {section_anchor("report-regressions", regressions_section)}
 
-        {improvements_section}
-    </div>
+        {section_anchor("report-improvements", improvements_section)}
+{render_report_body_close()}
+{render_report_navigation_script()}
+{render_report_shell_close()}
 </body>
 </html>"""
     return html

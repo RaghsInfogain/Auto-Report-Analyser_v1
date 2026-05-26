@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getRunTargets, saveRunTargets, RunTargets } from '../services/api';
 import './TargetValuesModal.css';
 
@@ -16,20 +16,93 @@ const DEFAULT_TARGETS: RunTargets = {
   error_rate_target: 1,
   throughput_target: 100,
   p95_target: 3000,
-  sla_compliance_target: 95
+  sla_compliance_target: 95,
 };
+
+type TargetFieldKey = keyof RunTargets;
+
+const TARGET_FIELDS: {
+  key: TargetFieldKey;
+  label: string;
+  placeholder: string;
+  title: string;
+  min?: number;
+  max?: number;
+  step?: number | string;
+}[] = [
+  {
+    key: 'availability_target',
+    label: 'Availability (%)',
+    placeholder: '99',
+    title: 'Target availability, e.g. 99.9',
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+  {
+    key: 'avg_response_time_target',
+    label: 'Avg RT (ms)',
+    placeholder: '2000',
+    title: 'Average response time in ms, e.g. 2000 = 2s',
+    min: 0,
+    step: 100,
+  },
+  {
+    key: 'error_rate_target',
+    label: 'Error rate (%)',
+    placeholder: '1',
+    title: 'Maximum error rate, e.g. 1%',
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+  {
+    key: 'throughput_target',
+    label: 'Throughput (/s)',
+    placeholder: '100',
+    title: 'Requests per second',
+    min: 0,
+    step: 10,
+  },
+  {
+    key: 'p95_target',
+    label: 'P95 (ms)',
+    placeholder: '3000',
+    title: '95th percentile in ms, e.g. 3000 = 3s',
+    min: 0,
+    step: 100,
+  },
+  {
+    key: 'sla_compliance_target',
+    label: 'SLA compliance (%)',
+    placeholder: '95',
+    title: 'Percent of requests meeting SLA',
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+];
 
 const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
   isOpen,
   runId,
   runLabel,
   onClose,
-  onConfirm
+  onConfirm,
 }) => {
   const [targets, setTargets] = useState<RunTargets>({ ...DEFAULT_TARGETS });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragState = useRef({ active: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  useEffect(() => {
+    if (isOpen) {
+      setDragOffset({ x: 0, y: 0 });
+    }
+  }, [isOpen, runId]);
 
   useEffect(() => {
     if (isOpen && runId) {
@@ -41,11 +114,13 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
             const t = res.targets as Record<string, number | undefined>;
             setTargets({
               availability_target: t.availability_target ?? DEFAULT_TARGETS.availability_target,
-              avg_response_time_target: t.avg_response_time_target ?? DEFAULT_TARGETS.avg_response_time_target,
+              avg_response_time_target:
+                t.avg_response_time_target ?? DEFAULT_TARGETS.avg_response_time_target,
               error_rate_target: t.error_rate_target ?? DEFAULT_TARGETS.error_rate_target,
               throughput_target: t.throughput_target ?? DEFAULT_TARGETS.throughput_target,
               p95_target: t.p95_target ?? DEFAULT_TARGETS.p95_target,
-              sla_compliance_target: t.sla_compliance_target ?? DEFAULT_TARGETS.sla_compliance_target
+              sla_compliance_target:
+                t.sla_compliance_target ?? DEFAULT_TARGETS.sla_compliance_target,
             });
           } else {
             setTargets({ ...DEFAULT_TARGETS });
@@ -59,10 +134,44 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
     }
   }, [isOpen, runId]);
 
-  const handleChange = (key: keyof RunTargets, value: string) => {
+  const handleChange = (key: TargetFieldKey, value: string) => {
     const num = value === '' ? undefined : parseFloat(value);
     setTargets((prev) => ({ ...prev, [key]: num }));
   };
+
+  const handleHeaderPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).closest('.target-modal-close')) return;
+      dragState.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: dragOffset.x,
+        origY: dragOffset.y,
+      };
+      setIsDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    },
+    [dragOffset.x, dragOffset.y],
+  );
+
+  const handleHeaderPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState.current.active) return;
+    setDragOffset({
+      x: dragState.current.origX + (e.clientX - dragState.current.startX),
+      y: dragState.current.origY + (e.clientY - dragState.current.startY),
+    });
+  }, []);
+
+  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState.current.active) return;
+    dragState.current.active = false;
+    setIsDragging(false);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }, []);
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -82,107 +191,56 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
 
   return (
     <div className="target-modal-overlay" onClick={onClose}>
-      <div className="target-modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="target-modal-header">
-          <h2>Target Values for Report</h2>
-          <button onClick={onClose} className="target-modal-close" aria-label="Close">×</button>
+      <div
+        className={`target-modal-content${isDragging ? ' is-dragging' : ''}`}
+        style={{
+          transform: `translate(calc(-50% + ${dragOffset.x}px), calc(-50% + ${dragOffset.y}px))`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="target-modal-title"
+      >
+        <div
+          className="target-modal-header"
+          onPointerDown={handleHeaderPointerDown}
+          onPointerMove={handleHeaderPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
+          <h2 id="target-modal-title">Target values</h2>
+          <button type="button" onClick={onClose} className="target-modal-close" aria-label="Close">
+            ×
+          </button>
         </div>
-        <p className="target-modal-subtitle">
-          Enter your SLA/target values. These will be saved with {runLabel || runId} and used for report generation.
+        <p className="target-modal-subtitle" title={`SLA targets for ${runLabel || runId}`}>
+          SLA targets · {runLabel || runId}
         </p>
 
-        {loading ? (
-          <div className="target-modal-loading">Loading saved targets...</div>
-        ) : (
-          <div className="target-modal-form">
-            <div className="target-field">
-              <label htmlFor="availability">Availability (%)</label>
-              <input
-                id="availability"
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={targets.availability_target ?? ''}
-                onChange={(e) => handleChange('availability_target', e.target.value)}
-                placeholder="99"
-              />
-              <span className="target-hint">e.g. 99.9 for 99.9%</span>
+        <div className="target-modal-body">
+          {loading ? (
+            <div className="target-modal-loading">Loading…</div>
+          ) : (
+            <div className="target-modal-form">
+              {TARGET_FIELDS.map((field) => (
+                <div key={field.key} className="target-field">
+                  <label htmlFor={`target-${field.key}`}>{field.label}</label>
+                  <input
+                    id={`target-${field.key}`}
+                    type="number"
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
+                    value={targets[field.key] ?? ''}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    title={field.title}
+                  />
+                </div>
+              ))}
             </div>
-
-            <div className="target-field">
-              <label htmlFor="avg_response">Average Response Time (ms)</label>
-              <input
-                id="avg_response"
-                type="number"
-                min="0"
-                step="100"
-                value={targets.avg_response_time_target ?? ''}
-                onChange={(e) => handleChange('avg_response_time_target', e.target.value)}
-                placeholder="2000"
-              />
-              <span className="target-hint">e.g. 2000 for 2 seconds</span>
-            </div>
-
-            <div className="target-field">
-              <label htmlFor="error_rate">Error Rate (%)</label>
-              <input
-                id="error_rate"
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={targets.error_rate_target ?? ''}
-                onChange={(e) => handleChange('error_rate_target', e.target.value)}
-                placeholder="1"
-              />
-              <span className="target-hint">e.g. 1 for 1%</span>
-            </div>
-
-            <div className="target-field">
-              <label htmlFor="throughput">Throughput (req/sec)</label>
-              <input
-                id="throughput"
-                type="number"
-                min="0"
-                step="10"
-                value={targets.throughput_target ?? ''}
-                onChange={(e) => handleChange('throughput_target', e.target.value)}
-                placeholder="100"
-              />
-              <span className="target-hint">requests per second</span>
-            </div>
-
-            <div className="target-field">
-              <label htmlFor="p95">95th Percentile (ms)</label>
-              <input
-                id="p95"
-                type="number"
-                min="0"
-                step="100"
-                value={targets.p95_target ?? ''}
-                onChange={(e) => handleChange('p95_target', e.target.value)}
-                placeholder="3000"
-              />
-              <span className="target-hint">e.g. 3000 for 3 seconds</span>
-            </div>
-
-            <div className="target-field">
-              <label htmlFor="sla">SLA Compliance (%)</label>
-              <input
-                id="sla"
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={targets.sla_compliance_target ?? ''}
-                onChange={(e) => handleChange('sla_compliance_target', e.target.value)}
-                placeholder="95"
-              />
-              <span className="target-hint">% of requests meeting SLA</span>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {error && <div className="target-modal-error">{error}</div>}
 
@@ -196,7 +254,7 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
             disabled={loading || saving}
             className="target-btn-confirm"
           >
-            {saving ? 'Saving & Generating...' : 'Save & Generate Report'}
+            {saving ? 'Saving…' : 'Save & generate'}
           </button>
         </div>
       </div>

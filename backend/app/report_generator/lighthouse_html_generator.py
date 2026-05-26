@@ -6,7 +6,18 @@ from typing import Dict, Any, List
 from datetime import datetime, timedelta
 import html
 
-from app.report_generator.enterprise_styles import ENTERPRISE_FONT_LINKS, get_enterprise_css
+from app.report_generator.enterprise_styles import (
+    ENTERPRISE_FONT_LINKS,
+    LIGHTHOUSE_REPORT_NAV,
+    get_enterprise_css,
+    render_report_body_close,
+    render_report_body_open,
+    render_report_header,
+    render_report_navigation_script,
+    render_report_shell_close,
+    render_report_shell_open,
+    section_anchor,
+)
 
 
 class LighthouseHTMLGenerator:
@@ -57,19 +68,7 @@ class LighthouseHTMLGenerator:
             print(f"  {'='*60}")
             
             try:
-                print(f"  [1/12] Generating Header...")
-                sections.append(LighthouseHTMLGenerator._generate_header(metadata))
-                section_names.append("Header")
-                print(f"      ✓ Header generated")
-            except Exception as e:
-                print(f"      ✗ Error generating header: {e}")
-                import traceback
-                traceback.print_exc()
-                sections.append(f"<div class='section'><h2>Header</h2><p>Error: {str(e)}</p></div>")
-                section_names.append("Header (Error)")
-            
-            try:
-                print(f"  [2/12] Generating Executive Summary...")
+                print(f"  [1/12] Generating Executive Summary...")
                 sections.append(LighthouseHTMLGenerator._generate_executive_summary(metrics, grades, overall_grade, issues))
                 section_names.append("Executive Summary")
                 print(f"      ✓ Executive Summary generated")
@@ -223,6 +222,29 @@ class LighthouseHTMLGenerator:
             
             print(f"  {'='*60}\n")
             
+            report_date = metadata.get("report_date") or datetime.now().strftime("%B %d, %Y")
+            page_header = render_report_header(
+                "Performance Test Analysis Report",
+                f"User Experience Monitoring Analysis · {report_date}",
+                icon_class="ti ti-gauge",
+                icon_tone="te",
+                actions_html=(
+                    '<button type="button" onclick="window.print()" class="btn bp no-print">'
+                    '<i class="ti ti-download"></i> Save as PDF</button>'
+                ),
+            )
+            _lh_section_ids = [
+                "report-executive", "report-scorecard", "report-overview",
+                "report-metrics", "report-issues", "report-roadmap",
+                "report-business", "report-monitoring", "report-aiml",
+                "report-conclusion", "report-details",
+            ]
+            wrapped_sections = []
+            for i, sec in enumerate(sections):
+                sid = _lh_section_ids[i] if i < len(_lh_section_ids) else f"report-sec-{i}"
+                wrapped_sections.append(section_anchor(sid, sec))
+            all_sections_html = "".join(wrapped_sections)
+
             # Combine all sections
             html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -234,9 +256,13 @@ class LighthouseHTMLGenerator:
     {LighthouseHTMLGenerator._generate_css()}
 </head>
 <body>
-    <div class="container">
+{render_report_shell_open(LIGHTHOUSE_REPORT_NAV)}
+{page_header}
+{render_report_body_open()}
         {all_sections_html}
-    </div>
+{render_report_body_close()}
+{render_report_navigation_script()}
+{render_report_shell_close()}
 </body>
 </html>'''
             
@@ -275,14 +301,6 @@ class LighthouseHTMLGenerator:
         .status-poor { background: var(--rd-lt); color: var(--rd); padding: 2px 7px; border-radius: 20px; font-size: 10px; font-weight: 500; }
         </style>"""
 
-    @staticmethod
-    def _generate_header(metadata: Dict[str, Any]) -> str:
-        """Generate report header"""
-        return f'''<div class="header">
-            <h1>Performance Test Analysis Report</h1>
-            <p style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;">User Experience Monitoring Analysis</p>
-        </div>'''
-    
     @staticmethod
     def _generate_executive_summary(metrics: Dict[str, Any], grades: Dict[str, Any], overall_grade: Dict[str, Any], issues: List[Dict[str, Any]]) -> str:
         """Generate executive summary section"""

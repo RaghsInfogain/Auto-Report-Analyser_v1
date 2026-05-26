@@ -482,18 +482,32 @@ class JMeterAnalyzerV2:
         return unique_causes[:8]
     
     @staticmethod
+    def _is_transaction_sample(sample: Dict) -> bool:
+        """JMeter transaction controller samples have no URL; HTTP requests have a URL."""
+        url = sample.get("url")
+        if url is None:
+            return True
+        if isinstance(url, str) and not url.strip():
+            return True
+        return False
+
+    @staticmethod
+    def _request_grouping_key(sample: Dict) -> str:
+        from app.utils.endpoint_normalizer import request_grouping_key
+        return request_grouping_key(sample)
+
+    @staticmethod
     def _analyze_by_label(data: List[Dict]) -> tuple:
-        """Analyze data grouped by label (transactions vs requests)"""
+        """Analyze data grouped by label (transactions vs requests)."""
         transactions = defaultdict(list)
         requests = defaultdict(list)
         
         for d in data:
-            label = d.get("label", "Unknown")
-            # Simple heuristic: transactions start with "T" or don't start with "api"
-            if label.startswith("T") or not label.startswith("api"):
+            if JMeterAnalyzerV2._is_transaction_sample(d):
+                label = d.get("label", "Unknown")
                 transactions[label].append(d)
             else:
-                requests[label].append(d)
+                requests[JMeterAnalyzerV2._request_grouping_key(d)].append(d)
         
         def analyze_group(group_data: Dict[str, List]) -> Dict:
             stats = {}
@@ -638,18 +652,21 @@ class JMeterAnalyzerV2:
             return "F", "danger"
     
     @staticmethod
+    def _active_threads(sample: Dict) -> int:
+        """Peak active threads for a JTL row (grpThreads vs allThreads)."""
+        grp = sample.get("grp_threads") or 0
+        all_t = sample.get("all_threads") or 0
+        try:
+            return int(max(int(grp), int(all_t)))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
     def _calculate_time_series(data: List[Dict], duration: float, max_points: int = 500) -> List[Dict]:
-        """Calculate time series data - sample if too large, including per-transaction/request data"""
+        """Calculate time series — bucket all samples (no row subsampling) for accurate VUsers ramp."""
         if not data or duration <= 0:
             return []
-        
-        # Sample data if too large
-        if len(data) > max_points * 2:
-            step = len(data) // max_points
-            sampled_data = data[::step]
-        else:
-            sampled_data = data
-        
+
         interval_size = max(1.0, duration / max_points)
         intervals = defaultdict(lambda: {
             "response_times": [], 
@@ -659,13 +676,13 @@ class JMeterAnalyzerV2:
             "by_label": defaultdict(lambda: {"response_times": [], "pass_count": 0, "fail_count": 0, "has_url": False})
         })
         
-        timestamps = [d.get("timestamp", 0) for d in sampled_data if d.get("timestamp")]
+        timestamps = [d.get("timestamp", 0) for d in data if d.get("timestamp")]
         if not timestamps:
             return []
         
         min_ts = min(timestamps)
         
-        for d in sampled_data:
+        for d in data:
             ts = d.get("timestamp", 0)
             if not ts:
                 continue
@@ -676,13 +693,17 @@ class JMeterAnalyzerV2:
             interval = intervals[interval_idx]
             interval["time"] = interval_idx * interval_size
             
-            label = d.get("label", "Unknown")
-            
+            if JMeterAnalyzerV2._is_transaction_sample(d):
+                label = d.get("label", "Unknown")
+            else:
+                label = JMeterAnalyzerV2._request_grouping_key(d)
+
             # Overall metrics
             if d.get("sample_time"):
                 interval["response_times"].append(d.get("sample_time", 0))
-            if d.get("all_threads"):
-                interval["vusers"].append(d.get("all_threads", 0))
+            threads = JMeterAnalyzerV2._active_threads(d)
+            if threads > 0:
+                interval["vusers"].append(threads)
             
             if not d.get("success", True):
                 interval["fail_count"] += 1
@@ -728,7 +749,7 @@ class JMeterAnalyzerV2:
             time_series.append({
                 "time": round(interval["time"], 1),
                 "avg_response_time": round(np.mean(rt_values) / 1000.0, 2) if rt_values else 0.0,
-                "vusers": round(np.mean(vuser_values), 0) if vuser_values else 0.0,
+                "vusers": round(float(np.max(vuser_values)), 0) if vuser_values else 0.0,
                 "throughput": round((interval["pass_count"] + interval["fail_count"]) / interval_size, 2) if interval_size > 0 else 0.0,
                 "pass_count": interval["pass_count"],
                 "fail_count": interval["fail_count"],

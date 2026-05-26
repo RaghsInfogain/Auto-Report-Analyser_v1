@@ -13,7 +13,7 @@
 .dashboard-header h1 {
   margin: 0 0 0.75rem 0;
   font-size: 2.25rem;
-  font-weight: 800;
+  font-weight: 700;
   background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -115,7 +115,7 @@
 .stat-content h3 {
   margin: 0 0 0.25rem 0;
   font-size: 2.5rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
 }

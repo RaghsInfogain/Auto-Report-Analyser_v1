@@ -167,13 +167,6 @@ class JMeterAnalyzer:
         if not data or duration_seconds <= 0:
             return []
         
-        # Optimize: Sample data if too large (process max 50k records for time series)
-        max_records = 50000
-        if len(data) > max_records:
-            # Sample evenly across the dataset
-            step = len(data) // max_records
-            data = data[::step]
-        
         # Determine interval size (aim for 50-100 data points)
         num_intervals = min(100, max(20, int(duration_seconds / 10)))  # 10-second intervals, max 100 points
         interval_size = duration_seconds / num_intervals
@@ -216,10 +209,15 @@ class JMeterAnalyzer:
             if sample_time is not None:
                 interval["response_times"].append(sample_time)
             
-            # Add VUsers (all_threads)
-            all_threads = d.get("all_threads")
-            if all_threads is not None:
-                interval["vusers"].append(all_threads)
+            # Active threads (max of grpThreads / allThreads per sample)
+            grp = d.get("grp_threads") or 0
+            all_t = d.get("all_threads") or 0
+            try:
+                threads = int(max(int(grp), int(all_t)))
+            except (TypeError, ValueError):
+                threads = 0
+            if threads > 0:
+                interval["vusers"].append(threads)
             
             # Count pass/fail
             if d.get("success") is False or (d.get("response_code") and str(d.get("response_code")).startswith(("4", "5"))):
@@ -234,7 +232,7 @@ class JMeterAnalyzer:
             interval = intervals[idx]
             # Use numpy for faster calculations
             avg_response = float(np.mean(interval["response_times"]) / 1000) if interval["response_times"] else 0.0
-            avg_vusers = float(np.mean(interval["vusers"])) if interval["vusers"] else 0.0
+            avg_vusers = float(np.max(interval["vusers"])) if interval["vusers"] else 0.0
             throughput = float(interval["total_count"] / interval_size) if interval_size > 0 else 0.0
             
             time_series.append({
@@ -475,16 +473,22 @@ class JMeterAnalyzer:
         # Response codes distribution
         response_codes = Counter([str(d.get("response_code")) for d in data if d.get("response_code")])
         
-        # Separate transactions vs requests
-        # Transactions typically start with "T" and requests with "api/"
+        # Separate transactions (no URL) vs HTTP requests (URL present)
         transactions = {}
         requests = {}
         
+        from app.utils.endpoint_normalizer import request_grouping_key
+
         for d in data:
-            label = d.get("label") or "Unknown"
-            is_transaction = label.startswith("T") or not label.startswith("api")
-            target_dict = transactions if is_transaction else requests
-            
+            url = d.get("url")
+            is_transaction = url is None or (isinstance(url, str) and not str(url).strip())
+            if is_transaction:
+                label = d.get("label") or "Unknown"
+                target_dict = transactions
+            else:
+                label = request_grouping_key(d)
+                target_dict = requests
+
             if label not in target_dict:
                 target_dict[label] = []
             target_dict[label].append(d)
@@ -1032,7 +1036,7 @@ class JMeterAnalyzer:
                 merged_point = {
                     "time": time_key,
                     "avg_response_time": sum(p.get("avg_response_time", 0) for p in points) / len(points),
-                    "vusers": sum(p.get("vusers", 0) for p in points) / len(points),
+                    "vusers": max(p.get("vusers", 0) for p in points),
                     "throughput": sum(p.get("throughput", 0) for p in points),
                     "pass_count": sum(p.get("pass_count", 0) for p in points),
                     "fail_count": sum(p.get("fail_count", 0) for p in points),
