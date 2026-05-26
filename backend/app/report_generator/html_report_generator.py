@@ -4,6 +4,7 @@ import html
 import json
 import numpy as np
 from app.report_generator.graph_analyzer import GraphAnalyzer
+from app.report_generator.enterprise_styles import ENTERPRISE_FONT_LINKS, get_enterprise_css
 
 class HTMLReportGenerator:
     """Generate comprehensive HTML reports matching OfficerTrack format"""
@@ -164,6 +165,7 @@ class HTMLReportGenerator:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Performance Assessment Report</title>
+    {ENTERPRISE_FONT_LINKS}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     {css_content}
@@ -236,370 +238,24 @@ class HTMLReportGenerator:
     
     @staticmethod
     def _generate_css() -> str:
-        """Generate CSS styles"""
-        return '''<style>
-        :root {
-            --primary-color: #2563eb;
-            --success-color: #059669;
-            --warning-color: #d97706;
-            --danger-color: #dc2626;
-            --secondary-color: #64748b;
-            --background-light: #f8fafc;
-            --card-background: #ffffff;
-            --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --border-color: #e2e8f0;
+        """Enterprise PerfSuite styling (wireframe v4) with legacy class aliases."""
+        return get_enterprise_css(include_legacy=True) + """
+        <style>
+        .pdf-button {
+            background: var(--bl) !important;
+            color: white !important;
+            border: none !important;
+            padding: 5px 12px !important;
+            border-radius: 4px !important;
+            font-weight: 500 !important;
+            font-size: 11.5px !important;
+            cursor: pointer;
+            box-shadow: none !important;
         }
+        .pdf-button:hover { background: #0a2f9e !important; transform: none !important; }
+        @media print { .no-print { display: none !important; } }
+        </style>"""
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--background-light);
-            color: var(--text-primary);
-            line-height: 1.6;
-        }
-
-        .header {
-            background: linear-gradient(135deg, var(--primary-color), #3b82f6);
-            color: white;
-            padding: 2rem 0;
-            text-align: center;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .header p {
-            font-size: 1.2rem;
-            opacity: 0.9;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 1rem;
-        }
-
-        .section {
-            background: var(--card-background);
-            margin: 2rem 0;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            border: 1px solid var(--border-color);
-        }
-
-        .section h2 {
-            color: var(--primary-color);
-            font-size: 1.8rem;
-            margin-bottom: 1.5rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid var(--primary-color);
-        }
-
-        .section h3 {
-            color: var(--text-primary);
-            font-size: 1.4rem;
-            margin: 1.5rem 0 1rem 0;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.9rem;
-            margin: 0.25rem;
-        }
-
-        .badge-success { background: var(--success-color); color: white; }
-        .badge-warning { background: var(--warning-color); color: white; }
-        .badge-danger { background: var(--danger-color); color: white; }
-        .badge-info { background: var(--primary-color); color: white; }
-
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
-            margin: 1.5rem 0;
-        }
-
-        .metric-card {
-            background: var(--card-background);
-            border: 2px solid var(--border-color);
-            border-radius: 10px;
-            padding: 0.8rem;
-            text-align: left;
-            transition: transform 0.2s, box-shadow 0.2s;
-            min-height: 140px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .metric-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .metric-card.success { border-color: var(--success-color); background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), transparent); }
-        .metric-card.warning { border-color: var(--warning-color); background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), transparent); }
-        .metric-card.danger { border-color: var(--danger-color); background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), transparent); }
-
-        .metric-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .metric-value.success { color: var(--success-color); }
-        .metric-value.warning { color: var(--warning-color); }
-        .metric-value.danger { color: var(--danger-color); }
-
-        .metric-label {
-            color: var(--text-secondary);
-            font-weight: 500;
-            text-transform: uppercase;
-            font-size: 0.9rem;
-        }
-
-        .chart-container {
-            position: relative;
-            height: 400px;
-            margin: 2rem 0;
-        }
-
-        .two-column {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            align-items: start;
-        }
-
-        .issue-item {
-            background: #fef2f2;
-            border-left: 4px solid var(--danger-color);
-            padding: 1rem;
-            margin: 1rem 0;
-            border-radius: 0 8px 8px 0;
-        }
-
-        .issue-item h4 {
-            color: var(--danger-color);
-            margin-bottom: 0.5rem;
-        }
-
-        .endpoint-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1rem 0;
-            font-size: 0.875rem;
-            background: white;
-            border: 1px solid #e0e0e0;
-        }
-
-        .endpoint-table th,
-        .endpoint-table td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid #e0e0e0;
-            vertical-align: middle;
-        }
-
-        .endpoint-table thead {
-            background: #f8f9fa;
-            border-bottom: 2px solid #e0e0e0;
-        }
-
-        .endpoint-table th {
-            font-weight: 600;
-            color: #666;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 0.75rem 1rem;
-        }
-
-        .endpoint-table td {
-            color: #333;
-        }
-
-        .endpoint-table tbody tr {
-            transition: background 0.2s;
-            background: white;
-        }
-
-        .endpoint-table tbody tr:hover {
-            background: #f8f9fa;
-        }
-
-        .endpoint-table tbody tr:last-child td {
-            border-bottom: none;
-        }
-
-        .action-timeline {
-            position: relative;
-            padding: 1rem 0;
-        }
-
-        .timeline-item {
-            position: relative;
-            padding: 1rem 0 1rem 3rem;
-            border-left: 2px solid var(--border-color);
-        }
-
-        .timeline-item::before {
-            content: '';
-            position: absolute;
-            left: -6px;
-            top: 1.5rem;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: var(--primary-color);
-        }
-
-        .timeline-item.danger::before { background: var(--danger-color); }
-        .timeline-item.warning::before { background: var(--warning-color); }
-        .timeline-item.success::before { background: var(--success-color); }
-
-        .alert {
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-            border: 1px solid;
-        }
-
-        .alert-danger {
-            background: #fef2f2;
-            border-color: var(--danger-color);
-            color: #991b1b;
-        }
-
-        .alert-warning {
-            background: #fffbeb;
-            border-color: var(--warning-color);
-            color: #92400e;
-        }
-
-        .alert-success {
-            background: #f0fdf4;
-            border-color: var(--success-color);
-            color: #166534;
-        }
-
-        .executive-summary {
-            background: linear-gradient(135deg, #1e40af, #3b82f6);
-            color: white;
-            padding: 2rem;
-            border-radius: 12px;
-            margin: 2rem 0;
-        }
-
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-
-        .summary-item {
-            text-align: center;
-            padding: 1rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-        }
-
-        .summary-value {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 20px;
-            background: var(--border-color);
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 0.5rem 0;
-        }
-
-        .progress-fill {
-            height: 100%;
-            transition: width 0.3s ease;
-        }
-
-        .progress-success { background: var(--success-color); }
-        .progress-warning { background: var(--warning-color); }
-        .progress-danger { background: var(--danger-color); }
-
-        @media (max-width: 768px) {
-            .header h1 { font-size: 2rem; }
-            .two-column { grid-template-columns: 1fr; }
-            .metrics-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        
-        @media (max-width: 600px) {
-            .metrics-grid { grid-template-columns: 1fr; }
-        }
-
-        /* Print styles for PDF generation */
-        @media print {
-            .no-print {
-                display: none !important;
-            }
-
-            .pdf-button {
-                display: none !important;
-            }
-
-            body {
-                margin: 0;
-                padding: 0;
-            }
-
-            .container {
-                max-width: 100%;
-                padding: 1rem;
-            }
-
-            /* Ensure page breaks work properly */
-            .section {
-                page-break-inside: avoid;
-                max-width: 100%;
-                overflow: hidden;
-            }
-
-            /* Remove box shadows for print */
-            .card, .alert, .summary-item {
-                box-shadow: none;
-            }
-
-            .endpoint-table { font-size: 0.7rem; }
-            .endpoint-table th, .endpoint-table td { padding: 0.4rem 0.5rem; }
-        }
-
-        /* PDF Button Styles */
-        .pdf-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5) !important;
-        }
-
-        .pdf-button:active {
-            transform: translateY(0);
-        }
-    </style>'''
-    
     @staticmethod
     def _generate_executive_summary(grade: str, score: float, success_rate: float, avg_response: float, error_rate: float, throughput: float, p95_response: float, sla_compliance: float, summary: dict, skewness_analysis: dict = None, business_impact: dict = None) -> str:
         """Generate executive summary section with key findings, skewness interpretation, and business impact"""

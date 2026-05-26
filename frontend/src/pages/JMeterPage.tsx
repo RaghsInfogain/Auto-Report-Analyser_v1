@@ -12,6 +12,7 @@ import {
   ReportProgress,
   RunTargets,
 } from '../services/api';
+import PageShell from '../components/PageShell';
 import './JMeterPage.css';
 
 interface ProgressState {
@@ -264,42 +265,36 @@ const JMeterPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="jmeter-page">
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>Loading test runs...</p>
+      <PageShell iconClass="ti ti-flask" iconTone="am" title="JMeter Test Results" subtitle="Loading…">
+        <div className="ent-loading">
+          <div className="ent-spinner" />
+          <p>Loading test runs…</p>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="jmeter-page">
-      {/* Main Content */}
-      <div className="page-content-wrapper">
-        {/* Page Header */}
-        <div className="page-header">
-          <div className="header-content">
-            <h1>JMeter Test Results</h1>
-            <div className="header-actions">
-              <button className="btn-primary" onClick={loadRuns}>
-                ↻ Refresh
-              </button>
-            </div>
-          </div>
+    <>
+    <PageShell
+      iconClass="ti ti-flask"
+      iconTone="am"
+      title="JMeter Test Results"
+      subtitle={`${filteredRuns.length} run(s) · JTL/CSV · Enterprise HTML reports`}
+      actions={
+        <button type="button" className="ent-btn ent-btn-ghost" onClick={loadRuns}>
+          <i className="ti ti-refresh" /> Refresh
+        </button>
+      }
+    >
+      <div className="ent-card">
+        <div className="ent-card-hd">
+          <h2><i className="ti ti-upload" style={{ marginRight: 5, color: 'var(--ink4)' }} />Upload test results</h2>
         </div>
-        {/* Main Content Area */}
-        <div className="page-main-content">
-          {/* Upload Section */}
-          <div className="content-section">
-            <div className="section-header">
-              <h2>Upload Test Results</h2>
-            </div>
-            <FileUpload 
-              onFilesUploaded={handleFilesUploaded}
-              defaultCategory="jmeter"
-            />
-          </div>
+        <div className="ent-card-bd">
+          <FileUpload onFilesUploaded={handleFilesUploaded} defaultCategory="jmeter" />
+        </div>
+      </div>
 
           {/* Progress Indicator */}
           {progress && (
@@ -320,20 +315,20 @@ const JMeterPage: React.FC = () => {
             </div>
           )}
 
-          {/* Test Runs Table */}
-          <div className="content-section">
-            <div className="section-header">
-              <h2>Recent Test Runs</h2>
-            </div>
-
-            {filteredRuns.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">📊</div>
+      <div className="ent-card">
+        <div className="ent-card-hd">
+          <h2><i className="ti ti-table" style={{ marginRight: 5, color: 'var(--ink4)' }} />Recent test runs</h2>
+          <span className="ent-card-meta">{filteredRuns.length} total</span>
+        </div>
+        <div className="ent-card-bd" style={{ padding: filteredRuns.length ? 0 : 16 }}>
+{filteredRuns.length === 0 ? (
+              <div className="ent-empty">
+                <div className="ent-empty-icon"><i className="ti ti-chart-bar" /></div>
                 <h3>No test runs found</h3>
                 <p>Upload JMeter JTL or CSV files to get started</p>
               </div>
             ) : (
-              <div className="table-container">
+              <div className="ent-table-wrap table-container">
                 <table className="runs-table">
                   <thead>
                     <tr>
@@ -375,21 +370,21 @@ const JMeterPage: React.FC = () => {
                                 <>
                                   <button 
                                     onClick={() => handleViewReport(run, 'html')}
-                                    className="btn-link"
+                                    className="ent-link"
                                     title="View HTML Report in new tab"
                                   >
                                     HTML
                                   </button>
                                   <button 
                                     onClick={() => handleDownloadHtml(run)}
-                                    className="btn-link"
+                                    className="ent-link"
                                     title="Download HTML Report"
                                   >
                                     Download
                                   </button>
                                   <button 
                                     onClick={() => openTargetModal(run, true)}
-                                    className="btn-link"
+                                    className="ent-link"
                                     title="Regenerate Report"
                                   >
                                     Regenerate
@@ -399,7 +394,7 @@ const JMeterPage: React.FC = () => {
                                 <button
                                   onClick={() => openTargetModal(run, false)}
                                   disabled={run.report_status === 'analyzing' || run.report_status === 'generating'}
-                                  className="btn-link btn-primary-link"
+                                  className="ent-link"
                                   title="Generate Report"
                                 >
                                   Generate
@@ -407,7 +402,7 @@ const JMeterPage: React.FC = () => {
                               )}
                               <button 
                                 onClick={() => handleDeleteRun(run.run_id)}
-                                className="btn-link btn-danger-link"
+                                className="ent-link danger"
                                 title="Delete Run"
                               >
                                 Delete
@@ -458,9 +453,9 @@ const JMeterPage: React.FC = () => {
                 </div>
               )
             )}
-          </div>
         </div>
       </div>
+    </PageShell>
 
       {/* Target Values Modal */}
       <TargetValuesModal
@@ -498,7 +493,7 @@ const JMeterPage: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

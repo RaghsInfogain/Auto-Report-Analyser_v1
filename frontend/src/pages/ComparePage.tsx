@@ -195,12 +195,16 @@ const ComparePage: React.FC = () => {
 
   return (
     <div className="compare-page">
-      <div className="page-header">
-        <div>
-          <h1>⚖️ Compare Performance Runs</h1>
-          <p>Compare current test results against baseline to detect regressions</p>
+      <header className="ent-ph page-header">
+        <div className="ent-ph-ic am">
+          <i className="ti ti-arrows-left-right" aria-hidden />
         </div>
-      </div>
+        <div className="ent-ph-body">
+          <h1 className="ent-ph-ttl">Compare performance runs</h1>
+          <p className="ent-ph-mt">Baseline vs current run · JMeter & Web Vitals · Release intelligence scoring</p>
+        </div>
+      </header>
+      <div className="ent-body compare-form">
 
       {error && (
         <div className="alert alert-error">
@@ -385,6 +389,7 @@ const ComparePage: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

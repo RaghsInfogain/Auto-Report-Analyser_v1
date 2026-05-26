@@ -9,7 +9,24 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from app.report_generator.enterprise_styles import ENTERPRISE_FONT_LINKS, get_enterprise_css
 from app.report_generator.html_report_generator import HTMLReportGenerator
+
+_HTML_REPORT_CSS_EXTRA = """
+<style>
+.pdf-button {
+  background: var(--bl) !important;
+  color: white !important;
+  border: none !important;
+  padding: 5px 12px !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+  font-size: 11.5px !important;
+  cursor: pointer;
+}
+@media print { .no-print { display: none !important; } }
+</style>
+"""
 
 
 def _esc(x: Any) -> str:
@@ -145,8 +162,7 @@ def _insight_for_metric(key: str, pct: Optional[float], ka: Dict[str, Any], kb: 
     return f"{base} {_sla_caption(tier)}"
 
 
-COMPARE_SUPPLEMENT_CSS = """
-<style>
+COMPARE_SUPPLEMENT_RULES = """
 /* Traffic legend */
 .traffic-legend {
     display: flex; flex-wrap: wrap; align-items: center; gap: 1.25rem;
@@ -339,7 +355,6 @@ COMPARE_SUPPLEMENT_CSS = """
     margin-top: 2rem;
 }
 .report-footer-meta .by { margin-top: 0.35rem; font-weight: 600; color: var(--text-primary); }
-</style>
 """
 
 
@@ -446,7 +461,11 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
     _rec = analysis.get("recommendations") or {}
     _con = analysis.get("conclusion") or {}
 
-    css_content = HTMLReportGenerator._generate_css()
+    css_content = (
+        get_enterprise_css(include_legacy=True)
+        + _HTML_REPORT_CSS_EXTRA
+        + f"<style>\n{COMPARE_SUPPLEMENT_RULES}\n</style>"
+    )
 
     def kpi_rows() -> str:
         keys = [
@@ -749,7 +768,6 @@ def generate_jmeter_ab_comparison_html(analysis: Dict[str, Any]) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Performance Test Comparison Report</title>
     {css_content}
-    {COMPARE_SUPPLEMENT_CSS}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 </head>
 <body>

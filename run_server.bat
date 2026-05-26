@@ -37,8 +37,8 @@ if not exist "venv\.dependencies_installed" (
 if not exist "uploads" mkdir uploads
 if not exist "reports" mkdir reports
 
-echo Starting Backend Server on http://localhost:8000
-start "Auto Report Analyzer - Backend" cmd /k "cd /d \"%PROJECT_ROOT%\backend\" && call venv\Scripts\activate.bat && uvicorn app.main:app --reload --port 8000"
+echo Starting Backend Server on http://localhost:8010
+start "Auto Report Analyzer - Backend" cmd /k "cd /d \"%PROJECT_ROOT%\backend\" && call venv\Scripts\activate.bat && uvicorn app.main:app --reload --port 8010"
 
 :: Start Frontend Server (in new window)
 echo.
@@ -60,8 +60,8 @@ echo Servers are starting up!
 echo ======================================
 echo.
 echo Backend:
-echo   - API Server: http://localhost:8000
-echo   - API Docs:   http://localhost:8000/docs
+echo   - API Server: http://localhost:8010
+echo   - API Docs:   http://localhost:8010/docs
 echo.
 echo Frontend:
 echo   - Web App:    http://localhost:3020

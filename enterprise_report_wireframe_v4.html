@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PerfSuite — Enterprise Wireframe v4 (Complete)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/tabler-icons.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════ */
+:root {
+  --ink:   #07070e; --ink2: #26263a; --ink3: #545468; --ink4: #8a8aa0;
+  --bg:    #f1f1f6; --bg2:  #e3e3ec; --sur: #ffffff;
+  --brd:   rgba(7,7,14,.07); --brd2: rgba(7,7,14,.13);
+  --bl:#1242c0; --bl-lt:#ebefff; --bl-md:#b3c3f8;
+  --gn:#076b44; --gn-lt:#e1f4ec; --gn-md:#9fd4bc;
+  --am:#9a5a00; --am-lt:#fff2d4; --am-md:#f5c660;
+  --rd:#aa1515; --rd-lt:#fce8e8; --rd-md:#f5aaaa;
+  --pu:#4e22b0; --pu-lt:#f0eaff;
+  --te:#077070; --te-lt:#e1f3f3;
+  --or:#9d3e00; --or-lt:#fff0e2;
+
+  --r:4px; --rl:10px; --rx:16px;
+  --f3:300; --f4:400; --f5:500; --f6:600; --f7:700;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#09091a;color:var(--ink);font-size:13px;line-height:1.55}
+
+/* ═══ SHELL ════════════════════════════ */
+.shell{display:grid;grid-template-rows:50px 1fr;grid-template-columns:208px 1fr;height:100vh;overflow:hidden}
+
+/* ═══ TOPBAR ══════════════════════════ */
+.tb{grid-column:1/-1;background:#0b0b18;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;padding:0 18px;gap:0;z-index:20}
+.br{display:flex;align-items:center;gap:8px;color:#fff;font-size:13px;font-weight:var(--f6);letter-spacing:-.015em;padding-right:20px;border-right:1px solid rgba(255,255,255,0.07);margin-right:14px;flex-shrink:0}
+.br-ic{width:22px;height:22px;border-radius:5px;background:var(--bl);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+.tts{display:flex;gap:1px;flex:1}
+.tt{padding:5px 12px;font-size:12px;color:rgba(255,255,255,.35);border-radius:var(--r);cursor:pointer;border:none;background:transparent;font-family:inherit;font-weight:var(--f4);transition:all .14s;white-space:nowrap}
+.tt:hover{color:rgba(255,255,255,.7);background:rgba(255,255,255,.05)}
+.tt.on{color:#fff;background:rgba(255,255,255,.09);font-weight:var(--f5)}
+.tr{margin-left:auto;display:flex;align-items:center;gap:5px}
+.tib{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);color:rgba(255,255,255,.4);cursor:pointer;font-size:14px;transition:all .14s}
+.tib:hover{background:rgba(255,255,255,.1);color:#fff}
+.av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,var(--bl),var(--pu));display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:var(--f6);color:#fff;cursor:pointer}
+
+/* ═══ SIDEBAR ═════════════════════════ */
+.sb{background:#0f0f1c;border-right:1px solid rgba(255,255,255,.05);overflow-y:auto;padding:14px 0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.07) transparent}
+.sbs{padding:0 9px;margin-bottom:20px}
+.sbl{font-size:9px;font-weight:var(--f6);letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.18);padding:0 7px;margin-bottom:4px}
+.si{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:var(--r);font-size:12px;color:rgba(255,255,255,.35);cursor:pointer;border:none;background:transparent;font-family:inherit;width:100%;text-align:left;transition:all .13s}
+.si:hover{color:rgba(255,255,255,.72);background:rgba(255,255,255,.05)}
+.si.on{color:#fff;background:rgba(18,66,192,.22);font-weight:var(--f5)}
+.si .ti{font-size:14px;flex-shrink:0}
+.si.on .ti{color:#6b98f5}
+.sib{margin-left:auto;font-size:9px;padding:1px 5px;border-radius:10px;background:rgba(18,66,192,.28);color:#6b98f5;font-weight:var(--f5)}
+.src{margin:0 9px 16px;padding:10px 11px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:var(--rl)}
+.srl{font-size:9px;color:rgba(255,255,255,.22);margin-bottom:2px}
+.srv{font-size:11.5px;color:rgba(255,255,255,.68);font-weight:var(--f5);font-family:'JetBrains Mono',monospace}
+.sst{display:flex;align-items:center;gap:4px;margin-top:6px}
+.ld{width:5px;height:5px;border-radius:50%;background:var(--gn);box-shadow:0 0 5px rgba(7,107,68,.6)}
+.sdiv{height:1px;background:rgba(255,255,255,.04);margin:3px 16px 13px}
+
+/* ═══ MAIN ════════════════════════════ */
+.main{background:var(--bg);overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.09) transparent}
+.page{display:none;flex-direction:column;flex:1}
+.page.on{display:flex}
+
+/* ═══ PAGE HEADER ══════════════════════ */
+.ph{background:var(--sur);border-bottom:1px solid var(--brd);padding:20px 26px 16px;display:flex;align-items:flex-start;gap:14px;flex-shrink:0}
+.ph-ic{width:38px;height:38px;border-radius:var(--rl);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.ph-ttl{font-size:16px;font-weight:var(--f6);color:var(--ink);letter-spacing:-.02em}
+.ph-mt{font-size:11.5px;color:var(--ink4);margin-top:2px}
+.ph-act{display:flex;gap:5px;margin-left:auto;align-items:center}
+
+/* ═══ BUTTONS ══════════════════════════ */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:var(--r);font-size:11.5px;font-weight:var(--f5);cursor:pointer;border:none;font-family:inherit;transition:all .12s}
+.bg{background:transparent;border:1px solid var(--brd2);color:var(--ink2)}.bg:hover{background:var(--bg)}
+.bp{background:var(--bl);color:#fff}.bp:hover{background:#0a2f9e}
+.brd-btn{background:transparent;border:1px solid var(--rd);color:var(--rd)}
+.bam-btn{background:transparent;border:1px solid var(--am);color:var(--am)}
+.bgn-btn{background:var(--gn-lt);border:1px solid var(--gn-md);color:var(--gn)}
+
+/* ═══ PILLS ════════════════════════════ */
+.p{font-size:10px;font-weight:var(--f5);padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:2px}
+.p-bl{background:var(--bl-lt);color:var(--bl)}.p-gn{background:var(--gn-lt);color:var(--gn)}
+.p-am{background:var(--am-lt);color:var(--am)}.p-rd{background:var(--rd-lt);color:var(--rd)}
+.p-pu{background:var(--pu-lt);color:var(--pu)}.p-te{background:var(--te-lt);color:var(--te)}
+.p-gy{background:var(--bg2);color:var(--ink3)}
+
+/* ═══ CARD ═════════════════════════════ */
+.card{background:var(--sur);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden}
+.chd{padding:12px 16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:7px}
+.ctt{font-size:12px;font-weight:var(--f6);color:var(--ink);display:flex;align-items:center;gap:5px}
+.ctt .ti{font-size:13px;color:var(--ink4)}
+.csu{font-size:10.5px;color:var(--ink4);margin-left:auto}
+.cbd{padding:16px}
+
+/* ═══ KPI STRIP ════════════════════════ */
+.kstr{display:grid;gap:1px;background:var(--brd);border-radius:var(--rx);overflow:hidden;border:1px solid var(--brd)}
+.kpi{background:var(--sur);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.klb{font-size:9.5px;font-weight:var(--f6);color:var(--ink4);text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:3px}
+.kval{font-size:20px;font-weight:var(--f6);letter-spacing:-.03em;color:var(--ink);font-family:'JetBrains Mono',monospace;line-height:1.1}
+.kv-bl{color:var(--bl)}.kv-gn{color:var(--gn)}.kv-am{color:var(--am)}.kv-rd{color:var(--rd)}
+.kdlt{font-size:10px;display:flex;align-items:center;gap:2px;margin-top:1px}
+.ku{color:var(--gn)}.kd{color:var(--rd)}.kf{color:var(--ink4)}
+
+/* ═══ TABLE ════════════════════════════ */
+.dt{width:100%;border-collapse:collapse;font-size:11.5px}
+.dt th{text-align:left;font-size:9.5px;font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;color:var(--ink4);padding:8px 12px;border-bottom:1px solid var(--brd);background:var(--bg);white-space:nowrap}
+.dt td{padding:9px 12px;border-bottom:1px solid var(--brd);color:var(--ink2);vertical-align:middle}
+.dt tr:last-child td{border-bottom:none}
+.dt tr:hover td{background:var(--bg)}
+.tsc{overflow-x:auto}
+
+/* ═══ PROGRESS BAR ═════════════════════ */
+.pb{flex:1;height:4px;border-radius:99px;background:var(--bg2);overflow:hidden}
+.pf{height:100%;border-radius:99px}
+
+/* ═══ MONO ══════════════════════════════ */
+.mn{font-family:'JetBrains Mono',monospace;font-size:11px}
+
+/* ═══ STATUS DOTS ══════════════════════ */
+.sd{width:5px;height:5px;border-radius:50%;display:inline-block;margin-right:3px}
+.sd-ok{background:var(--gn)}.sd-wn{background:var(--am)}.sd-er{background:var(--rd)}.sd-in{background:var(--bl)}
+
+/* ═══ ALERT BOX ════════════════════════ */
+.alrt{padding:11px 14px;border-radius:var(--rl);border-left:3px solid}
+.a-rd{background:var(--rd-lt);border-color:var(--rd)}
+.a-am{background:var(--am-lt);border-color:var(--am)}
+.a-gn{background:var(--gn-lt);border-color:var(--gn)}
+.a-bl{background:var(--bl-lt);border-color:var(--bl)}
+.a-pu{background:var(--pu-lt);border-color:var(--pu)}
+.att{font-size:11.5px;font-weight:var(--f6);margin-bottom:3px}
+
+/* ═══ GRADE RING ═══════════════════════ */
+.g-hero{background:var(--sur);border-bottom:1px solid var(--brd);padding:18px 26px;display:flex;align-items:center;gap:22px}
+.g-ring{width:74px;height:74px;position:relative;flex-shrink:0}
+.g-ring svg{width:100%;height:100%}
+.g-in{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.g-lt{font-size:24px;font-weight:var(--f6);color:var(--ink);line-height:1}
+.g-sc{font-size:9px;color:var(--ink4)}
+.g-bd{flex:1}
+.g-ttl{font-size:13.5px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px}
+.g-ds{font-size:11.5px;color:var(--ink3);line-height:1.55;max-width:440px}
+.g-pills{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+
+/* ═══ SECTION LABEL ════════════════════ */
+.slb{font-size:9px;font-weight:var(--f6);text-transform:uppercase;letter-spacing:.08em;color:var(--ink4);display:flex;align-items:center;gap:7px}
+.slb::after{content:'';flex:1;height:1px;background:var(--brd)}
+
+/* ═══ ISSUE ROW ════════════════════════ */
+.ir{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--brd)}
+.ir:last-child{border-bottom:none}
+.ir-ic{width:24px;height:24px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:1px}
+.ir-ttl{font-size:12px;font-weight:var(--f6);color:var(--ink)}
+.ir-ds{font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
+
+/* ═══ TIMELINE ══════════════════════════ */
+.tli{display:flex;gap:12px;padding:0 16px 16px;position:relative}
+.tli::before{content:'';position:absolute;left:27px;top:23px;bottom:0;width:1px;background:var(--brd)}
+.tli:last-child::before{display:none}
+.tl-ic{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--brd);background:var(--sur);display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;z-index:1}
+.tl-ttl{font-size:11.5px;font-weight:var(--f6);color:var(--ink)}
+.tl-sb{font-size:11px;color:var(--ink3);margin-top:2px}
+
+/* ═══ COMPARE ROWS ═════════════════════ */
+.chr{display:grid;grid-template-columns:160px 1fr 1fr;border-bottom:1px solid var(--brd)}
+.chr:last-child{border-bottom:none}
+.cm{padding:10px 13px;font-size:11px;font-weight:var(--f6);color:var(--ink3);border-right:1px solid var(--brd);display:flex;align-items:center}
+.cv{padding:10px 13px;font-size:11.5px;font-family:'JetBrains Mono',monospace;color:var(--ink);border-right:1px solid var(--brd);display:flex;align-items:center;gap:5px}
+.cv:last-child{border-right:none}
+.cw{background:var(--gn-lt)}.cl{background:var(--rd-lt);color:var(--rd)}.cn{background:var(--am-lt)}
+
+/* ═══ STAT MINI GRID ═══════════════════ */
+.stat-mini{display:grid;gap:1px;background:var(--brd);border-radius:var(--rl);overflow:hidden;border:1px solid var(--brd)}
+.sm-c{background:var(--sur);padding:11px 14px}
+.sm-lbl{font-size:9.5px;font-weight:var(--f6);color:var(--ink4);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.sm-val{font-size:17px;font-weight:var(--f6);font-family:'JetBrains Mono',monospace;color:var(--ink);line-height:1}
+.sm-sub{font-size:10px;color:var(--ink4);margin-top:2px}
+
+/* ═══ GRADE SCALE STRIP ════════════════ */
+.gs-strip{display:flex;border-radius:var(--r);overflow:hidden;height:7px}
+.gs-a{flex:1;background:#076b44}.gs-b{flex:1;background:#3a9060}.gs-c{flex:1;background:var(--am)}.gs-d{flex:1;background:#8a4000}.gs-e{flex:1;background:#9e1010}.gs-f{flex:1;background:var(--rd)}
+
+/* ═══ PHASE CARD ═══════════════════════ */
+.phc{border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;background:var(--sur)}
+.phc-hd{padding:12px 15px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between;background:var(--bg)}
+.phc-ttl{font-size:12.5px;font-weight:var(--f6);color:var(--ink)}
+.phc-sub{font-size:10.5px;color:var(--ink3);margin-top:2px}
+.phc-tgt{text-align:center;padding:7px 13px;background:var(--bl-lt);border-radius:var(--rl);border:1px solid var(--bl-md)}
+.phc-tgt-lbl{font-size:9px;color:var(--bl);font-weight:var(--f6);text-transform:uppercase}
+.phc-tgt-val{font-size:15px;font-weight:var(--f7);color:var(--bl);font-family:'JetBrains Mono',monospace}
+.phc-bd{padding:13px 15px}
+.phc-ol{padding-left:15px;display:flex;flex-direction:column;gap:4px}
+.phc-ol li{font-size:11.5px;color:var(--ink2);line-height:1.5}
+.imp-badge{display:inline-block;font-size:10px;font-weight:var(--f6);padding:2px 8px;border-radius:20px;background:var(--gn-lt);color:var(--gn);margin-top:7px}
+
+/* ═══ EXEC BANNER ══════════════════════ */
+.exec-bar{padding:16px 26px;display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--brd)}
+.exec-bar.amber{background:linear-gradient(135deg,#4f2000,var(--am))}
+.exec-bar.red{background:linear-gradient(135deg,#4f0000,var(--rd))}
+.exec-bar.green{background:linear-gradient(135deg,#002f1a,var(--gn))}
+.et{padding:10px 13px;border-radius:var(--rl);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);display:flex;flex-direction:column;gap:3px;min-width:130px}
+.et-lbl{font-size:9px;font-weight:var(--f6);color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.05em}
+.et-val{font-size:15px;font-weight:var(--f7);color:#fff;font-family:'JetBrains Mono',monospace;line-height:1.1}
+.et-sub{font-size:10px;color:rgba(255,255,255,.65)}
+.et-arr{font-size:10.5px}
+.arr-i{color:#a8f5d0}.arr-d{color:#fca5a5}
+
+/* ═══ FAIRNESS BOX ═════════════════════ */
+.fw-box{padding:13px 15px;border-radius:var(--rl);background:var(--am-lt);border:1px solid var(--am-md)}
+.fw-ttl{font-size:12px;font-weight:var(--f6);color:var(--am);margin-bottom:6px}
+.fw-ul{padding-left:14px;display:flex;flex-direction:column;gap:5px}
+.fw-ul li{font-size:11.5px;color:var(--ink2);line-height:1.5}
+
+/* ═══ WATERFALL ════════════════════════ */
+.wf-r{display:flex;align-items:center;gap:7px;padding:4px 0;border-bottom:1px solid var(--brd)}
+.wf-nm{font-size:10.5px;color:var(--ink2);width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-tl{flex:1;height:16px;position:relative;background:var(--bg);border-radius:2px;overflow:hidden}
+.wf-b{position:absolute;height:100%;border-radius:2px}
+.wf-v{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--ink4);width:42px;text-align:right;flex-shrink:0}
+
+/* ═══ CHART SIZES ══════════════════════ */
+.ch-sm{position:relative;height:170px}
+.ch-md{position:relative;height:210px}
+.ch-lg{position:relative;height:270px}
+.ch-xl{position:relative;height:320px}
+
+/* ═══ GRID LAYOUTS ═════════════════════ */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.g32{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.g23{display:grid;grid-template-columns:1fr 2fr;gap:16px}
+.g5{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.body{padding:20px 26px;display:flex;flex-direction:column;gap:16px;flex:1}
+
+/* ═══ ANNOTATION PANEL ═════════════════ */
+.ann{padding:14px 16px;background:linear-gradient(135deg,#f0f4ff,#fff);border-radius:var(--rl);border:1px solid var(--bl-md)}
+.ann-ttl{font-size:11.5px;font-weight:var(--f6);color:var(--bl);margin-bottom:6px;display:flex;align-items:center;gap:5px}
+
+/* ═══ SKEW BADGE ═══════════════════════ */
+.skew-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:var(--f6)}
+
+/* ═══ MONITOR ROW ══════════════════════ */
+.mr{display:grid;grid-template-columns:1fr 72px 80px 1fr;padding:8px 14px;border-bottom:1px solid var(--brd);font-size:11.5px;align-items:center}
+.mr:last-child{border-bottom:none}
+.mr-h{background:var(--bg);font-size:9.5px;font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;color:var(--ink4)}
+
+/* ═══ BUDGET ROW ════════════════════════ */
+.bdr{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--brd)}
+.bdr:last-child{border-bottom:none}
+.bdr-nm{font-size:11.5px;color:var(--ink2);width:140px;flex-shrink:0}
+
+/* ═══ FOOTER ════════════════════════════ */
+.foot{background:var(--sur);border-top:1px solid var(--brd);padding:11px 26px;display:flex;align-items:center;gap:14px;font-size:10.5px;color:var(--ink4);flex-shrink:0}
+.foot strong{color:var(--ink2)}
+.fdv{width:1px;height:11px;background:var(--brd2)}
+
+/* ═══ SCROLLBAR ════════════════════════ */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(0,0,0,.1);border-radius:99px}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+<!-- TOPBAR -->
+<div class="tb">
+  <div class="br"><div class="br-ic"><i class="ti ti-chart-infographic"></i></div>PerfSuite</div>
+  <div class="tts">
+    <button class="tt on"  onclick="show('p-txn')">Transactions</button>
+    <button class="tt"     onclick="show('p-sys')">System Behaviour</button>
+    <button class="tt"     onclick="show('p-load')">Load Curve</button>
+    <button class="tt"     onclick="show('p-meth')">Methodology</button>
+    <button class="tt"     onclick="show('p-cmp')">Baseline vs Candidate</button>
+    <button class="tt"     onclick="show('p-mon')">Monitoring</button>
+  </div>
+  <div class="tr">
+    <div class="tib"><i class="ti ti-search"></i></div>
+    <div class="tib"><i class="ti ti-bell"></i></div>
+    <div class="tib"><i class="ti ti-download"></i></div>
+    <div class="tib"><i class="ti ti-settings"></i></div>
+    <div class="av">RK</div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<div class="sb">
+  <div class="src"><div class="srl">ACTIVE RUN</div><div class="srv">Run-27</div><div class="sst"><div class="ld"></div><span style="font-size:10px;color:rgba(255,255,255,.3)">Completed · 1.18 hrs · 6,910 requests</span></div></div>
+  <div class="sbs">
+    <div class="sbl">Report Sections</div>
+    <button class="si on"  onclick="show('p-txn')"><i class="ti ti-table"></i> Transactions <span class="sib">15</span></button>
+    <button class="si"     onclick="show('p-sys')"><i class="ti ti-chart-area-line"></i> System Behaviour</button>
+    <button class="si"     onclick="show('p-load')"><i class="ti ti-activity"></i> Load Curve</button>
+    <button class="si"     onclick="show('p-meth')"><i class="ti ti-ruler-measure"></i> Grading Methodology</button>
+    <button class="si"     onclick="show('p-cmp')"><i class="ti ti-scale"></i> Comparison Deep Dive</button>
+    <button class="si"     onclick="show('p-mon')"><i class="ti ti-alarm"></i> Monitoring Setup</button>
+  </div>
+  <div class="sdiv"></div>
+  <div class="sbs">
+    <div class="sbl">All Report Views</div>
+    <button class="si"><i class="ti ti-layout-dashboard"></i> Overview</button>
+    <button class="si"><i class="ti ti-chart-infographic"></i> KPIs & Metrics</button>
+    <button class="si"><i class="ti ti-api"></i> Endpoints</button>
+    <button class="si"><i class="ti ti-browser-check"></i> Web Vitals</button>
+    <button class="si"><i class="ti ti-building-bank"></i> Business Impact</button>
+    <button class="si"><i class="ti ti-robot"></i> AIML Appendix</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 1 — TRANSACTION PERFORMANCE TABLE (FULL)
+═══════════════════════════════════════════════════════ -->
+<div class="main">
+
+<div class="page on" id="p-txn">
+
+  <div class="ph">
+    <div class="ph-ic" style="background:var(--bl-lt);color:var(--bl)"><i class="ti ti-table"></i></div>
+    <div style="flex:1">
+      <div class="ph-ttl">Transaction Performance — Full Detail · Run 27</div>
+      <div class="ph-mt">15 transactions · 6,910 total samples · 1.18 hrs · JMeter · Staging</div>
+    </div>
+    <div class="ph-act">
+      <button class="btn bg"><i class="ti ti-filter"></i> Filter</button>
+      <button class="btn bg"><i class="ti ti-sort-descending"></i> Sort</button>
+      <button class="btn bp"><i class="ti ti-download"></i> Export</button>
+    </div>
+  </div>
+
+  <!-- Colour legend -->
+  <div style="padding:10px 26px;background:var(--sur);border-bottom:1px solid var(--brd);display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--ink3)">
+    <span style="font-weight:var(--f6);color:var(--ink2)">Colour coding</span>
+    <span style="display:flex;align-items:center;gap:5px"><span class="sd sd-ok"></span>Green — within SLA (RT &lt;2s, Err &lt;1%)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span class="sd sd-wn"></span>Amber — warning (RT 2–5s, Err 1–5%)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span class="sd sd-er"></span>Red — SLA violation (RT &gt;5s, Err &gt;5%)</span>
+  </div>
+
+  <div class="body">
+
+    <!-- Test Overview KPIs -->
+    <div class="kstr" style="grid-template-columns:repeat(6,1fr)">
+      <div class="kpi"><div class="klb"><i class="ti ti-file" style="font-size:11px"></i>Total Samples</div><div class="kval kv-bl">6,910</div><div class="kdlt kf">All transactions</div></div>
+      <div class="kpi"><div class="klb"><i class="ti ti-clock" style="font-size:11px"></i>Duration</div><div class="kval">1.18h</div><div class="kdlt kf">70.8 minutes</div></div>
+      <div class="kpi"><div class="klb"><i class="ti ti-users" style="font-size:11px"></i>Peak VUsers</div><div class="kval kv-bl">5–8</div><div class="kdlt kf">Concurrent threads</div></div>
+      <div class="kpi"><div class="klb"><i class="ti ti-activity" style="font-size:11px"></i>Avg Throughput</div><div class="kval kv-am">1.6/s</div><div class="kdlt kd">Target 10/s</div></div>
+      <div class="kpi"><div class="klb"><i class="ti ti-check" style="font-size:11px"></i>Success Rate</div><div class="kval kv-gn">99.71%</div><div class="kdlt ku">Above 99% target</div></div>
+      <div class="kpi"><div class="klb"><i class="ti ti-database" style="font-size:11px"></i>Data Processed</div><div class="kval">33.7 GB</div><div class="kdlt kf">Estimated</div></div>
+    </div>
+
+    <!-- Full Transaction Table -->
+    <div class="card">
+      <div class="chd">
+        <div class="ctt"><i class="ti ti-table"></i>Transaction Performance Table — All 15 Transactions</div>
+        <div style="display:flex;gap:5px;margin-left:auto">
+          <span class="p p-gn">11 healthy</span>
+          <span class="p p-am">3 warning</span>
+          <span class="p p-rd">1 critical</span>
+        </div>
+      </div>
+      <div class="tsc">
+        <table class="dt">
+          <thead>
+            <tr>
+              <th>Transaction / Endpoint</th>
+              <th style="text-align:right">Min</th>
+              <th style="text-align:right">Avg</th>
+              <th style="text-align:right">P50</th>
+              <th style="text-align:right">P75</th>
+              <th style="text-align:right">P90</th>
+              <th style="text-align:right">P95</th>
+              <th style="text-align:right">Max</th>
+              <th style="text-align:right">Calls</th>
+              <th style="text-align:right">Error %</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Click claim - WARNING avg, RED max -->
+            <tr>
+              <td style="font-weight:var(--f5)">Click claim</td>
+              <td style="text-align:right" class="mn kv-gn">0.55s</td>
+              <td style="text-align:right" class="mn kv-am"><strong>3.70s</strong></td>
+              <td style="text-align:right" class="mn kv-rd">5.60s</td>
+              <td style="text-align:right" class="mn kv-rd">5.73s</td>
+              <td style="text-align:right" class="mn kv-rd">5.91s</td>
+              <td style="text-align:right" class="mn kv-rd">6.03s</td>
+              <td style="text-align:right" class="mn kv-rd">15.03s</td>
+              <td style="text-align:right" class="mn">452</td>
+              <td style="text-align:right" class="mn kv-gn">0.44%</td>
+              <td><span class="p p-am">Warning</span></td>
+            </tr>
+            <!-- Click new valuation - GOOD avg, RED max -->
+            <tr>
+              <td style="font-weight:var(--f5)">Click new valuation</td>
+              <td style="text-align:right" class="mn kv-gn">0.17s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.34s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.21s</td>
+              <td style="text-align:right" class="mn kv-gn">0.23s</td>
+              <td style="text-align:right" class="mn kv-gn">0.34s</td>
+              <td style="text-align:right" class="mn kv-gn">0.37s</td>
+              <td style="text-align:right" class="mn kv-rd">10.01s</td>
+              <td style="text-align:right" class="mn">472</td>
+              <td style="text-align:right" class="mn kv-gn">0.42%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- Dashboard - RED avg -->
+            <tr>
+              <td style="font-weight:var(--f5)">Dashboard load</td>
+              <td style="text-align:right" class="mn kv-am">2.10s</td>
+              <td style="text-align:right" class="mn kv-rd"><strong>5.12s</strong></td>
+              <td style="text-align:right" class="mn kv-rd">5.32s</td>
+              <td style="text-align:right" class="mn kv-rd">5.36s</td>
+              <td style="text-align:right" class="mn kv-rd">5.39s</td>
+              <td style="text-align:right" class="mn kv-rd">5.41s</td>
+              <td style="text-align:right" class="mn kv-rd">8.95s</td>
+              <td style="text-align:right" class="mn">478</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-rd">Critical</span></td>
+            </tr>
+            <!-- Logout - GOOD all -->
+            <tr>
+              <td style="font-weight:var(--f5)">Logout</td>
+              <td style="text-align:right" class="mn kv-gn">0.14s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.17s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.16s</td>
+              <td style="text-align:right" class="mn kv-gn">0.17s</td>
+              <td style="text-align:right" class="mn kv-gn">0.20s</td>
+              <td style="text-align:right" class="mn kv-gn">0.22s</td>
+              <td style="text-align:right" class="mn kv-gn">0.28s</td>
+              <td style="text-align:right" class="mn">448</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- Enter claim - GOOD -->
+            <tr>
+              <td style="font-weight:var(--f5)">Enter claim</td>
+              <td style="text-align:right" class="mn kv-gn">0.04s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.06s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.06s</td>
+              <td style="text-align:right" class="mn kv-gn">0.06s</td>
+              <td style="text-align:right" class="mn kv-gn">0.06s</td>
+              <td style="text-align:right" class="mn kv-gn">0.07s</td>
+              <td style="text-align:right" class="mn kv-gn">0.35s</td>
+              <td style="text-align:right" class="mn">470</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- Fill and decode VIN -->
+            <tr>
+              <td style="font-weight:var(--f5)">Fill and decode VIN</td>
+              <td style="text-align:right" class="mn kv-gn">0.90s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>1.28s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">1.20s</td>
+              <td style="text-align:right" class="mn kv-gn">1.40s</td>
+              <td style="text-align:right" class="mn kv-gn">1.71s</td>
+              <td style="text-align:right" class="mn kv-gn">1.88s</td>
+              <td style="text-align:right" class="mn kv-am">2.58s</td>
+              <td style="text-align:right" class="mn">466</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- More detail and save - WARNING -->
+            <tr>
+              <td style="font-weight:var(--f5)">More detail and save</td>
+              <td style="text-align:right" class="mn kv-am">2.64s</td>
+              <td style="text-align:right" class="mn kv-am"><strong>3.71s</strong></td>
+              <td style="text-align:right" class="mn kv-am">3.56s</td>
+              <td style="text-align:right" class="mn kv-am">4.02s</td>
+              <td style="text-align:right" class="mn kv-am">4.41s</td>
+              <td style="text-align:right" class="mn kv-am">4.69s</td>
+              <td style="text-align:right" class="mn kv-rd">9.64s</td>
+              <td style="text-align:right" class="mn">464</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-am">Warning</span></td>
+            </tr>
+            <!-- Packages and submit - WARNING + error -->
+            <tr>
+              <td style="font-weight:var(--f5)">Packages and submit</td>
+              <td style="text-align:right" class="mn kv-gn">0.84s</td>
+              <td style="text-align:right" class="mn kv-am"><strong>2.03s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">1.76s</td>
+              <td style="text-align:right" class="mn kv-am">2.04s</td>
+              <td style="text-align:right" class="mn kv-am">2.47s</td>
+              <td style="text-align:right" class="mn kv-am">3.08s</td>
+              <td style="text-align:right" class="mn kv-rd">11.65s</td>
+              <td style="text-align:right" class="mn">464</td>
+              <td style="text-align:right" class="mn kv-am" style="color:var(--am)">1.29%</td>
+              <td><span class="p p-am">Warning</span></td>
+            </tr>
+            <!-- Save and cont -->
+            <tr>
+              <td style="font-weight:var(--f5)">Save and continue</td>
+              <td style="text-align:right" class="mn kv-gn">0.56s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.93s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.74s</td>
+              <td style="text-align:right" class="mn kv-gn">0.83s</td>
+              <td style="text-align:right" class="mn kv-gn">1.10s</td>
+              <td style="text-align:right" class="mn kv-gn">1.54s</td>
+              <td style="text-align:right" class="mn kv-rd">10.01s</td>
+              <td style="text-align:right" class="mn">470</td>
+              <td style="text-align:right" class="mn kv-gn">0.85%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- View NADA report -->
+            <tr>
+              <td style="font-weight:var(--f5)">View NADA report</td>
+              <td style="text-align:right" class="mn kv-gn">0.41s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.59s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.54s</td>
+              <td style="text-align:right" class="mn kv-gn">0.62s</td>
+              <td style="text-align:right" class="mn kv-gn">0.81s</td>
+              <td style="text-align:right" class="mn kv-gn">0.97s</td>
+              <td style="text-align:right" class="mn kv-gn">1.69s</td>
+              <td style="text-align:right" class="mn">450</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- View NICB report -->
+            <tr>
+              <td style="font-weight:var(--f5)">View NICB report</td>
+              <td style="text-align:right" class="mn kv-gn">0.34s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.52s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.44s</td>
+              <td style="text-align:right" class="mn kv-gn">0.52s</td>
+              <td style="text-align:right" class="mn kv-gn">0.66s</td>
+              <td style="text-align:right" class="mn kv-gn">0.87s</td>
+              <td style="text-align:right" class="mn kv-rd">5.61s</td>
+              <td style="text-align:right" class="mn">450</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- View Redbook report -->
+            <tr>
+              <td style="font-weight:var(--f5)">View Redbook report</td>
+              <td style="text-align:right" class="mn kv-gn">0.42s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.63s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.54s</td>
+              <td style="text-align:right" class="mn kv-gn">0.64s</td>
+              <td style="text-align:right" class="mn kv-gn">0.81s</td>
+              <td style="text-align:right" class="mn kv-gn">1.04s</td>
+              <td style="text-align:right" class="mn kv-rd">5.58s</td>
+              <td style="text-align:right" class="mn">450</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- View settlement summary -->
+            <tr>
+              <td style="font-weight:var(--f5)">View settlement summary</td>
+              <td style="text-align:right" class="mn kv-gn">0.61s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.83s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.74s</td>
+              <td style="text-align:right" class="mn kv-gn">0.82s</td>
+              <td style="text-align:right" class="mn kv-gn">0.98s</td>
+              <td style="text-align:right" class="mn kv-gn">1.22s</td>
+              <td style="text-align:right" class="mn kv-rd">10.01s</td>
+              <td style="text-align:right" class="mn">450</td>
+              <td style="text-align:right" class="mn kv-gn">0.44%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- View valuation report -->
+            <tr>
+              <td style="font-weight:var(--f5)">View valuation report</td>
+              <td style="text-align:right" class="mn kv-gn">0.42s</td>
+              <td style="text-align:right" class="mn kv-gn"><strong>0.67s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.53s</td>
+              <td style="text-align:right" class="mn kv-gn">0.69s</td>
+              <td style="text-align:right" class="mn kv-gn">0.90s</td>
+              <td style="text-align:right" class="mn kv-gn">1.12s</td>
+              <td style="text-align:right" class="mn kv-rd">5.84s</td>
+              <td style="text-align:right" class="mn">450</td>
+              <td style="text-align:right" class="mn kv-gn">0.00%</td>
+              <td><span class="p p-gn">Healthy</span></td>
+            </tr>
+            <!-- TOTAL row -->
+            <tr style="background:var(--bg)">
+              <td style="font-weight:var(--f7);color:var(--ink)">TOTAL (All Transactions)</td>
+              <td style="text-align:right" class="mn kv-gn">0.04s</td>
+              <td style="text-align:right" class="mn kv-am"><strong>1.36s</strong></td>
+              <td style="text-align:right" class="mn kv-gn">0.81s</td>
+              <td style="text-align:right" class="mn kv-gn">1.20s</td>
+              <td style="text-align:right" class="mn kv-am">2.80s</td>
+              <td style="text-align:right" class="mn kv-am">5.40s</td>
+              <td style="text-align:right" class="mn kv-rd">15.03s</td>
+              <td style="text-align:right" class="mn" style="font-weight:var(--f6)">6,910</td>
+              <td style="text-align:right" class="mn kv-gn">0.29%</td>
+              <td><span class="p p-bl">Grade B</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Transaction Performance Bar Chart -->
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-chart-bar"></i>Avg Response Time — All Transactions</div><div class="csu">SLA = 2s dashed</div></div>
+        <div class="cbd"><div class="ch-lg"><canvas id="c-txn-avg"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-chart-bar-off"></i>Max Response Time — Spike Analysis</div><div class="csu">Red = SLA violation</div></div>
+        <div class="cbd"><div class="ch-lg"><canvas id="c-txn-max"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- Statistical summary -->
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-math"></i>Response Time Statistical Analysis</div></div>
+        <div class="cbd">
+          <div class="stat-mini" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+            <div class="sm-c"><div class="sm-lbl">Mean</div><div class="sm-val kv-am">1.58s</div><div class="sm-sub">Influenced by outliers</div></div>
+            <div class="sm-c"><div class="sm-lbl">Median (P50)</div><div class="sm-val kv-gn">0.83s</div><div class="sm-sub">True central tendency</div></div>
+            <div class="sm-c"><div class="sm-lbl">Std Deviation</div><div class="sm-val kv-am">1.87s</div><div class="sm-sub">High variability</div></div>
+            <div class="sm-c"><div class="sm-lbl">Variance</div><div class="sm-val">3.48</div><div class="sm-sub">σ²</div></div>
+            <div class="sm-c"><div class="sm-lbl">CV (Coeff. Variation)</div><div class="sm-val kv-rd">118%</div><div class="sm-sub">&gt;100% = high dispersion</div></div>
+            <div class="sm-c"><div class="sm-lbl">Skewness</div><div class="sm-val kv-am">2.62</div><div class="sm-sub">Right-skewed</div></div>
+          </div>
+          <div class="ann">
+            <div class="ann-ttl"><i class="ti ti-info-circle"></i>Interpretation</div>
+            <div style="font-size:11.5px;color:var(--ink2);line-height:1.6">Mean (1.58s) &gt; Median (0.83s) confirms right-skew — a minority of slow requests inflate the average. CV of 118% indicates high relative dispersion. Skewness of 2.62 means frequent slow outliers are pulling the distribution tail right. Focus on tail latency rather than average for SLA compliance.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-math"></i>Throughput Statistical Analysis</div></div>
+        <div class="cbd">
+          <div class="stat-mini" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+            <div class="sm-c"><div class="sm-lbl">Mean Throughput</div><div class="sm-val kv-am">0.18/s</div><div class="sm-sub">Per-window avg</div></div>
+            <div class="sm-c"><div class="sm-lbl">Total Throughput</div><div class="sm-val kv-rd">1.6/s</div><div class="sm-sub">Overall rate</div></div>
+            <div class="sm-c"><div class="sm-lbl">Target</div><div class="sm-val kv-rd">10/s</div><div class="sm-sub">Min acceptable</div></div>
+            <div class="sm-c"><div class="sm-lbl">Skewness</div><div class="sm-val kv-am">+ve</div><div class="sm-sub">Right-skewed</div></div>
+            <div class="sm-c"><div class="sm-lbl">Ramp-up Impact</div><div class="sm-val">Yes</div><div class="sm-sub">Initial low rate</div></div>
+            <div class="sm-c"><div class="sm-lbl">Gap from Target</div><div class="sm-val kv-rd">−84%</div><div class="sm-sub">Severe bottleneck</div></div>
+          </div>
+          <div class="alrt a-rd">
+            <div class="att" style="color:var(--rd)">Throughput Critical — 84% Below Target</div>
+            <div style="font-size:11px;color:var(--ink2)">1.6 req/s vs 10/s minimum target. At scale with 100 concurrent users this would project to ~32 req/s — still 68% below industry standard of 100 req/s. Root cause: DB connection pool exhaustion and synchronous I/O blocking.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Worst Transactions Highlight -->
+    <div class="slb">Transactions Requiring Immediate Attention</div>
+    <div class="g3">
+      <div class="card" style="border-color:var(--rd-md)">
+        <div class="chd" style="background:var(--rd-lt)"><div class="ctt" style="color:var(--rd)"><i class="ti ti-flame"></i>Dashboard Load — Critical</div></div>
+        <div class="cbd">
+          <div style="font-size:22px;font-weight:var(--f7);font-family:'JetBrains Mono',monospace;color:var(--rd);margin-bottom:8px">5.12s avg</div>
+          <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--ink2)">
+            <div>P50: <span class="mn kv-rd">5.32s</span> — median is above SLA</div>
+            <div>Max: <span class="mn kv-rd">8.95s</span> — severe spikes</div>
+            <div>Calls: <span class="mn">478</span> — high volume</div>
+            <div>Errors: <span class="mn kv-gn">0.00%</span> — no failures</div>
+          </div>
+          <div class="alrt a-rd" style="margin-top:10px">
+            <div style="font-size:11px;color:var(--ink2)">All percentiles above SLA. Likely rendering 40+ widgets synchronously. Cache dashboard state and pre-compute aggregations.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border-color:var(--am-md)">
+        <div class="chd" style="background:var(--am-lt)"><div class="ctt" style="color:var(--am)"><i class="ti ti-alert-triangle"></i>Click Claim — Warning</div></div>
+        <div class="cbd">
+          <div style="font-size:22px;font-weight:var(--f7);font-family:'JetBrains Mono',monospace;color:var(--am);margin-bottom:8px">3.70s avg</div>
+          <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--ink2)">
+            <div>P50: <span class="mn kv-rd">5.60s</span> — median exceeds SLA</div>
+            <div>Max: <span class="mn kv-rd">15.03s</span> — worst spike</div>
+            <div>Calls: <span class="mn">452</span></div>
+            <div>Errors: <span class="mn kv-gn">0.44%</span></div>
+          </div>
+          <div class="alrt a-am" style="margin-top:10px">
+            <div style="font-size:11px;color:var(--ink2)">Claim processing triggers multiple downstream calls. Add async processing and optimistic UI updates to hide backend latency.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border-color:var(--am-md)">
+        <div class="chd" style="background:var(--am-lt)"><div class="ctt" style="color:var(--am)"><i class="ti ti-alert-circle"></i>More Detail & Save — Warning</div></div>
+        <div class="cbd">
+          <div style="font-size:22px;font-weight:var(--f7);font-family:'JetBrains Mono',monospace;color:var(--am);margin-bottom:8px">3.71s avg</div>
+          <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--ink2)">
+            <div>P50: <span class="mn kv-am">3.56s</span></div>
+            <div>Max: <span class="mn kv-rd">9.64s</span></div>
+            <div>Calls: <span class="mn">464</span></div>
+            <div>Errors: <span class="mn kv-gn">0.00%</span></div>
+          </div>
+          <div class="alrt a-am" style="margin-top:10px">
+            <div style="font-size:11px;color:var(--ink2)">Save operation likely triggers full data validation + DB write synchronously. Defer non-critical validations to async job.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+
+  <div class="foot">
+    <strong>Run ID:</strong> RUN-27-2026-03-25 <div class="fdv"></div>
+    <strong>Transactions:</strong> 15 total · 11 healthy · 3 warning · 1 critical <div class="fdv"></div>
+    <strong>Total Samples:</strong> 6,910 · 1.18 hours
+    <div style="margin-left:auto;display:flex;gap:5px">
+      <button class="btn bg" style="font-size:10.5px"><i class="ti ti-printer"></i> Print</button>
+      <button class="btn bp" style="font-size:10.5px"><i class="ti ti-download"></i> PDF</button>
+    </div>
+  </div>
+
+</div><!-- /p-txn -->
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 2 — SYSTEM BEHAVIOUR OVER TIME
+═══════════════════════════════════════════════════════ -->
+<div class="page" id="p-sys">
+
+  <div class="ph">
+    <div class="ph-ic" style="background:var(--gn-lt);color:var(--gn)"><i class="ti ti-chart-area-line"></i></div>
+    <div style="flex:1">
+      <div class="ph-ttl">Overall System Behaviour — Run 27</div>
+      <div class="ph-mt">Response time · throughput · virtual users over time · 21 measurement windows · 1.18 hrs</div>
+    </div>
+    <div class="ph-act">
+      <button class="btn bg"><i class="ti ti-zoom-in"></i> Zoom</button>
+      <button class="btn bp"><i class="ti ti-download"></i> Export</button>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <!-- System Behaviour Chart – full width with dual axis -->
+    <div class="card">
+      <div class="chd">
+        <div class="ctt"><i class="ti ti-chart-area-line"></i>System Behaviour Over Time — Response Time · VUsers · Throughput</div>
+        <div style="display:flex;gap:8px;margin-left:auto;font-size:11px;color:var(--ink3)">
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:3px;border-radius:2px;background:var(--bl);display:inline-block"></span>Avg RT (s)</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:3px;border-radius:2px;background:var(--am);display:inline-block"></span>VUsers</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:3px;border-radius:2px;background:var(--gn);display:inline-block"></span>Throughput/s (right)</span>
+        </div>
+      </div>
+      <div class="cbd"><div class="ch-xl"><canvas id="c-sys-main"></canvas></div></div>
+    </div>
+
+    <!-- Graph Understanding Panel -->
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-file-analytics"></i>Response Time Analysis</div>
+          <div style="display:flex;gap:5px;margin-left:auto">
+            <span class="p" style="background:#fff3d0;color:#9a5a00;font-size:9.5px">RT: right-skewed</span>
+          </div>
+        </div>
+        <div class="cbd">
+          <div class="ann" style="margin-bottom:12px">
+            <div class="ann-ttl"><i class="ti ti-info-circle"></i>Summary</div>
+            <div style="font-size:11.5px;color:var(--ink2);line-height:1.6">The system shows variable responsiveness. Response times average 1.58s (median: 0.83s) with high variability, high relative dispersion, and significant right skewness indicating frequent slow responses. Performance needs optimisation for consistent, reliable behaviour.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="alrt a-am">
+              <div class="att" style="color:var(--am)">Pattern: Right-Skewed Distribution</div>
+              <div style="font-size:11px;color:var(--ink2)">Skewness 2.62, CV 118%. Mean &gt; Median signals a long right tail. The core 80% of requests perform well; the top 20% experience significant degradation during load spikes.</div>
+            </div>
+            <div class="alrt a-bl">
+              <div class="att" style="color:var(--bl)">Spike Pattern at t≈24min & t≈43min</div>
+              <div style="font-size:11px;color:var(--ink2)">Two distinct spikes to 5.38s and 5.62s observed in the time-series data. Both at 5 VUsers. Indicates periodic GC events or DB lock contention, not load-related degradation.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-file-analytics"></i>Throughput Analysis</div>
+          <div style="display:flex;gap:5px;margin-left:auto">
+            <span class="p" style="background:#fff3d0;color:#9a5a00;font-size:9.5px">TP: right-skewed</span>
+          </div>
+        </div>
+        <div class="cbd">
+          <div class="ann" style="margin-bottom:12px">
+            <div class="ann-ttl"><i class="ti ti-info-circle"></i>Summary</div>
+            <div style="font-size:11.5px;color:var(--ink2);line-height:1.6">Throughput fluctuates between 0.12–0.35 req/s (window level) reflecting sequential user flows with think-time between actions. Total system throughput 1.6 req/s remains far below 10 req/s minimum target throughout the test.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="alrt a-rd">
+              <div class="att" style="color:var(--rd)">Constant Low Throughput</div>
+              <div style="font-size:11px;color:var(--ink2)">No throughput increase despite stable VUser count of 5. Server is not throughput-bound by user count — it is bound by slow DB queries and synchronous I/O chains. Connection pool (10 connections) is the root constraint.</div>
+            </div>
+            <div class="alrt a-gn">
+              <div class="att" style="color:var(--gn)">Throughput Stability</div>
+              <div style="font-size:11px;color:var(--ink2)">Despite spikes in response time, throughput does not collapse (stays 0.12–0.24 req/s). Server remains responsive. Issues are latency-based, not availability-based.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Raw data table -->
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-table"></i>System Behaviour Raw Data</div><div class="csu">21 measurement windows</div></div>
+      <div class="tsc">
+        <table class="dt">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th style="text-align:center">Avg Response (s)</th>
+              <th style="text-align:center">VUsers</th>
+              <th style="text-align:center">Throughput (req/s)</th>
+              <th>Observation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="mn">00:00:00</td><td style="text-align:center" class="mn kv-rd">5.59s</td><td style="text-align:center" class="mn">1</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Initial ramp-up spike, 1 VUser</td></tr>
+            <tr><td class="mn">00:04:57</td><td style="text-align:center" class="mn kv-gn">0.60s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">System warmed up, 5 VUsers loaded</td></tr>
+            <tr><td class="mn">00:08:12</td><td style="text-align:center" class="mn kv-gn">0.21s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Low-latency window</td></tr>
+            <tr><td class="mn">00:11:19</td><td style="text-align:center" class="mn kv-gn">0.84s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">Stable performance</td></tr>
+            <tr><td class="mn">00:15:00</td><td style="text-align:center" class="mn kv-gn">0.90s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Stable performance</td></tr>
+            <tr><td class="mn">00:18:07</td><td style="text-align:center" class="mn kv-gn">1.08s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">Slight increase, approaching SLA</td></tr>
+            <tr><td class="mn">00:20:57</td><td style="text-align:center" class="mn kv-gn">0.16s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Fast window (cached responses)</td></tr>
+            <tr><td class="mn">00:24:12</td><td style="text-align:center" class="mn kv-rd">5.38s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--rd)">⚠ Spike — GC pause or DB lock event</td></tr>
+            <tr><td class="mn">00:27:44</td><td style="text-align:center" class="mn kv-gn">1.43s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Recovery after spike</td></tr>
+            <tr><td class="mn">00:31:00</td><td style="text-align:center" class="mn kv-gn">0.57s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">Normal operation</td></tr>
+            <tr><td class="mn">00:33:58</td><td style="text-align:center" class="mn kv-gn">0.50s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Stable</td></tr>
+            <tr><td class="mn">00:37:05</td><td style="text-align:center" class="mn kv-gn">0.05s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Fastest window — cache hit burst</td></tr>
+            <tr><td class="mn">00:40:20</td><td style="text-align:center" class="mn kv-gn">1.10s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">Normal operation</td></tr>
+            <tr><td class="mn">00:43:27</td><td style="text-align:center" class="mn kv-rd">5.62s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--rd)">⚠ Second spike — same pattern</td></tr>
+            <tr><td class="mn">00:47:33</td><td style="text-align:center" class="mn kv-gn">0.76s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Recovery</td></tr>
+            <tr><td class="mn">00:50:40</td><td style="text-align:center" class="mn kv-gn">0.86s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">Stable</td></tr>
+            <tr><td class="mn">00:54:21</td><td style="text-align:center" class="mn kv-gn">0.49s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Stable</td></tr>
+            <tr><td class="mn">00:57:36</td><td style="text-align:center" class="mn kv-gn">0.24s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.24</td><td style="font-size:11px;color:var(--ink3)">Low latency</td></tr>
+            <tr><td class="mn">01:01:26</td><td style="text-align:center" class="mn kv-am">2.38s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.35</td><td style="font-size:11px;color:var(--ink3)">Elevated — higher throughput window</td></tr>
+            <tr><td class="mn">01:04:32</td><td style="text-align:center" class="mn kv-gn">0.63s</td><td style="text-align:center" class="mn">5</td><td style="text-align:center" class="mn">0.12</td><td style="font-size:11px;color:var(--ink3)">Return to normal</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+
+  <div class="foot">
+    <strong>Spike events:</strong> 2 detected (t≈24:12, t≈43:27) <div class="fdv"></div>
+    <strong>Throughput range:</strong> 0.12–0.35 req/s <div class="fdv"></div>
+    <strong>Distribution:</strong> Right-skewed (skew 2.62, CV 118%)
+    <div style="margin-left:auto"><button class="btn bp" style="font-size:10.5px"><i class="ti ti-download"></i> PDF</button></div>
+  </div>
+
+</div><!-- /p-sys -->
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 3 — RESPONSE TIME UNDER LOAD CURVE
+═══════════════════════════════════════════════════════ -->
+<div class="page" id="p-load">
+
+  <div class="ph">
+    <div class="ph-ic" style="background:var(--am-lt);color:var(--am)"><i class="ti ti-activity"></i></div>
+    <div style="flex:1">
+      <div class="ph-ttl">Response Time Under Load — Thread Scaling Analysis · Run 27</div>
+      <div class="ph-mt">How response time changes as concurrent VUsers (threads) increase from 1 → 5</div>
+    </div>
+    <div class="ph-act">
+      <button class="btn bp"><i class="ti ti-download"></i> Export</button>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <div class="g2">
+      <!-- Load curve chart -->
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-chart-line"></i>Avg Response Time vs Thread Count</div><div class="csu">1–5 concurrent users</div></div>
+        <div class="cbd"><div class="ch-lg"><canvas id="c-load"></canvas></div></div>
+      </div>
+
+      <!-- Data Table + Observations -->
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-table"></i>Thread Scaling Data</div></div>
+        <div class="tsc">
+          <table class="dt">
+            <thead>
+              <tr><th style="text-align:center">Threads</th><th style="text-align:right">Avg Response</th><th style="text-align:right">vs 1-thread</th><th>Pattern</th></tr>
+            </thead>
+            <tbody>
+              <tr><td style="text-align:center;font-weight:var(--f6)">1</td><td style="text-align:right" class="mn kv-am">1.56s</td><td style="text-align:right" class="mn">—</td><td><span class="p p-am">Baseline</span></td></tr>
+              <tr><td style="text-align:center;font-weight:var(--f6)">2</td><td style="text-align:right" class="mn kv-gn">0.66s</td><td style="text-align:right" class="mn kv-gn">−58%</td><td><span class="p p-gn">Improved (cache warm)</span></td></tr>
+              <tr><td style="text-align:center;font-weight:var(--f6)">3</td><td style="text-align:right" class="mn kv-gn">0.90s</td><td style="text-align:right" class="mn kv-gn">−42%</td><td><span class="p p-gn">Still improving</span></td></tr>
+              <tr><td style="text-align:center;font-weight:var(--f6)">4</td><td style="text-align:right" class="mn kv-am">1.99s</td><td style="text-align:right" class="mn kv-am">+28%</td><td><span class="p p-am">Approaching SLA</span></td></tr>
+              <tr><td style="text-align:center;font-weight:var(--f6)">5</td><td style="text-align:right" class="mn kv-am">1.60s</td><td style="text-align:right" class="mn kv-am">+3%</td><td><span class="p p-am">Near SLA limit</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cbd" style="padding-top:12px">
+          <div class="alrt a-bl">
+            <div class="att" style="color:var(--bl)">Graph Observation</div>
+            <div style="font-size:11px;color:var(--ink2)">Response time increases significantly as thread count increases (1.11s to 1.50s avg), indicating potential capacity constraints. System stability: Variable — resources may be insufficient at higher loads. The non-monotonic curve (dip at 2–3 threads) suggests cache warm-up benefit.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capacity Projection -->
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-trending-up"></i>Capacity Projection — Extrapolation to Production Load</div></div>
+      <div class="cbd">
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--brd);border-radius:var(--rl);overflow:hidden;border:1px solid var(--brd);margin-bottom:14px">
+          <div style="background:var(--sur);padding:12px 14px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">5 VUsers (tested)</div><div style="font-size:18px;font-weight:var(--f6);font-family:'JetBrains Mono',monospace;color:var(--gn)">1.60s</div><div style="font-size:10px;color:var(--ink3)">Within SLA</div></div>
+          <div style="background:var(--sur);padding:12px 14px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">25 VUsers (proj.)</div><div style="font-size:18px;font-weight:var(--f6);font-family:'JetBrains Mono',monospace;color:var(--am)">~3.5s</div><div style="font-size:10px;color:var(--ink3)">SLA risk</div></div>
+          <div style="background:var(--sur);padding:12px 14px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">50 VUsers (proj.)</div><div style="font-size:18px;font-weight:var(--f6);font-family:'JetBrains Mono',monospace;color:var(--rd)">~7s+</div><div style="font-size:10px;color:var(--ink3)">SLA breach</div></div>
+          <div style="background:var(--sur);padding:12px 14px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">100 VUsers (target)</div><div style="font-size:18px;font-weight:var(--f6);font-family:'JetBrains Mono',monospace;color:var(--rd)">Unknown</div><div style="font-size:10px;color:var(--ink3)">Not tested</div></div>
+          <div style="background:var(--rd-lt);padding:12px 14px"><div style="font-size:9.5px;color:var(--rd);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">Saturation Point</div><div style="font-size:18px;font-weight:var(--f6);font-family:'JetBrains Mono',monospace;color:var(--rd)">~8–10</div><div style="font-size:10px;color:var(--ink3)">VUsers estimated</div></div>
+        </div>
+        <div class="alrt a-am">
+          <div class="att" style="color:var(--am)">Test Coverage Warning — Only 5 VUsers Tested</div>
+          <div style="font-size:11px;color:var(--ink2)">Production target is 100+ concurrent users. Current test used max 5 VUsers which is only 5% of target load. Phase 2 testing must include 25, 50, and 100 VUser scenarios to validate capacity and find the saturation knee. Without this data, production deployment carries high risk.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load test recommendations -->
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-checklist"></i>Next Load Test Requirements</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--rd-lt);border-radius:var(--rl)"><span class="sd sd-er" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Soak Test — 1hr at 50 VUsers</div><div style="font-size:11px;color:var(--ink3)">Detect memory leaks, connection pool exhaustion, GC pressure over time</div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--rd-lt);border-radius:var(--rl)"><span class="sd sd-er" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Spike Test — 1→100 VUsers in 30s</div><div style="font-size:11px;color:var(--ink3)">Test elasticity and auto-scaling responsiveness under sudden traffic surge</div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--am-lt);border-radius:var(--rl)"><span class="sd sd-wn" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Stress Test — Ramp to failure point</div><div style="font-size:11px;color:var(--ink3)">Find breaking point and max throughput before error rate exceeds 1%</div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--am-lt);border-radius:var(--rl)"><span class="sd sd-wn" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Baseline Re-run at 100 VUsers</div><div style="font-size:11px;color:var(--ink3)">After Phase 1 fixes, re-run at full 100 VUser load to validate improvements</div></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-bulb"></i>Performance Engineering Actions</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:8px">
+          <div class="alrt a-gn"><div class="att" style="color:var(--gn)">Strength: Cache Warm-up Effect</div><div style="font-size:11px;color:var(--ink2)">RT drops 58% from 1→2 threads, showing effective caching. Extend cache TTL and pre-warm critical objects at startup.</div></div>
+          <div class="alrt a-am"><div class="att" style="color:var(--am)">Risk: DB Pool Bottleneck at 4+ Threads</div><div style="font-size:11px;color:var(--ink2)">RT degrades from 0.90s to 1.99s at 4 threads. DB pool saturation likely. Increase pool size to 50 before next load test.</div></div>
+          <div class="alrt a-bl"><div class="att" style="color:var(--bl)">Recommendation: Async Processing</div><div style="font-size:11px;color:var(--ink2)">Heavy synchronous transactions (click claim, dashboard) should move to async queue pattern. This decouples thread-per-request constraint.</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <strong>Thread range tested:</strong> 1–5 VUsers <div class="fdv"></div>
+    <strong>Saturation point:</strong> ~4 VUsers (estimated) <div class="fdv"></div>
+    <strong>Next action:</strong> Load test at 25, 50, 100 VUsers after Phase 1 fixes
+    <div style="margin-left:auto"><button class="btn bp" style="font-size:10.5px"><i class="ti ti-download"></i> PDF</button></div>
+  </div>
+
+</div><!-- /p-load -->
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 4 — SCORING METHODOLOGY
+═══════════════════════════════════════════════════════ -->
+<div class="page" id="p-meth">
+
+  <div class="ph">
+    <div class="ph-ic" style="background:var(--pu-lt);color:var(--pu)"><i class="ti ti-ruler-measure"></i></div>
+    <div style="flex:1">
+      <div class="ph-ttl">Performance Grading Methodology & Scale Reference</div>
+      <div class="ph-mt">How grades are computed · weighted dimensions · industry benchmarks · scoring formula</div>
+    </div>
+    <div class="ph-act">
+      <button class="btn bp"><i class="ti ti-download"></i> Export</button>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <!-- Grading Scale Visual -->
+    <div class="slb">Grading Scale</div>
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-ruler"></i>Performance Grade Reference</div></div>
+      <div class="cbd">
+        <div class="gs-strip" style="margin-bottom:6px"></div>
+        <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink4);margin-bottom:16px">
+          <span>A+ 90–100</span><span>A 80–89</span><span>C 70–79</span><span>D 60–69</span><span>E 40–59</span><span>F 0–39</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px">
+          <div style="text-align:center;padding:13px;background:var(--gn-lt);border-radius:var(--rl);border-left:3px solid var(--gn)"><div style="font-size:22px;font-weight:var(--f7);color:var(--gn)">A+</div><div style="font-size:10px;color:var(--gn);font-weight:var(--f6)">90–100</div><div style="font-size:10px;color:var(--ink3);margin-top:3px">Exceptional · Industry leading</div></div>
+          <div style="text-align:center;padding:13px;background:#e8f5ee;border-radius:var(--rl);border-left:3px solid #3a9060"><div style="font-size:22px;font-weight:var(--f7);color:#3a9060">A</div><div style="font-size:10px;color:#3a9060;font-weight:var(--f6)">80–89</div><div style="font-size:10px;color:var(--ink3);margin-top:3px">Excellent · Exceeds standards</div></div>
+          <div style="text-align:center;padding:13px;background:#f0f9ff;border-radius:var(--rl);border-left:3px solid var(--bl)"><div style="font-size:22px;font-weight:var(--f7);color:var(--bl)">B+/B</div><div style="font-size:10px;color:var(--bl);font-weight:var(--f6)">70–79</div><div style="font-size:10px;color:var(--ink3);margin-top:3px">Good/Acceptable · Current: <strong>73</strong></div></div>
+          <div style="text-align:center;padding:13px;background:var(--am-lt);border-radius:var(--rl);border-left:3px solid var(--am)"><div style="font-size:22px;font-weight:var(--f7);color:var(--am)">C</div><div style="font-size:10px;color:var(--am);font-weight:var(--f6)">60–69</div><div style="font-size:10px;color:var(--ink3);margin-top:3px">Marginal · Significant issues</div></div>
+          <div style="text-align:center;padding:13px;background:var(--rd-lt);border-radius:var(--rl);border-left:3px solid #9e1010"><div style="font-size:22px;font-weight:var(--f7);color:#9e1010">D</div><div style="font-size:10px;color:#9e1010;font-weight:var(--f6)">50–59</div><div style="font-size:10px;color:var(--ink3);margin-top:3px">Critical · Immediate action</div></div>
+          <div style="text-align:center;padding:13px;background:#fcd4d4;border-radius:var(--rl);border:2px solid var(--rd)"><div style="font-size:22px;font-weight:var(--f7);color:var(--rd)">F</div><div style="font-size:10px;color:var(--rd);font-weight:var(--f6)">0–49</div><div style="font-size:10px;color:var(--rd);margin-top:3px;font-weight:var(--f6)">Failing · Block deployment</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weighted Scoring Formula -->
+    <div class="slb">Weighted Scoring Formula</div>
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-math-function"></i>Scoring Weight Breakdown</div></div>
+        <div class="cbd">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:12px;font-weight:var(--f6);color:var(--ink)">Performance (Avg RT, P95)</span>
+                <span style="font-size:12px;font-weight:var(--f7);color:var(--bl)">30%</span>
+              </div>
+              <div class="pb" style="height:8px"><div class="pf" style="width:30%;height:8px;background:var(--bl)"></div></div>
+              <div style="font-size:10.5px;color:var(--ink3);margin-top:3px">Avg RT, P95 latency, response time stability</div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:12px;font-weight:var(--f6);color:var(--ink)">Reliability (Error Rate, Success)</span>
+                <span style="font-size:12px;font-weight:var(--f7);color:var(--gn)">25%</span>
+              </div>
+              <div class="pb" style="height:8px"><div class="pf" style="width:25%;height:8px;background:var(--gn)"></div></div>
+              <div style="font-size:10.5px;color:var(--ink3);margin-top:3px">Error rate, availability, success rate over full test</div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:12px;font-weight:var(--f6);color:var(--ink)">User Experience (SLA Compliance)</span>
+                <span style="font-size:12px;font-weight:var(--f7);color:var(--am)">25%</span>
+              </div>
+              <div class="pb" style="height:8px"><div class="pf" style="width:25%;height:8px;background:var(--am)"></div></div>
+              <div style="font-size:10.5px;color:var(--ink3);margin-top:3px">% requests within 2s SLA, user-perceptible latency</div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:12px;font-weight:var(--f6);color:var(--ink)">Scalability (Throughput Capacity)</span>
+                <span style="font-size:12px;font-weight:var(--f7);color:var(--rd)">20%</span>
+              </div>
+              <div class="pb" style="height:8px"><div class="pf" style="width:20%;height:8px;background:var(--rd)"></div></div>
+              <div style="font-size:10.5px;color:var(--ink3);margin-top:3px">Requests/sec, concurrent user support, saturation point</div>
+            </div>
+          </div>
+          <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:var(--rl)">
+            <div style="font-size:10.5px;font-weight:var(--f6);color:var(--ink3);margin-bottom:5px">FORMULA</div>
+            <div style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--ink2)">Score = (Perf×0.30) + (Rel×0.25) + (UX×0.25) + (Scale×0.20)</div>
+            <div style="font-size:11px;color:var(--ink3);margin-top:5px">Run 27: (77.7×0.30) + (100×0.25) + (86.8×0.25) + (3.25×0.20) = <strong style="color:var(--ink)">73/100</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-target"></i>Industry Benchmark Targets</div></div>
+        <div class="tsc">
+          <table class="dt">
+            <thead><tr><th>Metric</th><th style="text-align:center">Target</th><th style="text-align:center">Run 27</th><th style="text-align:center">Status</th></tr></thead>
+            <tbody>
+              <tr><td>Availability</td><td style="text-align:center" class="mn">≥99.0%</td><td style="text-align:center" class="mn kv-gn">99.71%</td><td style="text-align:center"><span class="p p-gn">Pass 100/100</span></td></tr>
+              <tr><td>Avg Response Time</td><td style="text-align:center" class="mn">&lt;2s</td><td style="text-align:center" class="mn kv-gn">1.36s</td><td style="text-align:center"><span class="p p-gn">Pass 100/100</span></td></tr>
+              <tr><td>Error Rate</td><td style="text-align:center" class="mn">&lt;1.0%</td><td style="text-align:center" class="mn kv-gn">0.29%</td><td style="text-align:center"><span class="p p-gn">Pass 100/100</span></td></tr>
+              <tr><td>Throughput</td><td style="text-align:center" class="mn">≥10/s</td><td style="text-align:center" class="mn kv-rd">1.6/s</td><td style="text-align:center"><span class="p p-am">Acceptable 16/100</span></td></tr>
+              <tr><td>P95 Latency</td><td style="text-align:center" class="mn">&lt;3s</td><td style="text-align:center" class="mn kv-am">5.4s</td><td style="text-align:center"><span class="p p-am">Marginal 55/100</span></td></tr>
+              <tr><td>SLA Compliance</td><td style="text-align:center" class="mn">≥95%</td><td style="text-align:center" class="mn kv-am">82.4%</td><td style="text-align:center"><span class="p p-am">Marginal 87/100</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:12px 16px;background:var(--bg);border-top:1px solid var(--brd)">
+          <div style="font-size:11px;color:var(--ink3)"><strong style="color:var(--ink2)">Industry benchmark basis:</strong> Enterprise SaaS standards and user experience research (Google/Amazon performance studies). Throughput target based on anticipated 100 concurrent production users at 10% utilisation.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Why it matters -->
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-info-circle"></i>Why This Scorecard Matters</div></div>
+      <div class="cbd">
+        <div class="g3">
+          <div class="alrt a-bl">
+            <div class="att" style="color:var(--bl)">Weighted Scoring Reflects Business Impact</div>
+            <div style="font-size:11px;color:var(--ink2)">Each metric is weighted by its business impact. Performance and reliability together form 55% of the score because they most directly affect user satisfaction and revenue. Scalability at 20% reflects future risk, not current state.</div>
+          </div>
+          <div class="alrt a-gn">
+            <div class="att" style="color:var(--gn)">Industry Benchmarks Are Evidence-Based</div>
+            <div style="font-size:11px;color:var(--ink2)">Targets derive from enterprise SaaS standards and Google/Amazon UX research. The 2s response time target aligns with the 53% abandonment rate at 3s for mobile users. SLA 95% reflects industry-standard uptime guarantees.</div>
+          </div>
+          <div class="alrt a-am">
+            <div class="att" style="color:var(--am)">Grade Drives Deployment Decision</div>
+            <div style="font-size:11px;color:var(--ink2)">Grade A+ (90+) → Full production deploy. Grade A-B (70–89) → Gradual rollout with monitoring. Grade C-D (50–69) → Staging only, fix required. Grade F (&lt;50) → Block deployment, immediate remediation.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current run score breakdown -->
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-chart-bar"></i>Run 27 — Dimension Score Breakdown</div></div>
+      <div class="cbd"><div class="ch-md"><canvas id="c-meth-bar"></canvas></div></div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <strong>Formula:</strong> (Perf×0.30) + (Rel×0.25) + (UX×0.25) + (Scale×0.20) <div class="fdv"></div>
+    <strong>Run 27 Score:</strong> 73/100 — Grade B (Acceptable) <div class="fdv"></div>
+    <strong>Basis:</strong> Enterprise SaaS standards + Google/Amazon UX research
+    <div style="margin-left:auto"><button class="btn bp" style="font-size:10.5px"><i class="ti ti-download"></i> PDF</button></div>
+  </div>
+
+</div><!-- /p-meth -->
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 5 — BASELINE vs CANDIDATE (DEEP DIVE)
+═══════════════════════════════════════════════════════ -->
+<div class="page" id="p-cmp">
+
+  <div class="ph">
+    <div class="ph-ic" style="background:var(--am-lt);color:var(--am)"><i class="ti ti-scale"></i></div>
+    <div style="flex:1">
+      <div class="ph-ttl">Baseline vs Candidate — Deep Dive · April 06, 2026</div>
+      <div class="ph-mt">Test A (Baseline, 400 VUsers, 10,128s) vs Test B (Candidate, 5 VUsers, 4,246s) · Generated by Raghvendra Kumar</div>
+    </div>
+    <div class="ph-act">
+      <button class="btn bam-btn"><i class="ti ti-alert-triangle"></i> Amber Risk</button>
+      <button class="btn bp"><i class="ti ti-download"></i> Export PDF</button>
+    </div>
+  </div>
+
+  <!-- Exec Banner -->
+  <div class="exec-bar amber">
+    <div>
+      <div style="font-size:9px;font-weight:var(--f6);color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Executive Summary</div>
+      <div style="font-size:14px;font-weight:var(--f7);color:#fff;margin-bottom:2px">Mixed / At Risk — 🟡 Amber</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.8)">Conditional — review tail latency and errors; consider canary only with guardrails.</div>
+    </div>
+    <div class="et"><div class="et-lbl">P95 Δ</div><div class="et-arr arr-i"><i class="ti ti-trending-down"></i> Improvement</div><div class="et-val">−39.8%</div><div class="et-sub">8,983→5,407ms</div></div>
+    <div class="et"><div class="et-lbl">P99 Δ</div><div class="et-arr arr-i"><i class="ti ti-trending-down"></i> Improvement</div><div class="et-val">−83.0%</div><div class="et-sub">35,775→6,079ms</div></div>
+    <div class="et"><div class="et-lbl">Error Δ</div><div class="et-arr arr-d"><i class="ti ti-trending-up"></i> Increased</div><div class="et-val">+0.258pp</div><div class="et-sub">0.032→0.289%</div></div>
+    <div class="et" style="background:rgba(170,21,21,.3);border-color:rgba(255,100,100,.35)"><div class="et-lbl">Throughput Δ</div><div class="et-arr arr-d"><i class="ti ti-trending-down"></i> Critical Drop</div><div class="et-val" style="color:#fca5a5">−96.9%</div><div class="et-sub">106.2→3.3/s</div></div>
+  </div>
+
+  <div class="body">
+
+    <!-- Fairness warning -->
+    <div class="fw-box">
+      <div class="fw-ttl"><i class="ti ti-alert-triangle" style="margin-right:5px"></i>Fairness / Workload Warnings — Interpret All Deltas Cautiously</div>
+      <ul class="fw-ul">
+        <li><strong>Duration:</strong> A 10,128.6s vs B 4,246.7s (ratio 2.39×) — throughput comparison is not apples-to-apples</li>
+        <li><strong>Concurrency:</strong> A max 400 threads vs B max 5 — tail latency reflects load level differences, not just build quality</li>
+        <li><strong>Sample count:</strong> A 1,075,748 vs B 13,820 — statistical confidence differs materially</li>
+        <li><strong>Label overlap: 0%</strong> — API mix differs; no per-transaction delta available, only aggregate</li>
+      </ul>
+    </div>
+
+    <!-- Grade Dimension Comparison -->
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-chart-radar"></i>Grade Dimension Comparison — A vs B</div></div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--brd)">
+        <div style="background:var(--sur);padding:13px 15px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Overall</div><div style="font-size:13px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">A(80.6) → B(70.7)</div><span class="p p-rd" style="font-size:9px">Δ −9.88 pts</span><div style="margin-top:7px;display:flex;flex-direction:column;gap:3px"><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">A</span><div class="pb"><div class="pf" style="width:81%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">80.6</span></div><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">B</span><div class="pb"><div class="pf" style="width:71%;background:var(--am)"></div></div><span style="font-size:9px;color:var(--ink4)">70.7</span></div></div></div>
+        <div style="background:var(--sur);padding:13px 15px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Performance</div><div style="font-size:13px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">D(51.8) → B+(77.7)</div><span class="p p-gn" style="font-size:9px">Δ +25.95 pts</span><div style="margin-top:7px;display:flex;flex-direction:column;gap:3px"><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">A</span><div class="pb"><div class="pf" style="width:52%;background:var(--am)"></div></div><span style="font-size:9px;color:var(--ink4)">51.8</span></div><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">B</span><div class="pb"><div class="pf" style="width:78%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">77.7</span></div></div></div>
+        <div style="background:var(--sur);padding:13px 15px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Reliability</div><div style="font-size:13px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">A+(100) → A+(100)</div><span class="p p-gn" style="font-size:9px">Δ 0 pts</span><div style="margin-top:7px;display:flex;flex-direction:column;gap:3px"><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">A</span><div class="pb"><div class="pf" style="width:100%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">100</span></div><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">B</span><div class="pb"><div class="pf" style="width:100%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">100</span></div></div></div>
+        <div style="background:var(--sur);padding:13px 15px"><div style="font-size:9.5px;color:var(--ink4);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">User Experience</div><div style="font-size:13px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">A(80.0) → A(86.8)</div><span class="p p-gn" style="font-size:9px">Δ +6.73 pts</span><div style="margin-top:7px;display:flex;flex-direction:column;gap:3px"><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">A</span><div class="pb"><div class="pf" style="width:80%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">80.0</span></div><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">B</span><div class="pb"><div class="pf" style="width:87%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">86.8</span></div></div></div>
+        <div style="background:var(--rd-lt);padding:13px 15px"><div style="font-size:9.5px;color:var(--rd);font-weight:var(--f6);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Scalability</div><div style="font-size:13px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">A+(100) → F(3.25)</div><span class="p p-rd" style="font-size:9px">Δ −96.75 pts ⚠</span><div style="margin-top:7px;display:flex;flex-direction:column;gap:3px"><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">A</span><div class="pb"><div class="pf" style="width:100%;background:var(--gn)"></div></div><span style="font-size:9px;color:var(--ink4)">100</span></div><div style="display:flex;gap:5px;align-items:center"><span style="font-size:9px;color:var(--ink4);width:10px">B</span><div class="pb"><div class="pf" style="width:3%;background:var(--rd)"></div></div><span style="font-size:9px;color:var(--ink4)">3.25</span></div></div></div>
+      </div>
+    </div>
+
+    <!-- Time-series charts -->
+    <div class="card">
+      <div class="chd"><div class="ctt"><i class="ti ti-chart-line"></i>Avg Response Time & P95 — 24 Time Windows</div></div>
+      <div class="cbd"><div class="ch-lg"><canvas id="c-cmp-rt"></canvas></div></div>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-chart-area-line"></i>Throughput — Dramatic Drop Visible</div></div>
+        <div class="cbd"><div class="ch-md"><canvas id="c-cmp-tput"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-alert-triangle"></i>Error Rate — Spike at W6, W16 in Candidate</div></div>
+        <div class="cbd"><div class="ch-md"><canvas id="c-cmp-err"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- Final Conclusion -->
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt" style="color:var(--gn)"><i class="ti ti-check"></i>Key Strengths — Candidate</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:8px">
+          <div class="alrt a-gn"><div class="att" style="color:var(--gn)">P95 −39.8% · P99 −83.0%</div><div style="font-size:11px;color:var(--ink2)">Dramatic tail latency improvement. 35,775ms P99 reduced to 6,079ms. Skewness improved 88.12→7.62, variability index 190×→8.9×.</div></div>
+          <div class="alrt a-gn"><div class="att" style="color:var(--gn)">Avg Response −52.2%</div><div style="font-size:11px;color:var(--ink2)">2,850→1,363ms. Now within the ≤2,000ms SLA target. SLA compliance improved 76.0%→82.4%.</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chd"><div class="ctt" style="color:var(--rd)"><i class="ti ti-x"></i>Risks — Must Remediate</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:8px">
+          <div class="alrt a-rd"><div class="att" style="color:var(--rd)">Throughput −96.9%</div><div style="font-size:11px;color:var(--ink2)">106.2→3.3 req/s. Likely thread pool configuration difference (max 400 vs 5). Must re-run with matched concurrency. Cannot release without throughput validation.</div></div>
+          <div class="alrt a-rd"><div class="att" style="color:var(--rd)">Error Rate +0.258pp</div><div style="font-size:11px;color:var(--ink2)">0.032→0.289%. Triage new failures: map HTTP error codes to downstream timeouts vs assertion failures before any production release decision.</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <strong>Decision:</strong> Mixed / At Risk — Canary with guardrails only <div class="fdv"></div>
+    <strong>Required:</strong> Re-run with matched concurrency + error triage <div class="fdv"></div>
+    <strong>Generated:</strong> April 06, 2026 · Raghvendra Kumar
+    <div style="margin-left:auto;display:flex;gap:5px">
+      <button class="btn bam-btn" style="font-size:10.5px"><i class="ti ti-alert-triangle"></i> Raise Issue</button>
+      <button class="btn bp" style="font-size:10.5px"><i class="ti ti-download"></i> PDF</button>
+    </div>
+  </div>
+
+</div><!-- /p-cmp -->
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PAGE 6 — MONITORING SETUP
+═══════════════════════════════════════════════════════ -->
+<div class="page" id="p-mon">
+
+  <div class="ph">
+    <div class="ph-ic" style="background:var(--te-lt);color:var(--te)"><i class="ti ti-alarm"></i></div>
+    <div style="flex:1">
+      <div class="ph-ttl">Monitoring & Alert Setup — Consolidated Framework</div>
+      <div class="ph-mt">Thresholds · budgets · tooling · review cadence · next steps</div>
+    </div>
+    <div class="ph-act">
+      <button class="btn bgn-btn"><i class="ti ti-player-play"></i> Enable All Alerts</button>
+      <button class="btn bp"><i class="ti ti-download"></i> Export</button>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <div class="slb">Tooling Setup</div>
+    <div class="g4">
+      <div class="card"><div class="cbd" style="text-align:center"><div style="font-size:22px;color:var(--bl);margin-bottom:7px"><i class="ti ti-brand-google"></i></div><div style="font-size:12px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">Google Analytics / RUM</div><div style="font-size:11px;color:var(--ink3)">Real User Monitoring · New Relic · Datadog</div><div style="margin-top:8px"><span class="p p-bl">Recommended</span></div></div></div>
+      <div class="card"><div class="cbd" style="text-align:center"><div style="font-size:22px;color:var(--gn);margin-bottom:7px"><i class="ti ti-refresh"></i></div><div style="font-size:12px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">Lighthouse CI</div><div style="font-size:11px;color:var(--ink3)">Block merges on regression · Auto-report on PR</div><div style="margin-top:8px"><span class="p p-gn">Setup Now</span></div></div></div>
+      <div class="card"><div class="cbd" style="text-align:center"><div style="font-size:22px;color:var(--am);margin-bottom:7px"><i class="ti ti-world"></i></div><div style="font-size:12px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">WebPageTest</div><div style="font-size:11px;color:var(--ink3)">Synthetic monitoring · Filmstrip · Geo testing</div><div style="margin-top:8px"><span class="p p-am">Planned</span></div></div></div>
+      <div class="card"><div class="cbd" style="text-align:center"><div style="font-size:22px;color:var(--pu);margin-bottom:7px"><i class="ti ti-bell"></i></div><div style="font-size:12px;font-weight:var(--f6);color:var(--ink);margin-bottom:3px">APM + PagerDuty</div><div style="font-size:11px;color:var(--ink3)">P95/error alerts · On-call routing · Slack</div><div style="margin-top:8px"><span class="p p-pu">Configure</span></div></div></div>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-alarm"></i>Alert Thresholds</div></div>
+        <div>
+          <div class="mr mr-h"><span>Metric</span><span>Frequency</span><span>Threshold</span><span>Action on Breach</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">LCP</span><span><span class="p p-rd" style="font-size:9px">Daily</span></span><span class="mn">&lt;2.5s</span><span style="font-size:11px;color:var(--ink2)">PagerDuty P1 → on-call engineer</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">TBT</span><span><span class="p p-rd" style="font-size:9px">Daily</span></span><span class="mn">&lt;200ms</span><span style="font-size:11px;color:var(--ink2)">Slack → frontend guild</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">CLS</span><span><span class="p p-rd" style="font-size:9px">Daily</span></span><span class="mn">&lt;0.10</span><span style="font-size:11px;color:var(--ink2)">Jira ticket auto-created</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">Perf Score</span><span><span class="p p-am" style="font-size:9px">Weekly</span></span><span class="mn">&gt;90</span><span style="font-size:11px;color:var(--ink2)">Weekly engineering review</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">API Error Rate</span><span><span class="p p-rd" style="font-size:9px">Realtime</span></span><span class="mn">&lt;0.5%</span><span style="font-size:11px;color:var(--ink2)">PagerDuty + exec Slack channel</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">API P95</span><span><span class="p p-am" style="font-size:9px">Hourly</span></span><span class="mn">&lt;3s</span><span style="font-size:11px;color:var(--ink2)">Slack warning → backend guild</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">SLA Compliance</span><span><span class="p p-am" style="font-size:9px">Daily</span></span><span class="mn">&gt;95%</span><span style="font-size:11px;color:var(--ink2)">Dashboard flag + weekly escalation</span></div>
+          <div class="mr"><span style="font-weight:var(--f5)">Throughput</span><span><span class="p p-am" style="font-size:9px">Hourly</span></span><span class="mn">&gt;50/s</span><span style="font-size:11px;color:var(--ink2)">Alert if drops below half target</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-scale"></i>Performance Budget Framework</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:0">
+          <div class="bdr"><div class="bdr-nm">JavaScript bundle</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--ink4);width:58px">&lt;200KB</div><div class="pb"><div class="pf" style="width:100%;background:var(--bg2)"></div></div><span class="p p-gy" style="font-size:9px;flex-shrink:0">Monitor</span></div>
+          <div class="bdr"><div class="bdr-nm">CSS bundle</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--ink4);width:58px">&lt;50KB</div><div class="pb"><div class="pf" style="width:100%;background:var(--bg2)"></div></div><span class="p p-gy" style="font-size:9px;flex-shrink:0">Monitor</span></div>
+          <div class="bdr"><div class="bdr-nm">Image assets</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--ink4);width:58px">&lt;500KB</div><div class="pb"><div class="pf" style="width:100%;background:var(--bg2)"></div></div><span class="p p-gy" style="font-size:9px;flex-shrink:0">Monitor</span></div>
+          <div class="bdr"><div class="bdr-nm">Total page weight</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--ink4);width:58px">&lt;1MB</div><div class="pb"><div class="pf" style="width:100%;background:var(--bg2)"></div></div><span class="p p-gy" style="font-size:9px;flex-shrink:0">Monitor</span></div>
+          <div class="bdr"><div class="bdr-nm">API throughput</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--rd);width:58px">150/s</div><div class="pb"><div class="pf" style="width:2%;background:var(--rd)"></div></div><span class="p p-rd" style="font-size:9px;flex-shrink:0">1.6/s now</span></div>
+          <div class="bdr"><div class="bdr-nm">API P95 latency</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--am);width:58px">&lt;3s</div><div class="pb"><div class="pf" style="width:55%;background:var(--am)"></div></div><span class="p p-am" style="font-size:9px;flex-shrink:0">5.4s now</span></div>
+          <div class="bdr"><div class="bdr-nm">Dashboard load</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--rd);width:58px">&lt;2s</div><div class="pb"><div class="pf" style="width:100%;background:var(--rd)"></div></div><span class="p p-rd" style="font-size:9px;flex-shrink:0">5.12s now</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Next steps -->
+    <div class="g2">
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-checklist"></i>Immediate Actions — This Sprint</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--rd-lt);border-radius:var(--rl)"><span class="sd sd-er" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Executive review of release decision</div><div style="font-size:11px;color:var(--ink3)">Share comparison + web vitals report with stakeholders</div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--rd-lt);border-radius:var(--rl)"><span class="sd sd-er" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Assign issue owners</div><div style="font-size:11px;color:var(--ink3)">Dashboard load → BE team · LCP → Performance team · Throughput → Infra team</div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--am-lt);border-radius:var(--rl)"><span class="sd sd-wn" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Confirm SLOs for production</div><div style="font-size:11px;color:var(--ink3)">Validate ≤5,948ms P95, ≥99.42% availability against production traffic model</div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px;padding:9px;background:var(--am-lt);border-radius:var(--rl)"><span class="sd sd-wn" style="margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11.5px;font-weight:var(--f6);color:var(--ink)">Re-run comparison with matched concurrency</div><div style="font-size:11px;color:var(--ink3)">Same duration (10,128s) and thread count (400) to produce valid throughput delta</div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chd"><div class="ctt"><i class="ti ti-calendar"></i>Reporting Schedule</div></div>
+        <div class="cbd" style="display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;gap:11px;align-items:flex-start"><span class="p p-rd" style="min-width:72px;justify-content:center">Daily</span><span style="font-size:11.5px;color:var(--ink2)">Fix progress on blockers · SLA score · Error rate dashboard</span></div>
+          <div style="display:flex;gap:11px;align-items:flex-start"><span class="p p-am" style="min-width:72px;justify-content:center">Weekly</span><span style="font-size:11.5px;color:var(--ink2)">Performance metrics vs baseline · Phase progress · Executive summary</span></div>
+          <div style="display:flex;gap:11px;align-items:flex-start"><span class="p p-bl" style="min-width:72px;justify-content:center">Post-release</span><span style="font-size:11.5px;color:var(--ink2)">Error and latency dashboards for 2 weeks after any canary deployment</span></div>
+          <div style="display:flex;gap:11px;align-items:flex-start"><span class="p p-pu" style="min-width:72px;justify-content:center">Monthly</span><span style="font-size:11.5px;color:var(--ink2)">Business impact assessment · Cost/ROI review · Stakeholder report</span></div>
+          <div style="display:flex;gap:11px;align-items:flex-start"><span class="p p-te" style="min-width:72px;justify-content:center">Quarterly</span><span style="font-size:11.5px;color:var(--ink2)">SLA renegotiation · Roadmap review · Architecture decisions</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <strong>Framework v1.0</strong> · May 2026 <div class="fdv"></div>
+    <strong>Tools:</strong> Lighthouse CI · Datadog · WebPageTest · JMeter <div class="fdv"></div>
+    <strong>Next Review:</strong> June 1, 2026
+    <div style="margin-left:auto"><button class="btn bp" style="font-size:10.5px"><i class="ti ti-player-play"></i> Enable All Alerts</button></div>
+  </div>
+
+</div><!-- /p-mon -->
+
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+/* ─── Page switching ─── */
+function show(id) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  const order=['p-txn','p-sys','p-load','p-meth','p-cmp','p-mon'];
+  document.querySelectorAll('.tt').forEach((t,i)=>t.classList.toggle('on',order[i]===id));
+  document.querySelectorAll('.si').forEach((s,i)=>s.classList.toggle('on',order[i]===id));
+  const init={
+    'p-txn':initTxn,'p-sys':initSys,'p-load':initLoad,
+    'p-meth':initMeth,'p-cmp':initCmp
+  };
+  if(init[id]&&!window['_d_'+id]){init[id]();window['_d_'+id]=1;}
+}
+
+Chart.defaults.font.family="'JetBrains Mono',monospace";
+Chart.defaults.color='#8a8aa0';
+const BL='#1242c0',GN='#076b44',AM='#9a5a00',RD='#aa1515',PU='#4e22b0';
+const BL2='rgba(18,66,192,.12)',GN2='rgba(7,107,68,.1)',AM2='rgba(154,90,0,.12)',RD2='rgba(170,21,21,.12)';
+
+const LABELS_W=['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','W13','W14','W15','W16','W17','W18','W19','W20','W21','W22','W23','W24'];
+const RT_A=[822,975,1111,1264,1378,1381,1412,1508,1631,1810,2052,2260,3304,7659,5326,2524,2741,4272,4146,3463,3083,2844,3202,2566];
+const RT_B=[948,1184,1384,1149,1568,1452,1254,1339,1517,1087,1165,1062,1161,1625,1519,3845,1308,1395,1266,1090,1344,1141,1299,1201];
+const P95_A=[3554,4126,4621,5332,5906,5797,5747,6091,6467,7015,8197,8947,11294,11628,11405,10253,11765,11106,11243,11176,11006,10799,11392,9781];
+const P95_B=[3360,5361,5405,4563,5609,5367,5311,5396,5605,4355,5346,4020,5354,5610,5624,11431,5565,5617,5354,5249,5366,5360,5601,5407];
+const TPUT_A=[16,33,48,62,75,90,104,116,125,131,134,140,126,119,107,125,132,132,122,126,124,124,118,112];
+const TPUT_B=[1.4,2.8,3.5,3.4,3.7,3.3,3.5,3.4,3.3,3.5,3.6,3.7,3.7,3.4,3.5,2.1,3.5,3.4,3.7,3.5,3.5,3.7,2.8,1.0];
+const ERR_A=[0,0,0,.01,.01,.01,0,0,0,.01,0,0,.14,.11,.27,0,0,.05,.05,.02,.01,0,.01,0];
+const ERR_B=[0,0,0,0,0,.68,0,0,0,0,0,0,0,0,0,9.28,0,0,0,0,0,0,0,0];
+
+const gOpts={grid:{color:'rgba(7,7,14,.04)',drawBorder:false}};
+const tOpts=(cb)=>({font:{size:9},color:'#8a8aa0',callback:cb});
+
+function initTxn(){
+  const txNames=['Click claim','Click new val.','Dashboard','Logout','Enter claim','Fill VIN','More detail','Packages','Save+cont','NADA rpt','NICB rpt','Redbook','Settlement','Valuation'];
+  const avgs=[3.70,0.34,5.12,0.17,0.06,1.28,3.71,2.03,0.93,0.59,0.52,0.63,0.83,0.67];
+  const maxs=[15.03,10.01,8.95,0.28,0.35,2.58,9.64,11.65,10.01,1.69,5.61,5.58,10.01,5.84];
+  const avgsColors=avgs.map(v=>v>5?RD:v>2?AM:GN);
+  const maxsColors=maxs.map(v=>v>5?RD:v>2?AM:GN);
+
+  new Chart(document.getElementById('c-txn-avg'),{type:'bar',data:{labels:txNames,datasets:[{data:avgs,backgroundColor:avgsColors,borderRadius:3,borderSkipped:false},{type:'line',data:Array(14).fill(2),borderColor:RD,borderDash:[4,3],borderWidth:1,pointRadius:0,fill:false,label:'SLA 2s'}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:gOpts.grid,ticks:tOpts(v=>v+'s'),beginAtZero:true},y:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}}}}});
+
+  new Chart(document.getElementById('c-txn-max'),{type:'bar',data:{labels:txNames,datasets:[{data:maxs,backgroundColor:maxsColors,borderRadius:3,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:gOpts.grid,ticks:tOpts(v=>v+'s'),beginAtZero:true},y:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}}}}});
+}
+
+function initSys(){
+  const ts=['00:00','04:57','08:12','11:19','15:00','18:07','20:57','24:12','27:44','31:00','33:58','37:05','40:20','43:27','47:33','50:40','54:21','57:36','01:01','01:04'];
+  const rts=[5.59,0.60,0.21,0.84,0.90,1.08,0.16,5.38,1.43,0.57,0.50,0.05,1.10,5.62,0.76,0.86,0.49,0.24,2.38,0.63];
+  const vus=[1,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5];
+  const tputs=[0.12,0.24,0.12,0.24,0.12,0.24,0.12,0.12,0.12,0.24,0.12,0.12,0.24,0.12,0.12,0.24,0.12,0.24,0.35,0.12];
+  new Chart(document.getElementById('c-sys-main'),{
+    type:'line',
+    data:{labels:ts,datasets:[
+      {label:'Avg RT (s)',data:rts,borderColor:BL,backgroundColor:BL2,tension:0.3,fill:true,borderWidth:1.5,pointRadius:3,pointBackgroundColor:rts.map(v=>v>3?RD:v>2?AM:BL),yAxisID:'y'},
+      {label:'VUsers',data:vus,borderColor:AM,backgroundColor:AM2,tension:0,fill:false,borderWidth:1,pointRadius:2,yAxisID:'y'},
+      {label:'Throughput/s',data:tputs,borderColor:GN,backgroundColor:GN2,tension:0.4,fill:true,borderWidth:1.5,pointRadius:2,yAxisID:'y1'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{font:{size:9},boxWidth:10}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}},
+        y:{position:'left',grid:gOpts.grid,title:{display:true,text:'RT (s) / VUsers',font:{size:9}},ticks:{font:{size:9},color:'#8a8aa0'},beginAtZero:true},
+        y1:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Throughput req/s',font:{size:9}},ticks:{font:{size:9},color:'#8a8aa0'},beginAtZero:true}
+      }}
+  });
+}
+
+function initLoad(){
+  new Chart(document.getElementById('c-load'),{type:'line',data:{labels:['1 thread','2 threads','3 threads','4 threads','5 threads'],datasets:[{label:'Avg Response Time (s)',data:[1.565,0.656,0.901,1.993,1.601],borderColor:BL,backgroundColor:BL2,tension:0.4,fill:true,borderWidth:2,pointRadius:5,pointBackgroundColor:[AM,GN,GN,AM,AM],pointBorderColor:'#fff',pointBorderWidth:2},{type:'line',label:'SLA 2s',data:[2,2,2,2,2],borderColor:RD,borderDash:[4,3],borderWidth:1,pointRadius:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9},boxWidth:10}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}},y:{grid:gOpts.grid,ticks:{font:{size:9},color:'#8a8aa0',callback:v=>v+'s'},beginAtZero:true,max:2.5}}}});
+}
+
+function initMeth(){
+  new Chart(document.getElementById('c-meth-bar'),{type:'bar',data:{labels:['Performance (30%)','Reliability (25%)','User Exp. (25%)','Scalability (20%)','Overall Score'],datasets:[{data:[77.7,100,86.8,3.25,73],backgroundColor:[BL,GN,GN,RD,BL],borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}},y:{grid:gOpts.grid,ticks:{font:{size:9},color:'#8a8aa0'},beginAtZero:true,max:110}}}});
+}
+
+function initCmp(){
+  new Chart(document.getElementById('c-cmp-rt'),{type:'line',data:{labels:LABELS_W,datasets:[{label:'A avg RT',data:RT_A,borderColor:BL,tension:0.2,fill:false,borderWidth:1.5,pointRadius:0},{label:'B avg RT',data:RT_B,borderColor:GN,tension:0.2,fill:false,borderWidth:1.5,pointRadius:0},{label:'A P95',data:P95_A,borderColor:'rgba(18,66,192,.4)',borderDash:[5,3],tension:0.2,fill:false,borderWidth:1,pointRadius:0},{label:'B P95',data:P95_B,borderColor:'rgba(7,107,68,.4)',borderDash:[5,3],tension:0.2,fill:false,borderWidth:1,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{font:{size:9},boxWidth:8}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}},y:{grid:gOpts.grid,ticks:{font:{size:9},color:'#8a8aa0',callback:v=>v+'ms'},beginAtZero:true}}}});
+  new Chart(document.getElementById('c-cmp-tput'),{type:'line',data:{labels:LABELS_W,datasets:[{label:'A req/s (×10)',data:TPUT_A,borderColor:BL,tension:0.2,fill:false,borderWidth:1.5,pointRadius:0},{label:'B req/s',data:TPUT_B,borderColor:RD,tension:0.2,fill:false,borderWidth:1.5,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9},boxWidth:8}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}},y:{grid:gOpts.grid,ticks:{font:{size:9},color:'#8a8aa0',callback:v=>v+'/s'},beginAtZero:true}}}});
+  new Chart(document.getElementById('c-cmp-err'),{type:'line',data:{labels:LABELS_W,datasets:[{label:'A error %',data:ERR_A,borderColor:AM,tension:0.2,fill:false,borderWidth:1.5,pointRadius:0},{label:'B error %',data:ERR_B,borderColor:RD,tension:0.2,fill:false,borderWidth:1.5,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9},boxWidth:8}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#8a8aa0'}},y:{grid:gOpts.grid,ticks:{font:{size:9},color:'#8a8aa0',callback:v=>v+'%'},beginAtZero:true}}}});
+}
+
+window.addEventListener('DOMContentLoaded',()=>{initTxn();window['_d_p-txn']=1;});
+</script>
+</body>
+</html>

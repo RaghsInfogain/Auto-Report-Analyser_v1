@@ -85,10 +85,10 @@ pip install -r requirements.txt
 
 4. Run the server:
 ```bash
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8010
 ```
 
-The backend API will be available at `http://localhost:8000`
+The backend API will be available at `http://localhost:8010`
 
 ### Frontend Setup
 
@@ -115,12 +115,12 @@ Use the provided `.bat` scripts (equivalent to the `.sh` scripts on macOS/Linux)
 
 | Script | Description |
 |--------|-------------|
-| `run_server.bat` | Start both backend and frontend (opens two windows). Backend: http://localhost:8000, Frontend: http://localhost:3020 |
-| `start_backend.bat` | Backend only (FastAPI on port 8000) |
+| `run_server.bat` | Start both backend and frontend (opens two windows). Backend: http://localhost:8010, Frontend: http://localhost:3020 |
+| `start_backend.bat` | Backend only (FastAPI on port 8010) |
 | `start_frontend.bat` | Frontend only (React on port 3020) |
 | `run_backend.bat` | Backend only, with venv setup and dependency check |
 | `run_frontend.bat` | Frontend only, with npm install if needed |
-| `restart_standard_ports.bat` | Stop processes on ports 6000, 7001, 8000, 3000, 3020 and restart backend and frontend |
+| `restart_standard_ports.bat` | Stop processes on ports 6000, 7001, 8010, 3000, 3020 and restart backend and frontend |
 | `migrate_to_sequential_runs.bat` | Run the Run ID migration script (requires backend venv) |
 
 **Prerequisites on Windows:** Python 3 (or `py -3`), Node.js/npm. Double-click a `.bat` file or run it from Command Prompt.
@@ -149,7 +149,7 @@ Use the provided `.bat` scripts (equivalent to the `.sh` scripts on macOS/Linux)
 - `GET /api/comparison/release/verdict/{id}` - Get release verdict
 - `GET /api/comparison/release/regressions/{id}` - Get regression details
 
-[**→ Interactive API docs**](http://localhost:8000/docs) (when server is running)
+[**→ Interactive API docs**](http://localhost:8010/docs) (when server is running)
 
 ## File Format Examples
 
@@ -198,7 +198,7 @@ timeStamp,elapsed,label,responseCode,success,Latency
 # Start both backend and frontend
 ./run_server.sh
 
-# Backend will start on: http://localhost:8000
+# Backend will start on: http://localhost:8010
 # Frontend will start on: http://localhost:3000
 ```
 

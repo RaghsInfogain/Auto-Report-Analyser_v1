@@ -1,12 +1,12 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8010';
 
 // Debug logging - Version 2.0
 console.log('=== API Configuration ===');
 console.log('API_BASE_URL:', API_BASE_URL);
 console.log('REACT_APP_API_URL env:', process.env.REACT_APP_API_URL);
-console.log('Version: 2.0 - Port 8000');
+console.log('Version: 2.0 - Port 8010');
 console.log('========================');
 
 const api = axios.create({

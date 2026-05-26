@@ -212,23 +212,22 @@ const PerformanceTestComparePage: React.FC = () => {
   return (
     <div className="perf-compare-page">
       <div className="page-content-wrapper">
-        <div className="page-header">
-          <div className="header-content">
-            <div>
-              <h1>Performance test comparison</h1>
-              <p className="page-lead">
-                Compare two JMeter runs or two result files. Reports can be stored under{' '}
-                <code>reports/jmeter_compare</code> like standard JMeter run reports, then opened, downloaded,
-                regenerated, or deleted from the list below.
-              </p>
-            </div>
-            <div className="header-buttons">
-              <button type="button" className="btn-secondary" onClick={() => { loadRuns(); loadSavedReports(); }}>
-                ↻ Refresh all
-              </button>
-            </div>
+        <header className="ent-ph page-header">
+          <div className="ent-ph-ic am">
+            <i className="ti ti-scale" aria-hidden />
           </div>
-        </div>
+          <div className="ent-ph-body">
+            <h1 className="ent-ph-ttl">Performance test comparison</h1>
+            <p className="ent-ph-mt page-lead">
+              Compare two JMeter runs or files. Reports save to <code>reports/jmeter_compare</code>.
+            </p>
+          </div>
+          <div className="ent-ph-act">
+            <button type="button" className="ent-btn ent-btn-ghost" onClick={() => { loadRuns(); loadSavedReports(); }}>
+              <i className="ti ti-refresh" /> Refresh all
+            </button>
+          </div>
+        </header>
 
         <div className="page-main-content">
           <div className="content-section">

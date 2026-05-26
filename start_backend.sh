@@ -22,8 +22,8 @@ pip install -r requirements.txt
 mkdir -p uploads
 
 # Start the server
-echo "Starting FastAPI server on http://localhost:8000"
-uvicorn app.main:app --reload --port 8000
+echo "Starting FastAPI server on http://localhost:8010"
+uvicorn app.main:app --reload --port 8010
 
 
 

@@ -38,7 +38,7 @@ const BaselinesPage: React.FC = () => {
   const fetchBaselines = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/comparison/baseline/list');
+      const response = await fetch('http://localhost:8010/api/comparison/baseline/list');
       const data = await response.json();
       
       if (data.success) {
@@ -56,7 +56,7 @@ const BaselinesPage: React.FC = () => {
 
   const fetchAvailableRuns = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/runs');
+      const response = await fetch('http://localhost:8010/api/runs');
       const data = await response.json();
       
       if (data.success) {
@@ -71,7 +71,7 @@ const BaselinesPage: React.FC = () => {
     e.preventDefault();
     
     try {
-      const response = await fetch('http://localhost:8000/api/comparison/baseline/set', {
+      const response = await fetch('http://localhost:8010/api/comparison/baseline/set', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,7 +109,7 @@ const BaselinesPage: React.FC = () => {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/comparison/baseline/${baselineId}`,
+        `http://localhost:8010/api/comparison/baseline/${baselineId}`,
         { method: 'DELETE' }
       );
       

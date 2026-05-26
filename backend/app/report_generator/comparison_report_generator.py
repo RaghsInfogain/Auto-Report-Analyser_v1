@@ -7,6 +7,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import html as html_module
 
+from app.report_generator.enterprise_styles import ENTERPRISE_FONT_LINKS, get_enterprise_css
+
 
 def _get_jmeter_stats(metrics: Optional[Dict]) -> tuple:
     """Extract transaction_stats and request_stats from JMeter metrics."""
@@ -106,44 +108,17 @@ def generate_comparison_html_report(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Performance Comparison Report - {baseline_run_id} vs {current_run_id}</title>
+    {ENTERPRISE_FONT_LINKS}
+    {get_enterprise_css(include_legacy=True)}
     <style>
-        :root {{
-            --primary-color: #2563eb;
-            --success-color: #059669;
-            --warning-color: #d97706;
-            --danger-color: #dc2626;
-            --border-color: #e2e8f0;
-            --bg-light: #f8fafc;
-        }}
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: #f1f5f9; color: #1e293b; line-height: 1.6; }}
-        .container {{ max-width: 1200px; margin: 0 auto; padding: 1.5rem; }}
-        .header {{ background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 1.5rem 2rem; border-radius: 12px; margin-bottom: 1.5rem; }}
-        .header h1 {{ margin: 0; font-size: 1.75rem; }}
-        .header p {{ margin: 0.5rem 0 0 0; opacity: 0.95; font-size: 0.95rem; }}
-        .pdf-button {{ background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.5); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 0.75rem; }}
-        .section {{ background: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-        .section h2 {{ color: var(--primary-color); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--border-color); font-size: 1.25rem; }}
-        .section h3 {{ color: #475569; margin: 1rem 0 0.5rem 0; font-size: 1rem; }}
-        table {{ width: 100%; border-collapse: collapse; font-size: 0.875rem; }}
-        th, td {{ padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border-color); }}
-        th {{ background: var(--bg-light); font-weight: 600; color: #475569; }}
-        td {{ vertical-align: middle; }}
-        .score-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin: 1rem 0; }}
-        .score-card {{ background: var(--bg-light); padding: 1rem; border-radius: 8px; text-align: center; }}
-        .score-card .value {{ font-size: 1.5rem; font-weight: 700; }}
-        .score-card .label {{ font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }}
-        .verdict-badge {{ display: inline-block; padding: 0.5rem 1rem; border-radius: 8px; color: white; font-weight: 600; margin-top: 0.5rem; }}
-        .regression {{ color: var(--danger-color); font-weight: 600; }}
-        .improvement {{ color: var(--success-color); font-weight: 600; }}
-        .stable {{ color: #64748b; }}
-        .change-up {{ color: var(--danger-color); }}
-        .change-down {{ color: var(--success-color); }}
-        .two-cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
+        .verdict-badge {{ display: inline-block; padding: 4px 10px; border-radius: 20px; color: white; font-weight: 600; font-size: 11px; margin-top: 8px; }}
+        .score-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--brd); border: 1px solid var(--brd); border-radius: var(--rx); overflow: hidden; margin: 12px 0; }}
+        .score-card {{ background: var(--sur); padding: 12px 14px; text-align: left; }}
+        .score-card .value {{ font-size: 20px; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: var(--ink); }}
+        .score-card .label {{ font-size: 9.5px; color: var(--ink4); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }}
+        .two-cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
         @media (max-width: 768px) {{ .two-cols {{ grid-template-columns: 1fr; }} }}
-        ul {{ margin: 0.5rem 0 0 1rem; padding: 0; }}
-        li {{ margin-bottom: 0.35rem; }}
-        .no-print {{ display: block; }}
+        .pdf-button {{ background: var(--bl); color: #fff; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 11.5px; margin-top: 8px; }}
         @media print {{ .no-print {{ display: none !important; }} }}
     </style>
 </head>

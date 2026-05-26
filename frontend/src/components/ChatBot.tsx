@@ -54,7 +54,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ analyzedFiles = {} }) => {
 
   const loadSamplePrompts = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/chat/sample-prompts');
+      const response = await fetch('http://localhost:8010/api/chat/sample-prompts');
       if (response.ok) {
         const data = await response.json();
         setSamplePrompts(data.all_prompts || {});
@@ -106,7 +106,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ analyzedFiles = {} }) => {
     try {
       const fileIds = Object.keys(analyzedFiles);
 
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch('http://localhost:8010/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

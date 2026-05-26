@@ -41,8 +41,8 @@ fi
 # Create uploads directory if it doesn't exist
 mkdir -p uploads reports
 
-echo "🚀 Starting Backend Server on http://localhost:8000"
-uvicorn app.main:app --reload --port 8000 > "$PROJECT_ROOT/backend.log" 2>&1 &
+echo "🚀 Starting Backend Server on http://localhost:8010"
+uvicorn app.main:app --reload --port 8010 > "$PROJECT_ROOT/backend.log" 2>&1 &
 BACKEND_PID=$!
 
 # Start Frontend Server
@@ -67,8 +67,8 @@ echo "✅ Servers are starting up!"
 echo "======================================"
 echo ""
 echo "Backend:"
-echo "  - API Server: http://localhost:8000"
-echo "  - API Docs: http://localhost:8000/docs"
+echo "  - API Server: http://localhost:8010"
+echo "  - API Docs: http://localhost:8010/docs"
 echo "  - Logs: $PROJECT_ROOT/backend.log"
 echo ""
 echo "Frontend:"

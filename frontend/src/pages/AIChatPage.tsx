@@ -58,7 +58,7 @@ const AIChatPage: React.FC = () => {
 
   const loadSamplePrompts = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/chat/sample-prompts');
+      const response = await fetch('http://localhost:8010/api/chat/sample-prompts');
       if (response.ok) {
         const data = await response.json();
         setSamplePrompts(data.all_prompts || {});
@@ -80,7 +80,7 @@ const AIChatPage: React.FC = () => {
 
   const loadAnalyzedFiles = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/files');
+      const response = await fetch('http://localhost:8010/api/files');
       if (response.ok) {
         const data = await response.json();
         const filesWithAnalysis = data.files?.filter((f: any) => f.analysis_id) || [];
@@ -122,7 +122,7 @@ const AIChatPage: React.FC = () => {
     try {
       const fileIds = analyzedFiles.map(f => f.id);
 
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch('http://localhost:8010/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

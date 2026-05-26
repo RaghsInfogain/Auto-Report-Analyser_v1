@@ -31,14 +31,14 @@ mkdir -p uploads reports
 echo "🚀 Starting Backend Server..."
 echo ""
 echo "Server will be available at:"
-echo "  - API: http://localhost:8000"
-echo "  - Docs: http://localhost:8000/docs"
-echo "  - ReDoc: http://localhost:8000/redoc"
+echo "  - API: http://localhost:8010"
+echo "  - Docs: http://localhost:8010/docs"
+echo "  - ReDoc: http://localhost:8010/redoc"
 echo ""
 echo "Press CTRL+C to stop the server"
 echo ""
 
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8010
 
 
 

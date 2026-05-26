@@ -7,16 +7,14 @@ import './Layout.css';
 const Layout: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [analyzedFiles, setAnalyzedFiles] = useState<Record<string, any>>({});
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [analyzedFiles, setAnalyzedFiles] = useState<Record<string, unknown>>({});
 
-  // Load analyzed files for chatbot context
   useEffect(() => {
     const storedResults = localStorage.getItem('analysisResults');
     if (storedResults) {
       try {
-        const parsed = JSON.parse(storedResults);
-        setAnalyzedFiles(parsed);
+        setAnalyzedFiles(JSON.parse(storedResults));
       } catch (error) {
         console.error('Error loading analysis results:', error);
       }
@@ -28,105 +26,98 @@ const Layout: React.FC = () => {
     navigate('/login');
   };
 
+  const initial = user?.username?.charAt(0).toUpperCase() ?? '?';
+  const layoutClass = `layout ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`;
+
+  const navLink = (to: string, icon: string, label: string, useTabler = true) => (
+    <NavLink
+      to={to}
+      className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+      title={label}
+    >
+      <span className="nav-icon">
+        {useTabler ? <i className={icon} /> : <span className="emoji">{icon}</span>}
+      </span>
+      <span className="nav-text">{label}</span>
+    </NavLink>
+  );
+
   return (
-    <div className="layout">
-      {/* Sidebar */}
-      <aside className={`sidebar ${isSidebarOpen ? 'open' : 'closed'}`}>
-        <div className="sidebar-header">
-          <h2>Auto Report Analyzer</h2>
-          <button 
-            className="toggle-btn"
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          >
-            {isSidebarOpen ? '◀' : '▶'}
-          </button>
+    <div className={layoutClass}>
+      <header className="app-topbar">
+        <button
+          type="button"
+          className="sidebar-toggle-top"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          <i className={sidebarOpen ? 'ti ti-layout-sidebar' : 'ti ti-layout-sidebar-right'} />
+        </button>
+        <div className="app-brand">
+          <div className="app-brand-ic">
+            <i className="ti ti-chart-infographic" />
+          </div>
+          <span>PerfSuite</span>
         </div>
+        <span className="app-topbar-title">Performance Analysis Platform</span>
+        <div className="app-topbar-right">
+          <span className="app-topbar-greeting">Welcome, {user?.username}</span>
+          <div className="app-avatar" title={user?.role}>{initial}</div>
+        </div>
+      </header>
 
+      <aside className="sidebar">
         <nav className="sidebar-nav">
-          <NavLink to="/dashboard" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📊</span>
-            {isSidebarOpen && <span className="nav-text">Dashboard</span>}
-          </NavLink>
+          <div className="sbs">
+            <div className="sbl">Overview</div>
+            {navLink('/dashboard', 'ti ti-layout-dashboard', 'Dashboard')}
+            {navLink('/jmeter', 'ti ti-flask', 'JMeter Tests')}
+            {navLink('/performance-test-compare', 'ti ti-scale', 'Perf test compare')}
+            {navLink('/web-vitals', 'ti ti-bolt', 'Web Vitals')}
+            {navLink('/files', 'ti ti-folder', 'All Files')}
+          </div>
 
-          <NavLink to="/jmeter" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">🧪</span>
-            {isSidebarOpen && <span className="nav-text">JMeter Tests</span>}
-          </NavLink>
+          <div className="sdiv" />
 
-          <NavLink to="/performance-test-compare" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📑</span>
-            {isSidebarOpen && <span className="nav-text">Perf test compare</span>}
-          </NavLink>
+          <div className="sbs">
+            <div className="sbl">Release Intelligence</div>
+            {navLink('/baselines', 'ti ti-map-pin', 'Baselines')}
+            {navLink('/compare', 'ti ti-arrows-left-right', 'Compare Runs')}
+            {navLink('/release-decision', 'ti ti-target', 'Release Decision')}
+          </div>
 
-          <NavLink to="/web-vitals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">⚡</span>
-            {isSidebarOpen && <span className="nav-text">Web-Vitals</span>}
-          </NavLink>
+          <div className="sdiv" />
 
-          <NavLink to="/files" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📁</span>
-            {isSidebarOpen && <span className="nav-text">All Files</span>}
-          </NavLink>
-
-          {isSidebarOpen && <div className="nav-separator">Release Intelligence</div>}
-
-          <NavLink to="/baselines" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">📍</span>
-            {isSidebarOpen && <span className="nav-text">Baselines</span>}
-          </NavLink>
-
-          <NavLink to="/compare" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">⚖️</span>
-            {isSidebarOpen && <span className="nav-text">Compare Runs</span>}
-          </NavLink>
-
-          <NavLink to="/release-decision" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">🎯</span>
-            {isSidebarOpen && <span className="nav-text">Release Decision</span>}
-          </NavLink>
-
-          {isSidebarOpen && <div className="nav-separator">Tools</div>}
-
-          <NavLink to="/ai-chat" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">🤖</span>
-            {isSidebarOpen && <span className="nav-text">AI Assistant</span>}
-          </NavLink>
+          <div className="sbs">
+            <div className="sbl">Tools</div>
+            {navLink('/ai-chat', 'ti ti-robot', 'AI Assistant')}
+          </div>
         </nav>
 
         <div className="sidebar-footer">
           <div className="user-info">
-            <div className="user-avatar">{user?.username?.charAt(0).toUpperCase()}</div>
-            {isSidebarOpen && (
-              <div className="user-details">
-                <div className="user-name">{user?.username}</div>
-                <div className="user-role">{user?.role}</div>
-              </div>
-            )}
+            <div className="user-avatar">{initial}</div>
+            <div className="user-details">
+              <div className="user-name">{user?.username}</div>
+              <div className="user-role">{user?.role}</div>
+            </div>
           </div>
-          <button onClick={handleLogout} className="logout-btn">
-            <span className="nav-icon">🚪</span>
-            {isSidebarOpen && <span>Logout</span>}
+          <button type="button" onClick={handleLogout} className="logout-btn">
+            <i className="ti ti-logout" />
+            <span className="logout-label">Logout</span>
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="main-content">
-        <header className="top-bar">
-          <h1>Performance Analysis Platform</h1>
-          <div className="header-actions">
-            <span className="user-greeting">Welcome, {user?.username}!</span>
-          </div>
-        </header>
-
         <div className="content-area">
           <Outlet />
         </div>
       </main>
+
       <ChatBot analyzedFiles={analyzedFiles} />
     </div>
   );
 };
 
 export default Layout;
-

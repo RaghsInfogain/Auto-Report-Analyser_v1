@@ -51,7 +51,7 @@ const ReleaseDecisionPage: React.FC = () => {
   const fetchComparisonDetails = async (id: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/comparison/compare/result/${id}`);
+      const response = await fetch(`http://localhost:8010/api/comparison/compare/result/${id}`);
       const data = await response.json();
 
       if (data.success) {
@@ -69,7 +69,7 @@ const ReleaseDecisionPage: React.FC = () => {
 
   const fetchRegressions = async (id: string, category?: string, severity?: string) => {
     try {
-      let url = `http://localhost:8000/api/comparison/release/regressions/${id}`;
+      let url = `http://localhost:8010/api/comparison/release/regressions/${id}`;
       const params = new URLSearchParams();
       if (category && category !== 'all') params.append('category', category);
       if (severity && severity !== 'all') params.append('severity', severity);

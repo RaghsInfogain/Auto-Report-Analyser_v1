@@ -48,7 +48,7 @@
     <h1>🔧 Upload Test Page - Direct Backend Connection</h1>
     
     <div class="status info">
-        <strong>Backend URL:</strong> <span id="backendUrl">http://localhost:8000</span><br>
+        <strong>Backend URL:</strong> <span id="backendUrl">http://localhost:8010</span><br>
         <strong>This page bypasses React to test the backend directly.</strong>
     </div>
     
@@ -70,7 +70,7 @@
     <div id="log"></div>
     
     <script>
-        const BACKEND_URL = 'http://localhost:8000';
+        const BACKEND_URL = `http://localhost:8010`;
         
         function log(message, type = 'info') {
             const logDiv = document.getElementById('log');
