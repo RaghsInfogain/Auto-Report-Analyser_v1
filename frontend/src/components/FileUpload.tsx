@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { uploadFiles, UploadedFile } from '../services/api';
+import { uploadFiles, UploadedFile, UploadProgressCallback } from '../services/api';
+import ProgressBar from './ProgressBar';
 import './FileUpload.css';
 
 interface FileUploadProps {
@@ -7,16 +8,20 @@ interface FileUploadProps {
   defaultCategory?: string;
   /** Tighter horizontal layout for pages like JMeter (title + row) */
   compact?: boolean;
+  onUploadProgress?: UploadProgressCallback;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesUploaded,
   defaultCategory = 'web_vitals',
   compact = false,
+  onUploadProgress,
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -43,9 +48,16 @@ const FileUpload: React.FC<FileUploadProps> = ({
     }
 
     setUploading(true);
+    setUploadPercent(0);
+    setUploadMessage('Starting upload…');
+    const progressHandler: UploadProgressCallback = (info) => {
+      setUploadPercent(info.percent);
+      setUploadMessage(info.message);
+      onUploadProgress?.(info);
+    };
     try {
       console.log('Starting upload...', { files: selectedFiles.map(f => f.name), categories });
-      const result = await uploadFiles(selectedFiles, categories);
+      const result = await uploadFiles(selectedFiles, categories, progressHandler);
       console.log('Upload successful:', result);
       onFilesUploaded(result.files);
       setSelectedFiles([]);
@@ -95,13 +107,16 @@ const FileUpload: React.FC<FileUploadProps> = ({
       alert(`Upload failed: ${errorMessage}`);
     } finally {
       setUploading(false);
+      setUploadPercent(0);
+      setUploadMessage('');
     }
   };
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
   };
 
   return (
@@ -122,7 +137,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
                 ? `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected`
                 : 'Choose files or drag and drop'}
             </span>
-            <span className="upload-hint">JTL, CSV, or JSON files</span>
+            <span className="upload-hint">JTL, CSV, or JSON — large files use chunked upload (up to 50 GB)</span>
           </div>
         </label>
       </div>
@@ -179,6 +194,17 @@ const FileUpload: React.FC<FileUploadProps> = ({
             ))}
           </div>
 
+          {uploading && (
+            <div className="upload-progress-section">
+              <ProgressBar
+                variant="upload"
+                percent={uploadPercent}
+                label="Uploading"
+                sublabel={uploadMessage}
+              />
+            </div>
+          )}
+
           <div className="upload-actions">
             <button 
               onClick={handleUpload} 
@@ -188,7 +214,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
               {uploading ? (
                 <>
                   <span className="spinner-small"></span>
-                  Uploading...
+                  Uploading…
                 </>
               ) : (
                 <>

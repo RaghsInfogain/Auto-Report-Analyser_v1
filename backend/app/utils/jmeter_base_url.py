@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 import os
 from collections import Counter
-from typing import List
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 from app.utils.jmeter_url import normalize_jmeter_url_value
@@ -75,3 +75,18 @@ def dominant_base_url_for_paths(paths: List[str]) -> str:
     if not total:
         return ""
     return str(total.most_common(1)[0][0])
+
+
+def dominant_origin_from_jmeter_rows(rows: List[Dict[str, Any]], max_rows: int = 25000) -> str:
+    """Most frequent http(s) origin from JTL row dicts (url field), for merged multi-source slices."""
+    ctr: Counter = Counter()
+    for i, d in enumerate(rows):
+        if i >= max_rows:
+            break
+        u = d.get("url")
+        origin = _origin_from_raw_url(str(u) if u is not None else "")
+        if origin:
+            ctr[origin] += 1
+    if not ctr:
+        return ""
+    return str(ctr.most_common(1)[0][0])

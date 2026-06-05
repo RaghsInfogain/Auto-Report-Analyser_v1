@@ -501,6 +501,41 @@ CSS_JMETER_LAYOUT = """
             box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5) !important;
         }
         .pdf-button:active { transform: translateY(0); }
+        .latency-analytics-section .muted { color: var(--color-text-secondary); font-size: 0.9rem; }
+        .latency-analytics-section .small { font-size: 0.82rem; }
+        .latency-analytics-disclaimer {
+            background: var(--color-background-info);
+            border: 1px solid var(--color-border-info);
+            border-radius: var(--border-radius-md);
+            padding: 1rem 1.1rem;
+            margin: 0.75rem 0 1rem;
+        }
+        .latency-analytics-disclaimer p { margin: 0.35rem 0; }
+        .latency-analytics-meta { margin: 0.5rem 0 1rem 1.25rem; color: var(--color-text-primary); }
+        .latency-analytics-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.5rem 0 1.25rem;
+            font-size: 0.9rem;
+        }
+        .latency-analytics-table td {
+            border: 1px solid var(--color-border-tertiary);
+            padding: 0.45rem 0.65rem;
+            vertical-align: top;
+        }
+        .latency-analytics-table tr td:first-child {
+            font-weight: 600;
+            width: 38%;
+            background: var(--color-background-secondary);
+            color: var(--color-text-secondary);
+        }
+        .latency-analytics-callout {
+            background: #fffbeb;
+            border-left: 4px solid var(--warning-color);
+            padding: 0.75rem 1rem;
+            margin: 0.75rem 0;
+            border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+        }
 """
 
 

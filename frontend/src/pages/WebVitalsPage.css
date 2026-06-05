@@ -101,6 +101,11 @@
 }
 
 /* Progress Banner */
+.progress-eta {
+  color: #c45c26;
+  font-weight: 600;
+}
+
 .progress-banner {
   background: #fff3cd;
   border-left: 4px solid #ffc107;
@@ -512,4 +517,94 @@
     flex-direction: column;
     gap: 0.5rem;
   }
+}
+
+/* Dual Web Vitals upload */
+.wv-upload-intro {
+  font-size: 0.875rem;
+  color: var(--report-muted, #5c5c5c);
+  line-height: 1.5;
+  margin: 0 0 1.25rem;
+  max-width: 52rem;
+}
+
+.wv-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.wv-upload-card {
+  border: 1px solid var(--report-rule);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  background: var(--report-paper);
+}
+
+.wv-upload-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--report-ink);
+}
+
+.wv-upload-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--report-muted, #6b6860);
+}
+
+.wv-file-label {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.wv-file-label input[type='file'] {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.wv-file-btn {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8125rem;
+  border-radius: 4px;
+  border: 1px solid var(--report-rule);
+  background: var(--report-cream, #f7f5f1);
+  color: var(--report-ink);
+}
+
+.wv-file-label:hover .wv-file-btn {
+  border-color: var(--report-blue);
+  color: var(--report-blue);
+}
+
+.wv-file-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.75rem;
+  color: var(--report-ink);
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.wv-file-list li {
+  margin-bottom: 0.25rem;
+  word-break: break-all;
+}
+
+.wv-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.wv-recent-note {
+  margin: 1rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--report-muted, #6b6860);
 }

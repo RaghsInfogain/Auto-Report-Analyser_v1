@@ -55,10 +55,11 @@ class DatabaseService:
         file_path: str,
         file_size: int,
         uploaded_by: str = "unknown",
-        run_id: str = None
+        run_id: str = None,
+        file_id: Optional[str] = None,
     ) -> UploadedFile:
         """Create a new uploaded file record"""
-        file_id = str(uuid.uuid4())
+        file_id = file_id or str(uuid.uuid4())
         # Generate run_id if not provided
         if not run_id:
             run_id = DatabaseService.generate_next_run_id(db)
@@ -99,9 +100,10 @@ class DatabaseService:
             return db.query(UploadedFile).order_by(UploadedFile.uploaded_at.desc()).all()
     
     @staticmethod
-    def get_all_run_ids(db: Session) -> List[dict]:
+    def get_all_run_ids(db: Session, summary_only: bool = False) -> List[dict]:
         """Get all unique run_ids with their file counts and info - optimized to avoid N+1 queries"""
         from sqlalchemy import func, case
+        from app.database.run_analysis_cache import RunAnalysisCacheService
         
         try:
             # Single query to get all runs with aggregated data
@@ -169,37 +171,20 @@ class DatabaseService:
             # Get categories efficiently
             categories = list(set(f.category for f in files))
             
-            # Only include basic file info to avoid loading relationships
-            files_data = []
-            for f in files:
-                files_data.append({
-                    "file_id": f.file_id,
-                    "run_id": f.run_id,
-                    "filename": f.filename,
-                    "category": f.category,
-                    "file_size": f.file_size,
-                    "record_count": f.record_count or 0,
-                    "report_status": f.report_status,
-                    "uploaded_at": f.uploaded_at.isoformat() if f.uploaded_at else None,
-                    "uploaded_by": f.uploaded_by,
-                    "has_analysis": False,  # Don't query relationships
-                    "has_reports": False    # Don't query relationships
-                })
-            
-            # For merged files, calculate total_records correctly
-            # If all files have the same record_count and point to the same file_path, it's a merged file
             total_records = run.total_records or 0
             if files:
                 unique_paths = set(f.file_path for f in files)
                 unique_record_counts = set(f.record_count for f in files if f.record_count)
-                
-                # If all files point to the same path and have same record_count, it's merged
                 if len(unique_paths) == 1 and len(unique_record_counts) == 1:
-                    # All files point to same merged file - use the single record_count
                     total_records = files[0].record_count or 0
-                    print(f"  Detected merged file for {run_id}: using {total_records:,} records (not {run.total_records or 0:,})")
-            
-            result.append({
+
+            base_url = None
+            if "jmeter" in categories:
+                base_url = RunAnalysisCacheService.get_base_url(db, run_id, "jmeter")
+            if not base_url and not summary_only:
+                base_url = _dominant_jmeter_base_url_for_files(files)
+
+            run_entry: dict = {
                 'run_id': run_id,
                 'file_count': run.file_count,
                 'total_size': run.total_size or 0,
@@ -207,9 +192,26 @@ class DatabaseService:
                 'uploaded_at': run.uploaded_at.isoformat() if run.uploaded_at else None,
                 'report_status': overall_status,
                 'categories': categories,
-                'files': files_data,
-                'base_url': _dominant_jmeter_base_url_for_files(files),
-            })
+                'base_url': base_url,
+            }
+            if not summary_only:
+                files_data = []
+                for f in files:
+                    files_data.append({
+                        "file_id": f.file_id,
+                        "run_id": f.run_id,
+                        "filename": f.filename,
+                        "category": f.category,
+                        "file_size": f.file_size,
+                        "record_count": f.record_count or 0,
+                        "report_status": f.report_status,
+                        "uploaded_at": f.uploaded_at.isoformat() if f.uploaded_at else None,
+                        "uploaded_by": f.uploaded_by,
+                        "has_analysis": False,
+                        "has_reports": False,
+                    })
+                run_entry["files"] = files_data
+            result.append(run_entry)
         
         return result
     

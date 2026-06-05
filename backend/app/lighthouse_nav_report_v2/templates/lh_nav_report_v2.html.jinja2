@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{ META.site_name }} · Lighthouse Analysis v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --ink: #0D0D0B; --paper: #F5F3EE; --cream: #EDE9E1; --rule: #D5D0C5;
+  --red: #C0392B; --red-l: #FDF0EE; --red-m: #E8A09A;
+  --amber: #B45309; --amber-l: #FEF7EC; --amber-m: #D9A574;
+  --green: #2D6A2D; --green-l: #F0F7E6; --green-m: #8FB88F;
+  --blue: #1A4E8C; --blue-l: #EAF1FB; --blue-m: #8FA8C4;
+  --gray: #6B6860; --gray-l: #F7F5F1;
+  --mono: 'DM Mono', monospace; --sans: 'Instrument Sans', sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); }
+.hdr { background: var(--ink); color: var(--paper); padding: 2.5rem 3rem; position: relative; overflow: hidden; }
+.hdr::after { content: ''; position: absolute; top: -80px; right: -80px; width: 360px; height: 360px; border-radius: 50%; border: 1px solid rgba(245,243,238,.05); pointer-events: none; }
+.hdr-eye { font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: rgba(245,243,238,.4); }
+.hdr-title { font-size: 2rem; font-weight: 600; line-height: 1.15; margin: .6rem 0; white-space: pre-line; }
+.hdr-sub { font-size: 12px; color: rgba(245,243,238,.55); }
+.hdr-meta { display: flex; gap: 2rem; flex-wrap: wrap; padding-top: 1.2rem; margin-top: 1.2rem; border-top: 1px solid rgba(245,243,238,.1); font-size: 12px; }
+.hm { display: flex; flex-direction: column; gap: .15rem; }
+.hm span:first-child { font-family: var(--mono); font-size: 8px; color: rgba(245,243,238,.45); text-transform: uppercase; letter-spacing: .08em; }
+.verdict-strip { display: flex; align-items: center; gap: 1rem; margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(245,243,238,.1); flex-wrap: wrap; }
+.vpill { background: {{ VERDICT_PILL_BG }}; color: #fff; font-family: var(--mono); font-size: 11px; padding: 5px 14px; border-radius: 2px; }
+.vtext { font-size: 13px; color: rgba(245,243,238,.65); font-style: italic; max-width: 720px; }
+.verdict-card { margin: 1.5rem 0 0; padding: 1.25rem 1.4rem; border-radius: 6px; background: var(--cream); border: 1px solid var(--rule); }
+.verdict-card.nogo { border-color: var(--red-m); background: var(--red-l); }
+.verdict-card.cond { border-color: var(--amber-m); background: var(--amber-l); }
+.verdict-card.go { border-color: var(--green-m); background: var(--green-l); }
+.verdict-label { font-family: var(--mono); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); margin-bottom: .5rem; }
+.verdict-narrative { font-size: 13px; line-height: 1.75; margin: 0 0 .6rem; }
+.verdict-capacity { font-family: var(--mono); font-size: 11px; color: var(--gray); margin: 0; line-height: 1.65; }
+.nav { position: sticky; top: 0; z-index: 100; background: var(--paper); border-bottom: 1px solid var(--rule); display: flex; overflow-x: auto; padding: 0 3rem; }
+.nb { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; padding: .7rem 1rem; border: none; background: none; color: var(--gray); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: all .15s; }
+.nb.on { color: var(--ink); border-bottom-color: var(--ink); }
+.page { padding: 2rem 3rem 3rem; max-width: 1200px; margin: 0 auto; }
+.panel { display: none; }
+.panel.on { display: block; }
+.kgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-bottom: 1.5rem; }
+.kgrid-12 { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.kgrid-6 { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.kpi { background: var(--paper); padding: 1rem 1.1rem; }
+.kl { font-family: var(--mono); font-size: 8px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); margin-bottom: .3rem; }
+.kv { font-size: 1.5rem; font-weight: 600; line-height: 1; margin-bottom: .15rem; }
+.kv.g { color: var(--green); } .kv.r { color: var(--red); } .kv.a { color: var(--amber); } .kv.b { color: var(--blue); }
+.ks { font-family: var(--mono); font-size: 9px; color: var(--gray); }
+.sl { font-family: var(--mono); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); margin: 1.5rem 0 .8rem; display: flex; align-items: center; gap: .6rem; }
+.sl::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+.zone { border-left: 3px solid; padding: .8rem 1rem; margin-bottom: .6rem; border-radius: 0 4px 4px 0; }
+.zone.g { border-color: var(--green); background: var(--green-l); }
+.zone.a { border-color: var(--amber); background: var(--amber-l); }
+.zone.r { border-color: var(--red); background: var(--red-l); }
+.zone.b { border-color: var(--blue); background: var(--blue-l); }
+.zt { font-size: 12px; font-weight: 600; margin-bottom: .25rem; }
+.zb { font-size: 11px; line-height: 1.7; }
+.zbadge { font-family: var(--mono); font-size: 9px; color: var(--gray); margin-bottom: .2rem; }
+.dt { width: 100%; border-collapse: collapse; font-size: 11px; }
+.dt th { font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .07em; color: var(--gray); padding: 6px 8px; border-bottom: .5px solid var(--rule); background: var(--gray-l); text-align: left; }
+.dt td { padding: 5px 8px; border-bottom: .5px solid var(--rule); vertical-align: top; }
+.dt tr:hover { background: var(--cream); }
+.gr { color: var(--green); font-weight: 600; } .rd { color: var(--red); font-weight: 600; } .am { color: var(--amber); font-weight: 600; } .mono { font-family: var(--mono); font-size: 10px; }
+.cc { border: .5px solid var(--rule); padding: 1.1rem 1.2rem; margin-bottom: 1rem; border-radius: 4px; }
+.ct { font-size: 12px; font-weight: 600; margin-bottom: .2rem; }
+.cd { font-family: var(--mono); font-size: 8px; color: var(--gray); margin-bottom: .8rem; letter-spacing: .03em; }
+.cw { position: relative; width: 100%; height: 260px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.rca-card { border: 1px solid var(--rule); padding: 1.1rem 1.3rem; margin-bottom: .9rem; border-radius: 4px; position: relative; }
+.rca-card.sev1::before, .rca-card.sev2::before, .rca-card.sev3::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 3px 0 0 3px;
+}
+.rca-card.sev1::before { background: var(--red); } .rca-card.sev2::before { background: var(--amber); } .rca-card.sev3::before { background: var(--blue); }
+.rca-title { font-size: 13px; font-weight: 600; margin-bottom: .4rem; }
+.rca-body { font-size: 11.5px; line-height: 1.75; }
+.ev { background: var(--cream); border: 1px solid var(--rule); padding: .7rem .9rem; font-family: var(--mono); font-size: 10px; line-height: 1.7; color: var(--gray); margin-top: .5rem; border-radius: 3px; }
+.conf-row { margin-top: .6rem; }
+.conf-meta { font-family: var(--mono); font-size: 9px; color: var(--gray); margin-bottom: .25rem; }
+.conf-track { height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--amber), var(--green)); }
+.conf-fill.low { background: var(--amber-m); }
+.score-ring { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; border: 3px solid; font-family: var(--mono); font-size: 13px; font-weight: 500; }
+.ring-r { border-color: var(--red); color: var(--red); } .ring-a { border-color: var(--amber); color: var(--amber); } .ring-g { border-color: var(--green); color: var(--green); }
+.three-h { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0; }
+.cwv-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0; }
+.cwv-card { border: 1px solid var(--rule); border-radius: 6px; padding: 1rem 1.1rem; background: var(--paper); }
+.cwv-card.hdr-r { border-top: 3px solid var(--red); }
+.cwv-card.hdr-a { border-top: 3px solid var(--amber); }
+.cwv-card.hdr-g { border-top: 3px solid var(--green); }
+.cwv-card h3 { margin: 0 0 .35rem; font-size: 11px; font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--gray); }
+.cwv-card .cv-val { font-size: 1.35rem; font-weight: 600; }
+.cwv-card .cv-sub { font-family: var(--mono); font-size: 9px; color: var(--gray); margin: .25rem 0 .5rem; }
+.cwv-card .cv-desc { font-size: 11px; line-height: 1.65; color: var(--ink); opacity: .9; }
+.cwv-card .cv-badges { font-family: var(--mono); font-size: 9px; margin-top: .6rem; color: var(--gray); }
+@media (max-width: 768px) {
+  .page { padding: 1.5rem; } .hdr { padding: 2rem 1.5rem; } .nav { padding: 0 1rem; }
+  .two, .three-h, .cwv-cards { grid-template-columns: 1fr; }
+}
+@media print {
+  .nav { display: none; }
+  .panel { display: block !important; }
+  #p-ov.panel { page-break-before: auto; }
+  .panel.page:not(#p-ov) { page-break-before: always; }
+  .page { padding: 1rem 0; max-width: none; }
+  body { background: #fff; }
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #E8E6E0; --paper: #121210; --cream: #1A1916; --rule: #33332D;
+    --gray: #9C988C; --gray-l: #1E1E1A;
+    --red-l: #2A1512; --amber-l: #2A2010; --green-l: #142114; --blue-l: #121E2E;
+  }
+  .hdr { background: #0A0A08; }
+  .dt th { background: var(--gray-l); }
+  .vpill { color: var(--paper); }
+}
+body[data-report="lh-nav-v2"] .panel { page-break-inside: avoid; }
+.timeline { border-left: 2px solid var(--rule); margin: 1rem 0 1rem .5rem; padding-left: 1rem; }
+.tl-item { margin-bottom: 1rem; position: relative; }
+.tl-item::before { content: ''; position: absolute; left: -1.35rem; top: .25rem; width: 10px; height: 10px; border-radius: 50%; background: var(--amber); }
+.tl-item.p1::before { background: var(--red); } .tl-item.p3::before { background: var(--green); }
+.tl-time { font-family: var(--mono); font-size: 9px; color: var(--gray); letter-spacing: .06em; text-transform: uppercase; }
+.tl-title { font-size: 13px; font-weight: 600; margin: .2rem 0 .35rem; }
+.tl-body { font-size: 11.5px; line-height: 1.75; margin: 0; color: var(--ink); opacity: .92; }
+.tl-actions { margin: .5rem 0 0 0; padding-left: 1.1rem; font-size: 11px; line-height: 1.65; color: var(--ink); opacity: .95; }
+.tl-actions li { margin-bottom: .28rem; }
+.badge { font-family: var(--mono); font-size: 8px; letter-spacing: .05em; padding: 2px 7px; border-radius: 2px; font-weight: 500; }
+.b-solid.bgo { background: var(--green); color: #fff; } .b-solid.bao { background: var(--amber); color: #fff; } .b-solid.bro { background: var(--red); color: #fff; }
+.b-outline { background: transparent; border: 1px solid var(--rule); }
+.bgo { background: var(--green-l); color: var(--green); } .bao { background: var(--amber-l); color: var(--amber); } .bro { background: var(--red-l); color: var(--red); }
+.plan-strip { background: var(--ink); color: var(--paper); padding: 1rem 1.5rem; border-radius: 4px; display: grid; grid-template-columns: repeat(4,1fr); gap: 1rem; font-size: 12px; margin-bottom: 1rem; }
+@media (prefers-color-scheme: dark) {
+  .plan-strip { background: #1A1916; border: 1px solid var(--rule); }
+}
+.empty-hint { font-size: 11px; color: var(--gray); font-style: italic; margin: .5rem 0 1rem; }
+</style>
+</head>
+<body data-report="lh-nav-v2">
+{% set spec = report_data.spec or {} %}
+<header class="hdr">
+  <div class="hdr-eye">Performance Engineering · Lighthouse Audit Analysis · Web Performance Report · v2</div>
+  <h1 class="hdr-title">{{ META.site_name }}{% if META.site_section %} — {{ META.site_section }}{% endif %}
+Lighthouse Performance Analysis</h1>
+  <p class="hdr-sub">{{ META.page_count }} Lighthouse audit{% if META.page_count != 1 %}s{% endif %}{% if has_nav_timing %} + navigation timing{% endif %} · Core Web Vitals · {{ META.audit_date[:10] if META.audit_date else '' }}</p>
+  <div class="hdr-meta">
+    <div class="hm"><span>Audit date</span><span>{{ META.audit_date }}</span></div>
+    <div class="hm"><span>Pages</span><span>{{ META.page_count }}</span></div>
+    <div class="hm"><span>Avg perf score</span><span>{{ report_data.kpis.avg_perf }}/100</span></div>
+    <div class="hm"><span>Run ID</span><span>{{ META.run_id }}</span></div>
+    <div class="hm"><span>Environment</span><span>{{ META.env }}</span></div>
+    <div class="hm"><span>Prepared by</span><span>Performance Engineering Architect</span></div>
+  </div>
+  <div class="verdict-strip">
+    <span class="vpill">{{ report_data.verdict_raw.verdict_icon }} {{ report_data.verdict_raw.verdict|replace('_', '-') }}</span>
+    <span class="vtext">{{ report_data.verdict_raw.justification }}</span>
+  </div>
+</header>
+<nav class="nav" id="topnav">
+  <button type="button" class="nb on" data-tab="ov">Overview</button>
+  <button type="button" class="nb" data-tab="cwv">Core Web Vitals</button>
+  <button type="button" class="nb" data-tab="loading">Loading Health</button>
+  <button type="button" class="nb" data-tab="interactivity">Interactivity</button>
+  <button type="button" class="nb" data-tab="stability">Visual Stability</button>
+  <button type="button" class="nb" data-tab="pages">Page Scorecard</button>
+  <button type="button" class="nb" data-tab="rca">Root Cause</button>
+  <button type="button" class="nb" data-tab="issues">Issues Identified</button>
+  {% if has_nav_timing %}
+  <button type="button" class="nb" data-tab="nav">Navigation Timing</button>
+  {% endif %}
+  <button type="button" class="nb" data-tab="plan">Optimization Plan</button>
+</nav>
+
+<main>
+<section id="p-ov" class="panel on page">
+  <div class="sl">Executive summary</div>
+  <div class="verdict-card {{ spec.verdict_card_class|default('cond') }}">
+    <div class="verdict-label">Readiness narrative</div>
+    <p class="verdict-narrative">{% if spec.executive_narrative %}{{ spec.executive_narrative | e }}{% else %}{{ report_data.exec_summary.paragraph | e }}{% endif %}</p>
+    {% if spec.capacity_line %}<p class="verdict-capacity"><strong>Capacity:</strong> {{ spec.capacity_line | e }}</p>{% endif %}
+  </div>
+  <div class="sl">Key performance indicators</div>
+  <div class="kgrid">
+    <div class="kpi"><div class="kl">Avg Performance Score</div><div class="kv {% if report_data.kpis.avg_perf >= META.sla.perf_score %}g{% else %}r{% endif %}">{{ report_data.kpis.avg_perf }}/100</div><div class="ks">Target ≥{{ META.sla.perf_score }} · ref lines on chart</div></div>
+    <div class="kpi"><div class="kl">Pages passing LCP</div><div class="kv a">{{ report_data.kpis.lcp_good }} of {{ report_data.kpis.total }}</div><div class="ks">{% if spec.lcp_ratio %}{{ spec.lcp_ratio }}× vs 2,500 ms avg{% else %}Good threshold{% endif %}</div></div>
+    <div class="kpi"><div class="kl">Pages passing TBT</div><div class="kv a">{{ report_data.kpis.tbt_good }} of {{ report_data.kpis.total }}</div><div class="ks">{% if spec.tbt_ratio %}{{ spec.tbt_ratio }}× vs 200 ms avg{% else %}Good threshold{% endif %}</div></div>
+    <div class="kpi"><div class="kl">Pages passing FCP</div><div class="kv a">{{ report_data.kpis.fcp_good }} of {{ report_data.kpis.total }}</div><div class="ks">{% if spec.fcp_ratio %}{{ spec.fcp_ratio }}× vs 1,800 ms{% else %}Good threshold{% endif %}</div></div>
+    <div class="kpi"><div class="kl">Avg LCP</div><div class="kv r">{{ '%.0f'|format(report_data.kpis.avg_lcp) }} ms</div><div class="ks">Target &lt;2,500 ms</div></div>
+    <div class="kpi"><div class="kl">Avg TBT</div><div class="kv r">{{ '%.0f'|format(report_data.kpis.avg_tbt) }} ms</div><div class="ks">Target &lt;200 ms</div></div>
+    <div class="kpi"><div class="kl">Avg FCP</div><div class="kv a">{{ '%.0f'|format(report_data.kpis.avg_fcp) }} ms</div><div class="ks">Target &lt;1,800 ms</div></div>
+    <div class="kpi"><div class="kl">Avg CLS</div><div class="kv a">{{ '%.3f'|format(report_data.kpis.avg_cls) }}</div><div class="ks">Target &lt;0.1</div></div>
+    <div class="kpi"><div class="kl">Worst performance</div><div class="kv r">{{ report_data.kpis.min_perf }}/100</div><div class="ks mono">{{ report_data.kpis.worst_url[:60] }}{% if report_data.kpis.worst_url|length > 60 %}…{% endif %}</div></div>
+    <div class="kpi"><div class="kl">Best performance</div><div class="kv g">{{ report_data.kpis.max_perf }}/100</div><div class="ks mono">{{ report_data.kpis.best_url[:60] }}{% if report_data.kpis.best_url|length > 60 %}…{% endif %}</div></div>
+    <div class="kpi"><div class="kl">Avg page load (nav)</div><div class="kv b">{% if report_data.kpis.avg_pl is not none %}{{ '%.0f'|format(report_data.kpis.avg_pl) }} ms{% else %}N/A{% endif %}</div><div class="ks">Playwright / nav JSON</div></div>
+    <div class="kpi"><div class="kl">Avg unused JS</div><div class="kv a">{{ '%.0f'|format(report_data.kpis.avg_unused_js) }} KiB</div><div class="ks">Lighthouse audit</div></div>
+  </div>
+  <div class="sl">System health</div>
+  <div class="three-h">
+    <div class="cc"><div class="ct">Loading health</div><div style="display:flex;align-items:center;gap:1rem"><span class="score-ring ring-{{ report_data.kpis.loading_ring }}">{{ report_data.kpis.loading_score }}</span><p class="zb">From FCP + LCP pass rates across audited URLs.</p></div></div>
+    <div class="cc"><div class="ct">Interactivity health</div><div style="display:flex;align-items:center;gap:1rem"><span class="score-ring ring-{{ report_data.kpis.inter_ring }}">{{ report_data.kpis.inter_score }}</span><p class="zb">Driven primarily by Total Blocking Time distribution.</p></div></div>
+    <div class="cc"><div class="ct">Visual stability</div><div style="display:flex;align-items:center;gap:1rem"><span class="score-ring ring-{{ report_data.kpis.stab_ring }}">{{ report_data.kpis.stab_score }}</span><p class="zb">CLS Good / NI / Poor spread.</p></div></div>
+  </div>
+  <div class="cc"><div class="ct">Performance score by page</div><div class="cd">Indexed pages · SLA reference 85 / 50</div><div class="cw"><canvas id="chart-perf" role="img" aria-label="Bar chart of Lighthouse performance scores per page"></canvas></div></div>
+</section>
+
+<section id="p-cwv" class="panel page">
+  <div class="sl">Aggregated core web vitals</div>
+  {% if spec.cwv_cards %}
+  <div class="cwv-cards">
+    {% for c in spec.cwv_cards %}
+    <div class="cwv-card hdr-{{ c.header|default('a') }}">
+      <h3>{{ c.name }}</h3>
+      <div class="cv-val">{{ c.value }}</div>
+      <div class="cv-sub">{{ c.sub }}</div>
+      <p class="cv-desc">{{ c.desc }}</p>
+      <div class="cv-badges">{{ c.badges }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="two">
+    <div class="cc"><div class="ct">FCP distribution</div><div class="cw" style="height:200px"><canvas id="chart-fcp" role="img" aria-label="FCP good needs improvement poor counts"></canvas></div></div>
+    <div class="cc"><div class="ct">CLS distribution</div><div class="cw" style="height:200px"><canvas id="chart-cls-h" role="img" aria-label="CLS distribution counts"></canvas></div></div>
+  </div>
+  <div class="sl">Threshold matrix</div>
+  <table class="dt">
+    <tr><th>Metric</th><th>Good</th><th>NI</th><th>Poor</th><th>Site avg</th><th>Pages Good</th><th>Pages NI</th><th>Pages Poor</th><th>Gap vs Good</th></tr>
+    {% for row in spec.cwv_threshold_rows|default([]) %}
+    <tr>
+      <td>{{ row.metric }}</td>
+      <td>{{ row.good }}</td>
+      <td>{{ row.ni }}</td>
+      <td>{{ row.poor }}</td>
+      <td class="mono">{{ row.avg }}</td>
+      <td class="mono">{{ row.pg }}</td>
+      <td class="mono">{{ row.pn }}</td>
+      <td class="mono">{{ row.pp }}</td>
+      <td class="mono">{{ row.gap }}</td>
+    </tr>
+    {% endfor %}
+    {% if not spec.cwv_threshold_rows %}
+    <tr><td colspan="9" class="empty-hint">Threshold rows unavailable.</td></tr>
+    {% endif %}
+  </table>
+</section>
+
+<section id="p-loading" class="panel page">
+  {% if spec.loading_zones %}
+    {% for z in spec.loading_zones %}
+    <div class="zone {{ z.cls }}"><div class="zt">{{ z.title }}</div><div class="zb">{{ z.body }}</div></div>
+    {% endfor %}
+  {% else %}
+    <p class="empty-hint">No automated loading-risk zones triggered for this sample.</p>
+  {% endif %}
+  <div class="cc"><div class="ct">LCP by page</div><div class="cd">Reference: Good 2,500 ms · NI bound 4,000 ms</div><div class="cw" style="height:320px"><canvas id="chart-lcp-bar" role="img" aria-label="Horizontal bar LCP per page"></canvas></div></div>
+  <div class="cc"><div class="ct">Load phase breakdown (avg)</div><div class="cw" style="height:220px"><canvas id="chart-load-break" role="img" aria-label="TTFB FCP DOM TTI full load averages"></canvas></div></div>
+</section>
+
+<section id="p-interactivity" class="panel page">
+  {% if spec.inter_kpis %}
+  <div class="kgrid kgrid-6">
+    {% for cell in spec.inter_kpis %}
+    <div class="kpi"><div class="kl">{{ cell.label }}</div><div class="kv a">{{ cell.value }}</div><div class="ks">{{ cell.sub }}</div></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if spec.interactivity_zones %}
+    {% for z in spec.interactivity_zones %}
+    <div class="zone {{ z.cls }}"><div class="zt">{{ z.title }}</div><div class="zb">{{ z.body }}</div></div>
+    {% endfor %}
+  {% endif %}
+  <div class="cc"><div class="ct">TBT by page</div><div class="cd">Reference: 200 ms Good · 600 ms NI upper</div><div class="cw" style="height:320px"><canvas id="chart-tbt-bar" role="img" aria-label="TBT per page horizontal bars"></canvas></div></div>
+</section>
+
+<section id="p-stability" class="panel page">
+  {% if spec.stability_zones %}
+    {% for z in spec.stability_zones %}
+    <div class="zone {{ z.cls }}">{% if z.badge %}<div class="zbadge">{{ z.badge }}</div>{% endif %}<div class="zt">{{ z.title }}</div><div class="zb">{{ z.body }}</div></div>
+    {% endfor %}
+  {% endif %}
+  <div class="sl">CLS cause patterns</div>
+  {% if spec.cls_causes_table %}
+  <table class="dt">
+    <tr><th>Likely cause</th><th>Notes</th></tr>
+    {% for r in spec.cls_causes_table %}
+    <tr><td>{{ r.cause }}</td><td>{{ r.detail }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="empty-hint">No CLS cause table rows.</p>
+  {% endif %}
+  <div class="cc"><div class="ct">CLS by page</div><div class="cw" style="height:320px"><canvas id="chart-cls-bar" role="img" aria-label="CLS per page"></canvas></div></div>
+</section>
+
+<section id="p-pages" class="panel page">
+  <table class="dt">
+    <tr><th>#</th><th>URL</th><th>Perf</th><th>FCP</th><th>LCP</th><th>TBT</th><th>CLS</th><th>SI</th><th>LCP Δ</th><th>TBT Δ</th><th>CLS Δ</th><th>Page load</th></tr>
+    {% for row in report_data.pages %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td class="mono">{{ row.url[:56] }}{% if row.url|length > 56 %}…{% endif %}</td>
+      <td class="{% if row.perf < 50 %}rd{% elif row.perf < 90 %}am{% else %}gr{% endif %}">{{ row.perf }}</td>
+      <td class="mono">{{ '%.0f'|format(row.fcp) }}</td>
+      <td class="mono">{{ '%.0f'|format(row.lcp) }}</td>
+      <td class="mono">{{ '%.0f'|format(row.tbt) }}</td>
+      <td class="mono">{{ '%.3f'|format(row.cls) }}</td>
+      <td class="mono">{{ '%.0f'|format(row.si) }}</td>
+      <td>{% if row.loading == 'good' %}<span class="badge b-solid bgo">Good</span>{% elif row.loading == 'ni' %}<span class="badge b-solid bao">NI</span>{% elif row.loading == 'poor' %}<span class="badge b-solid bro">Poor</span>{% else %}<span class="badge b-outline mono">—</span>{% endif %}</td>
+      <td>{% if row.tbt_status == 'good' %}<span class="badge b-solid bgo">Good</span>{% elif row.tbt_status == 'ni' %}<span class="badge b-solid bao">NI</span>{% elif row.tbt_status == 'poor' %}<span class="badge b-solid bro">Poor</span>{% else %}<span class="badge b-outline mono">—</span>{% endif %}</td>
+      <td>{% if row.cls_status == 'good' %}<span class="badge b-solid bgo">Good</span>{% elif row.cls_status == 'ni' %}<span class="badge b-solid bao">NI</span>{% elif row.cls_status == 'poor' %}<span class="badge b-solid bro">Poor</span>{% else %}<span class="badge b-outline mono">—</span>{% endif %}</td>
+      <td class="mono">{% if row.page_load is not none %}{{ '%.0f'|format(row.page_load) }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section id="p-rca" class="panel page">
+  <p class="zb">{{ report_data.rca|length }} evidence-backed root causes · confidence reflects audit signal strength.</p>
+  {% for r in report_data.rca %}
+  <article class="rca-card {{ r.severity }}">
+    <div class="rca-title">{{ r.id }} · {{ r.badge_text }} · {{ r.title }}</div>
+    <div class="rca-body">{{ r.body }}</div>
+    <div class="conf-row">
+      <div class="conf-meta">Confidence {{ r.confidence }}%</div>
+      <div class="conf-track"><div class="conf-fill{% if (r.confidence or 0) < 65 %} low{% endif %}" style="width: {{ (r.confidence or 0) if (r.confidence or 0) <= 100 else 100 }}%"></div></div>
+    </div>
+    <div class="ev"><strong>Evidence:</strong> {{ r.evidence }}</div>
+  </article>
+  {% endfor %}
+</section>
+
+<section id="p-issues" class="panel page">
+  <div class="sl">Issues Identified</div>
+  <p class="zb">Prioritised issues from site-average Core Web Vitals and per-page thresholds (aligned with legacy Lighthouse analysis).</p>
+  {% if report_data.issues_identified %}
+  <table class="dt">
+    <tr><th>Issue</th><th>Severity</th><th>Impact</th><th>Recommendation</th><th>Impacted pages</th><th>Metric</th><th>Target</th></tr>
+    {% for issue in report_data.issues_identified %}
+    <tr>
+      <td>{{ issue.issue | e }}</td>
+      <td><span class="badge {% if issue.severity == 'Critical' %}bro{% elif issue.severity == 'High' %}bao{% else %}b-outline{% endif %}">{{ issue.severity | e }}</span></td>
+      <td>{{ issue.impact | e }}</td>
+      <td>{{ issue.recommendation | e }}</td>
+      <td class="mono" style="max-width:14rem">{% if issue.impacted_pages %}{{ issue.impacted_pages[:5] | join(', ') }}{% if issue.impacted_pages|length > 5 %}…{% endif %}{% else %}—{% endif %}</td>
+      <td class="mono">{{ issue.metric_value | e }}</td>
+      <td class="mono">{{ issue.target_value | e }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="empty-hint">No threshold-based issues flagged for this sample — continue monitoring and review RCA for optimisation themes.</p>
+  {% endif %}
+</section>
+
+{% if has_nav_timing and report_data.nav %}
+<section id="p-nav" class="panel page">
+  <div class="sl">Navigation timing aggregate</div>
+  {% if spec.nav_kpi12 %}
+  <div class="kgrid kgrid-12">
+    {% for cell in spec.nav_kpi12 %}
+    <div class="kpi"><div class="kl">{{ cell.label }}</div><div class="kv b">{{ cell.value }}</div><div class="ks">{{ cell.sub }}</div></div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="kgrid">
+    <div class="kpi"><div class="kl">Avg full page load</div><div class="kv r">{{ '%.0f'|format(report_data.nav.avg_pl) }} ms</div></div>
+    <div class="kpi"><div class="kl">P90 page load</div><div class="kv r">{{ '%.0f'|format(report_data.nav.p90_pl) }} ms</div></div>
+    <div class="kpi"><div class="kl">Slowest</div><div class="kv r">{{ '%.0f'|format(report_data.nav.max_pl) }} ms</div></div>
+    <div class="kpi"><div class="kl">Fastest</div><div class="kv g">{{ '%.0f'|format(report_data.nav.min_pl) }} ms</div></div>
+    <div class="kpi"><div class="kl">Avg FID</div><div class="kv a">{{ '%.0f'|format(report_data.nav.avg_fid) }} ms</div></div>
+    <div class="kpi"><div class="kl">Avg DNS</div><div class="kv">{{ '%.1f'|format(report_data.nav.avg_dns) }} ms</div></div>
+  </div>
+  {% endif %}
+  {% if spec.nav_network_zones %}
+  <div class="sl">Network phases (aggregate)</div>
+    {% for z in spec.nav_network_zones %}
+    <div class="zone {{ z.cls }}"><div class="zt">{{ z.title }}</div><div class="zb">{{ z.body }}</div></div>
+    {% endfor %}
+  {% endif %}
+  {% if spec.nav_findings %}
+    {% for z in spec.nav_findings %}
+    <div class="zone {{ z.cls }}"><div class="zt">{{ z.title }}</div><div class="zb">{{ z.body }}</div></div>
+    {% endfor %}
+  {% endif %}
+  <div class="two">
+    <div class="cc"><div class="ct">Phase waterfall (avg ms)</div><div class="cw" style="height:260px"><canvas id="chart-nav-waterfall" role="img" aria-label="Average navigation phase timings"></canvas></div></div>
+    <div class="cc"><div class="ct">DOM complete vs post-DOM gap (top)</div><div class="cw" style="height:260px"><canvas id="chart-nav-dom-gap" role="img" aria-label="Stacked DOM and gap"></canvas></div></div>
+  </div>
+  <div class="two">
+    <div class="cc"><div class="ct">Page load buckets</div><div class="cw" style="height:240px"><canvas id="chart-nav-pl" role="img" aria-label="Page load distribution"></canvas></div></div>
+    <div class="cc"><div class="ct">Phase mix (% of avg load)</div><div class="cw" style="height:240px"><canvas id="chart-nav-phase" role="img" aria-label="Phase contribution donut"></canvas></div></div>
+  </div>
+  <div class="cc"><div class="ct">Full page load (top pages)</div><div class="cw" style="height:360px"><canvas id="chart-nav-pl-pages" role="img" aria-label="Full page load per page"></canvas></div></div>
+  <div class="two">
+    <div class="cc"><div class="ct">FID distribution</div><div class="cw" style="height:200px"><canvas id="chart-nav-fid" role="img" aria-label="FID good ni poor"></canvas></div></div>
+    <div class="cc"><div class="ct">Worst FID pages</div><div class="cw" style="height:280px"><canvas id="chart-nav-fid-pages" role="img" aria-label="FID by page"></canvas></div></div>
+  </div>
+  {% if report_data.nav_pages %}
+  <table class="dt">
+    <tr><th>URL</th><th>DNS</th><th>TCP</th><th>Req</th><th>Srv</th><th>DOM intr</th><th>DOM comp</th><th>Load</th><th>FID</th></tr>
+    {% for r in report_data.nav_pages[:40] %}
+    <tr>
+      <td class="mono">{{ (r.pageUrl or '')[:48] }}{% if (r.pageUrl or '')|length > 48 %}…{% endif %}</td>
+      <td class="mono">{{ '%.0f'|format(r.dnsLookupTime or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.connectionTime or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.requestTime or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.serverProcessingTime or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.domInteractiveTime or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.domCompleteTime or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.playwrightFullPageLoadTime or r.pageLoaded or 0) }}</td>
+      <td class="mono">{{ '%.0f'|format(r.firstInputDelay or 0) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
+<section id="p-plan" class="panel page">
+  <div class="plan-strip">
+    <div><div class="kl" style="color:rgba(245,243,238,.5)">Current avg</div><strong>{{ report_data.plan.avg }}/100</strong></div>
+    <div><div class="kl" style="color:rgba(245,243,238,.5)">Phase 1 target</div><strong>{{ report_data.plan.p1_target }}/100</strong></div>
+    <div><div class="kl" style="color:rgba(245,243,238,.5)">Phase 2 target</div><strong>{{ report_data.plan.p2_target }}/100</strong></div>
+    <div><div class="kl" style="color:rgba(245,243,238,.5)">Phase 3 target</div><strong>{{ report_data.plan.p3_target }}/100</strong></div>
+  </div>
+  <div class="sl">Remediation timeline</div>
+  <div class="timeline">
+    {% for block in report_data.plan.timeline | default([]) %}
+    <div class="{{ block.item_class | default('tl-item') }}">
+      <div class="tl-time">{{ block.time | e }}</div>
+      <div class="tl-title">{{ block.title | e }}</div>
+      <p class="tl-body">{{ block.body | e }}</p>
+      {% if block.actions %}
+      <ul class="tl-actions">
+        {% for action in block.actions %}
+        <li>{{ action | e }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <table class="dt">
+    <tr><th>Recommendation</th><th>Phase</th><th>Effort</th><th>LCP impact</th><th>TBT impact</th><th>CLS impact</th><th>Est. gain</th><th>Score gain</th><th>Priority</th></tr>
+    {% for row in report_data.plan.rows %}
+    <tr>
+      <td>{{ row.rec }}</td>
+      <td>{{ row.phase }}</td>
+      <td>{{ row.effort }}</td>
+      <td>{{ row.lcp }}</td>
+      <td>{{ row.tbt }}</td>
+      <td>{{ row.cls }}</td>
+      <td>{{ row.gain }}</td>
+      <td class="mono">{{ row.score_gain|default(row.gain) }}</td>
+      <td><span class="badge bao">{{ row.pri }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="two" style="margin-top:1rem">
+    <div class="zone r"><div class="zt">Immediate action</div><div class="zb">Address NO-GO / CONDITIONAL drivers before scale events. Prioritise LCP + TBT per RCA ordering and navigation findings.</div></div>
+    <div class="zone b"><div class="zt">Governance</div><div class="zb">Track budgets in CI; weekly synthetic runs on top templates; rollback on regression against SLA bands in the threshold matrix.</div></div>
+  </div>
+</section>
+</main>
+
+<script id="report-payload" type="application/json">{{ REPORT_DATA_JSON | safe }}</script>
+<script>
+const HAS_NAV_TIMING = {% if has_nav_timing %}true{% else %}false{% endif %};
+const REPORT_DATA = JSON.parse(document.getElementById('report-payload').textContent);
+const CHART_DEFAULTS = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false } } };
+const TICK_STYLE = { font: { size: 9, family: "'DM Mono', monospace" }, color: '#6B6860' };
+
+function lineRefDataset(label, value, color, dash, labels) {
+  return { type: 'line', label, data: (labels || []).map(() => value), borderColor: color, borderDash: dash || [], borderWidth: 2, pointRadius: 0, fill: false, order: 0 };
+}
+
+function go(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.nb').forEach(b => b.classList.remove('on'));
+  const panel = document.getElementById('p-' + id);
+  if (panel) panel.classList.add('on');
+  const btn = document.querySelector('.nb[data-tab="' + id + '"]');
+  if (btn) btn.classList.add('on');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+document.querySelectorAll('.nb').forEach(b => b.addEventListener('click', () => go(b.getAttribute('data-tab'))));
+
+document.addEventListener('DOMContentLoaded', function() {
+  const C = REPORT_DATA.charts;
+  if (!C || typeof Chart === 'undefined') return;
+
+  const perfLabels = C.perf_dist.labels;
+  new Chart(document.getElementById('chart-perf'), {
+    data: {
+      labels: perfLabels,
+      datasets: [
+        { type: 'bar', label: 'Perf', data: C.perf_dist.data, backgroundColor: C.perf_dist.colors, order: 2 },
+        lineRefDataset('SLA 85', 85, '#2D6A2D', [6, 6], perfLabels),
+        lineRefDataset('Floor 50', 50, '#B45309', [4, 4], perfLabels),
+      ],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      plugins: { ...CHART_DEFAULTS.plugins, legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 8, family: "'DM Mono', monospace" } } } },
+      scales: { x: { ticks: { display: false } }, y: { min: 0, max: 100, ticks: TICK_STYLE } },
+    },
+  });
+
+  new Chart(document.getElementById('chart-fcp'), {
+    type: 'bar',
+    data: { labels: C.fcp_h.labels, datasets: [{ data: C.fcp_h.data, backgroundColor: ['#2D6A2D', '#B45309', '#C0392B'] }] },
+    options: { indexAxis: 'y', ...CHART_DEFAULTS, scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } } },
+  });
+  new Chart(document.getElementById('chart-cls-h'), {
+    type: 'bar',
+    data: { labels: C.cls_h.labels, datasets: [{ data: C.cls_h.data, backgroundColor: ['#2D6A2D', '#B45309', '#C0392B'] }] },
+    options: { indexAxis: 'y', ...CHART_DEFAULTS, scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } } },
+  });
+
+  const lcpLbl = C.lcp_pages.labels;
+  new Chart(document.getElementById('chart-lcp-bar'), {
+    data: {
+      labels: lcpLbl,
+      datasets: [
+        { type: 'bar', label: 'LCP ms', data: C.lcp_pages.data, backgroundColor: C.lcp_pages.colors, order: 2 },
+        lineRefDataset('Good 2500', 2500, '#2D6A2D', [6, 6], lcpLbl),
+        lineRefDataset('NI 4000', 4000, '#B45309', [4, 4], lcpLbl),
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      ...CHART_DEFAULTS,
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 8, family: "'DM Mono', monospace" } } } },
+      scales: { x: { ticks: TICK_STYLE }, y: { ticks: { ...TICK_STYLE, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } } },
+    },
+  });
+
+  const tbtLbl = C.tbt_pages.labels;
+  new Chart(document.getElementById('chart-tbt-bar'), {
+    data: {
+      labels: tbtLbl,
+      datasets: [
+        { type: 'bar', label: 'TBT ms', data: C.tbt_pages.data, backgroundColor: '#C0392B', order: 2 },
+        lineRefDataset('Good 200', 200, '#2D6A2D', [6, 6], tbtLbl),
+        lineRefDataset('NI 600', 600, '#B45309', [4, 4], tbtLbl),
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      ...CHART_DEFAULTS,
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 8, family: "'DM Mono', monospace" } } } },
+      scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } },
+    },
+  });
+
+  new Chart(document.getElementById('chart-cls-bar'), {
+    type: 'bar',
+    data: { labels: C.cls_pages.labels, datasets: [{ data: C.cls_pages.data, backgroundColor: C.cls_pages.colors }] },
+    options: { indexAxis: 'y', ...CHART_DEFAULTS, scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } } },
+  });
+
+  const lb = REPORT_DATA.load_breakdown;
+  new Chart(document.getElementById('chart-load-break'), {
+    type: 'bar',
+    data: { labels: lb.labels, datasets: [{ data: lb.data, backgroundColor: ['#1A4E8C', '#B45309', '#B45309', '#C0392B'] }] },
+    options: { indexAxis: 'y', ...CHART_DEFAULTS, scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } } },
+  });
+
+  if (HAS_NAV_TIMING && C.nav && document.getElementById('chart-nav-pl')) {
+    const wf = C.nav.waterfall;
+    if (wf && wf.labels && document.getElementById('chart-nav-waterfall')) {
+      new Chart(document.getElementById('chart-nav-waterfall'), {
+        type: 'bar',
+        data: {
+          labels: wf.labels,
+          datasets: [{
+            data: wf.data,
+            backgroundColor: ['#2D6A2D', '#A3D17E', '#6FA3E0', '#F5D78A', '#B45309', '#C0392B'],
+          }],
+        },
+        options: { ...CHART_DEFAULTS, scales: { y: { beginAtZero: true, ticks: TICK_STYLE }, x: { ticks: TICK_STYLE } } },
+      });
+    }
+    const dg = C.nav.dom_gap;
+    if (dg && dg.labels && dg.labels.length && document.getElementById('chart-nav-dom-gap')) {
+      new Chart(document.getElementById('chart-nav-dom-gap'), {
+        type: 'bar',
+        data: {
+          labels: dg.labels,
+          datasets: [
+            { label: 'DOM complete', data: dg.dom_complete, backgroundColor: '#1A4E8C', stack: 's' },
+            { label: 'Post-DOM gap', data: dg.gap, backgroundColor: '#C0392B', stack: 's' },
+          ],
+        },
+        options: {
+          indexAxis: 'y',
+          ...CHART_DEFAULTS,
+          plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 8 } } } },
+          scales: { x: { stacked: true, ticks: TICK_STYLE }, y: { stacked: true, ticks: TICK_STYLE } },
+        },
+      });
+    }
+    if (C.nav.pl_dist) {
+      new Chart(document.getElementById('chart-nav-pl'), {
+        type: 'bar',
+        data: { labels: C.nav.pl_dist.labels, datasets: [{ data: C.nav.pl_dist.data, backgroundColor: C.nav.pl_dist.colors }] },
+        options: { ...CHART_DEFAULTS, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { ticks: TICK_STYLE } } },
+      });
+    }
+    new Chart(document.getElementById('chart-nav-phase'), {
+      type: 'doughnut',
+      data: { labels: C.nav.phase_donut.labels, datasets: [{ data: C.nav.phase_donut.data, backgroundColor: ['#2D6A2D', '#A3D17E', '#6FA3E0', '#F5D78A', '#B45309', '#C0392B', '#6B6860'] }] },
+      options: { ...CHART_DEFAULTS, plugins: { legend: { display: true, position: 'right' } } },
+    });
+    new Chart(document.getElementById('chart-nav-pl-pages'), {
+      type: 'bar',
+      data: { labels: C.nav.pl_per_page.labels, datasets: [{ data: C.nav.pl_per_page.data, backgroundColor: C.nav.pl_per_page.data.map(v => v > 5000 ? '#C0392B' : v > 2000 ? '#B45309' : '#2D6A2D') }] },
+      options: { indexAxis: 'y', ...CHART_DEFAULTS, scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } } },
+    });
+    new Chart(document.getElementById('chart-nav-fid'), {
+      type: 'bar',
+      data: { labels: C.nav.fid_dist.labels, datasets: [{ data: C.nav.fid_dist.data, backgroundColor: ['#2D6A2D', '#B45309', '#C0392B'] }] },
+      options: { ...CHART_DEFAULTS, scales: { y: { beginAtZero: true }, x: { ticks: TICK_STYLE } } },
+    });
+    new Chart(document.getElementById('chart-nav-fid-pages'), {
+      type: 'bar',
+      data: { labels: C.nav.fid_pages.labels, datasets: [{ data: C.nav.fid_pages.data, backgroundColor: '#C0392B' }] },
+      options: { indexAxis: 'y', ...CHART_DEFAULTS, scales: { x: { ticks: TICK_STYLE }, y: { ticks: TICK_STYLE } } },
+    });
+  }
+});
+</script>
+</body>
+</html>

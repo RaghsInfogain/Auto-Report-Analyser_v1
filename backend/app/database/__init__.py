@@ -34,8 +34,25 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """Initialize database tables"""
+    from app.database import run_analysis_cache  # noqa: F401 — register cache tables
+
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_schema_patches()
+    _repair_persisted_storage_paths()
+
+
+def _repair_persisted_storage_paths():
+    """Fix stored file paths when the repo was moved on disk."""
+    try:
+        from app.utils.storage_paths import repair_persisted_paths
+
+        db = SessionLocal()
+        try:
+            repair_persisted_paths(db)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: could not repair persisted storage paths: {e}")
 
 
 def _ensure_sqlite_schema_patches():

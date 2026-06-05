@@ -3,9 +3,20 @@ from __future__ import annotations
 
 # Hard caps so a single run cannot pin workers forever
 REPORT_WAIT_MIN_SECONDS = 180.0
-REPORT_WAIT_MAX_SECONDS = 10800.0  # 3 hours
+REPORT_WAIT_MAX_SECONDS = 21600.0  # 6 hours (very large JTL runs)
 
 LARGE_RUN_BYTES = 500 * 1024 * 1024  # 500 MiB — user-requested threshold for longer waits
+LARGE_RUN_HTML_ONLY_BYTES = 100 * 1024 * 1024  # 100 MiB — skip PDF/PPT above this size
+LARGE_RUN_HTML_ONLY_RECORDS = 1_000_000  # skip PDF/PPT for very high sample counts
+
+
+def should_skip_pdf_ppt_reports(total_bytes: int, total_records: int = 0) -> bool:
+    """Large JMeter runs generate HTML only — PDF/PPT are too slow and memory-heavy."""
+    if total_bytes >= LARGE_RUN_HTML_ONLY_BYTES:
+        return True
+    if total_records >= LARGE_RUN_HTML_ONLY_RECORDS:
+        return True
+    return False
 
 
 def compute_report_wait_timeout_seconds(
@@ -27,7 +38,9 @@ def compute_report_wait_timeout_seconds(
         elif mb <= 500:
             t = 280.0 + (mb - 200.0) * 1.2
         else:
-            t = 640.0 + (mb - 500.0) * 3.0
+            t = 640.0 + (mb - 500.0) * 4.0
+        if mb > 10_000:
+            t = max(t, 7200.0 + (mb - 10_000.0) * 0.5)
 
     if total_records > 2_000_000:
         t = max(t, 400.0 + total_records / 8000.0)
@@ -54,6 +67,21 @@ def estimate_run_total_bytes(files) -> int:
         except OSError:
             total += int(getattr(f, "file_size", 0) or 0)
     return total
+
+
+def format_duration_human(seconds: float) -> str:
+    """Human-readable duration for UI ETA labels."""
+    s = int(max(0, round(seconds)))
+    if s < 60:
+        return f"~{s} sec"
+    if s < 3600:
+        m = max(1, s // 60)
+        return f"~{m} min"
+    h = s // 3600
+    m = (s % 3600) // 60
+    if m:
+        return f"~{h}h {m}m"
+    return f"~{h}h"
 
 
 def estimate_run_max_record_count(files) -> int:

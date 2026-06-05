@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from app.report_generator.combined_load_report_analysis import _distribution_sla_tone_err_pct
+from app.report_generator.experience_recommendations_html import recommendations_panel_html as _build_recommendations_panel_html
 from app.report_generator.deep_assessment import performance_grading_methodology_html
 
 _LOGO_PATH = Path(__file__).resolve().parent / "static" / "autoload_ai_logo.png"
@@ -62,6 +62,21 @@ body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-heigh
 .tx-pct-table{font-size:10px;min-width:1220px;width:100%}
 .tx-pct-table th,.tx-pct-table td{text-align:right;white-space:nowrap}
 .tx-pct-table th:first-child,.tx-pct-table td:first-child{text-align:left;white-space:normal;max-width:300px;word-break:break-word}
+.lat-reason{font-size:0.88rem;line-height:1.45;max-width:32rem;color:var(--gray);font-weight:500;white-space:normal;text-align:left}
+.rec-vital-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem;margin-top:0.75rem}
+.rec-vital{border:1px solid var(--rule);border-radius:4px;padding:0.85rem 1rem;background:var(--cream)}
+.rec-vital .rv-name{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--gray);margin-bottom:0.35rem}
+.rec-vital .rv-good{font-size:12px;font-weight:600;color:var(--ink);margin-bottom:0.35rem}
+.rec-vital p{font-size:12px;color:var(--gray);line-height:1.45}
+.rec-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0.85rem;margin-top:0.65rem}
+.rec-card{border:1px solid var(--rule);border-radius:4px;padding:1rem 1.1rem;background:var(--paper)}
+.rec-card h4{font-family:var(--serif);font-size:1rem;margin-bottom:0.5rem}
+.rec-card ul{margin:0;padding-left:1.1rem;font-size:12px;color:var(--gray);line-height:1.5}
+.rec-cadence-wrap{overflow-x:auto;margin-top:0.65rem;border:1px solid var(--rule);border-radius:4px}
+.rec-cadence-wrap .data-table{font-size:10px;min-width:720px}
+.rec-cadence-wrap .data-table th,.rec-cadence-wrap .data-table td{white-space:normal;vertical-align:top}
+.rec-maturity{display:grid;grid-template-columns:1fr 1fr;gap:0.85rem;margin-top:0.65rem}
+@media(max-width:768px){.rec-maturity{grid-template-columns:1fr}}
 .verdict-strip{display:flex;align-items:flex-start;gap:1rem;margin-top:2rem;padding-top:1.5rem;border-top:1px solid rgba(245,243,238,.12)}
 .verdict-pill{background:var(--red);color:#fff;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.08em;padding:5px 14px;border-radius:2px}
 .verdict-pill.amber{background:var(--amber)}
@@ -112,6 +127,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-heigh
 .data-table .red{color:var(--red);font-weight:600}
 .data-table .amber{color:var(--amber);font-weight:600}
 .data-table .green{color:var(--green)}
+.data-table td.row-label{font-weight:600;color:var(--ink);white-space:nowrap;font-size:10px}
 .badge{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.06em;padding:2px 8px;border-radius:1px;white-space:nowrap;font-weight:500}
 .badge.red{background:var(--red);color:#fff}
 .badge.amber{background:var(--amber);color:#fff}
@@ -285,7 +301,7 @@ function show(id) {
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   const btns=[...document.querySelectorAll('.nav-btn')];
-  const ids=['overview','scorecard','rt','throughput','errors','apdex','rca','capacity'];
+  const ids=['overview','scorecard','rt','throughput','errors','apdex','rca','capacity','recommendations'];
   const idx = ids.indexOf(id);
   if(idx>=0 && btns[idx]) btns[idx].classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
@@ -739,6 +755,29 @@ def render_combined_load_report_html(
     zp2 = str(payload.get("zones_preamble") or "").strip()
     zones_preamble_block = f'<p class="section-desc">{_e(zp2)}</p>' if zp2 else ""
 
+    vbm = payload.get("vu_band_methodology") or {}
+    vbm_summary = str(vbm.get("summary_rules") or "").strip()
+    vbm_bands = vbm.get("bands") if isinstance(vbm.get("bands"), list) else []
+    vu_meth_rows = ""
+    for br in vbm_bands:
+        if not isinstance(br, dict):
+            continue
+        lo = br.get("vu_lo")
+        hi = br.get("vu_hi")
+        vu_meth_rows += f"""<tr><td>{_e(br.get("band_label"))}</td><td class="mono">{_e(str(lo))}–{_e(str(hi))}</td><td class="lat-reason">{_e(br.get("reason"))}</td></tr>\n"""
+    vu_meth_html = ""
+    if vbm_summary or vu_meth_rows:
+        vu_meth_html = (
+            '<div class="section" id="section-vu-bands-method">\n'
+            '    <div class="section-label">Methodology</div>\n'
+            '    <h2 class="section-title">Why these concurrent-user (VU) bands?</h2>\n'
+            f'    <p class="section-desc">{_e(vbm_summary)}</p>\n'
+            '    <table class="data-table"><thead><tr><th>Band label</th><th>VU range (inclusive)</th>'
+            '<th>Why this window exists</th></tr></thead><tbody>'
+            + vu_meth_rows
+            + "</tbody></table>\n  </div>\n"
+        )
+
     title_line = _e(meta.get("title_line") or "Application")
     report_title = _e(meta.get("report_title") or "Load Test Report")
     subtitle = _e(meta.get("subtitle") or "")
@@ -752,6 +791,7 @@ def render_combined_load_report_html(
         ("apdex", "Apdex &amp; UX"),
         ("rca", "Root Cause"),
         ("capacity", "Capacity &amp; Plan"),
+        ("recommendations", "Recommendations"),
     ]
     nav_html = "".join(
         f"""<button class="nav-btn{" active" if k == "overview" else ""}" onclick="show('{k}')">{lab}</button>\n"""
@@ -861,15 +901,23 @@ def render_combined_load_report_html(
                     "<tr><td>"
                     + name
                     + "</td>"
-                    + "".join('<td class="mono">—</td>' for _ in range(11))
-                    + _row_band_cells(r)
+                    + "".join('<td class="mono">—</td>' for _ in range(10))
                     + f'<td class="mono dist-cell {gt}" title="{gtitle}">{gl}</td>'
+                    + _row_band_cells(r)
                     + f'<td class="mono">{np_}</td>'
                     f'<td class="mono dist-cell {ft_}">{nf_}</td></tr>'
                 )
             else:
                 at = str(r.get("avg_tone") or "neu")
                 p9t = str(r.get("p90_tone") or "neu")
+                mnt = str(r.get("min_tone") or "neu")
+                p50t = str(r.get("p50_tone") or "neu")
+                p60t = str(r.get("p60_tone") or "neu")
+                p70t = str(r.get("p70_tone") or "neu")
+                p80t = str(r.get("p80_tone") or "neu")
+                p95t = str(r.get("p95_tone") or "neu")
+                p99t = str(r.get("p99_tone") or "neu")
+                maxt = str(r.get("max_tone") or "neu")
                 ft = str(r.get("fail_tone") or "neu")
                 gt = str(r.get("grade_tone") or "neu")
                 gl = _e(str(r.get("grade") or "—"))
@@ -881,20 +929,19 @@ def render_combined_load_report_html(
                 )
                 tx_body_parts.append(
                     f"<tr><td>{name}</td>"
-                    f'<td class="mono">{int(r["min"]):,}</td>'
-                    f'<td class="mono">{int(r["median"]):,}</td>'
+                    f'<td class="mono dist-cell {mnt}">{int(r["min"]):,}</td>'
                     f'<td class="mono dist-cell {at}">{int(r["avg"]):,}</td>'
-                    f'<td class="mono">{int(r["p50"]):,}</td>'
-                    f'<td class="mono">{int(r["p60"]):,}</td>'
-                    f'<td class="mono">{int(r["p70"]):,}</td>'
-                    f'<td class="mono">{int(r["p80"]):,}</td>'
+                    f'<td class="mono dist-cell {p50t}">{int(r["p50"]):,}</td>'
+                    f'<td class="mono dist-cell {p60t}">{int(r["p60"]):,}</td>'
+                    f'<td class="mono dist-cell {p70t}">{int(r["p70"]):,}</td>'
+                    f'<td class="mono dist-cell {p80t}">{int(r["p80"]):,}</td>'
                     f'<td class="mono dist-cell {p9t}">{int(r["p90"]):,}</td>'
-                    f'<td class="mono">{int(r["p95"]):,}</td>'
-                    f'<td class="mono">{int(r["p99"]):,}</td>'
-                    f'<td class="mono">{int(r["max"]):,}</td>'
-                    + _row_band_cells(r)
+                    f'<td class="mono dist-cell {p95t}">{int(r["p95"]):,}</td>'
+                    f'<td class="mono dist-cell {p99t}">{int(r["p99"]):,}</td>'
+                    f'<td class="mono dist-cell {maxt}">{int(r["max"]):,}</td>'
                     + f'<td class="mono dist-cell {gt}" title="{gtitle}">{gl}</td>'
-                    f'<td class="mono">{int(r.get("pass") or 0)}</td>'
+                    + _row_band_cells(r)
+                    + f'<td class="mono">{int(r.get("pass") or 0)}</td>'
                     f'<td class="mono dist-cell {ft}">{int(r.get("fail") or 0)}</td></tr>'
                 )
         tx_pct_html = (
@@ -909,11 +956,11 @@ def render_combined_load_report_html(
             + '</p>\n'
             '    <div class="tx-pct-wrap">\n'
             f'    <table class="data-table tx-pct-table" style="min-width:{tx_table_min_w}px">\n'
-            '    <thead><tr><th>Name</th><th>Min</th><th>Median</th><th>Average</th>'
+            '    <thead><tr><th>Name</th><th>Min</th><th>Average</th>'
             "<th>P50</th><th>P60</th><th>P70</th><th>P80</th><th>P90</th><th>P95</th><th>P99</th><th>Max</th>"
-            + band_th
             + '<th title="All samples for this row; same weighted score (30/25/25/20) as main scorecard">Overall</th>'
-            "<th>Pass</th><th>Fail</th></tr></thead>\n"
+            + band_th
+            + "<th>Pass</th><th>Fail</th></tr></thead>\n"
             "    <tbody>"
             + "".join(tx_body_parts)
             + "</tbody>\n    </table>\n    </div>\n    </div>\n"
@@ -940,11 +987,12 @@ def render_combined_load_report_html(
     for lr in lat_rows:
         bdg = str(lr.get("badge") or "gray")
         badge_html = f'<span class="badge {bdg}">{_e(lr.get("badge_text"))}</span>'
+        dr = _e(str(lr.get("diagnosis_reason") or "").strip())
         lat_body += f"""<tr><td>{_e(lr.get("band"))}</td>
         <td class="mono">{lr.get("tcp_med", 0)}ms</td><td class="mono">{lr.get("tcp_p90", 0)}ms</td>
         <td class="mono">{lr.get("ttfb_med", 0)}ms</td><td class="mono">{lr.get("ttfb_p90", 0)}ms</td>
         <td class="mono">{lr.get("elapsed_med", 0)}ms</td><td class="mono">{lr.get("server_med", 0)}ms</td>
-        <td>{badge_html}</td></tr>\n"""
+        <td>{badge_html}</td><td class="lat-reason">{dr}</td></tr>\n"""
 
     tp_kpis = payload.get("throughput_kpis") or []
     tp_k_html = "".join(
@@ -978,14 +1026,27 @@ def render_combined_load_report_html(
     healthy_rows = sc.get("healthy") or []
     crit_tbl = ""
     for r in crit_rows:
-        crit_tbl += f"""<tr><td>{_e(r.get("tx"))}</td><td class="mono">{r.get("samples", 0):,}</td><td class="mono">{r.get("mean", 0)}</td>
-        <td class="mono">{r.get("p90", 0)}</td><td class="red">{r.get("err_pct", 0)}%</td><td class="mono">{r.get("apdex", 0)}</td>
-        <td><span class="badge red">Critical</span></td></tr>\n"""
+        p90v = r.get("p90", 0)
+        errv = r.get("err_pct", 0)
+        meanv = r.get("mean", 0)
+        basis = (
+            f"P90 {p90v} ms, mean {meanv} ms, errors {errv}% — exceeds this report's transaction health gates "
+            "(same classification as the controller mix chart)."
+        )
+        crit_tbl += f"""<tr><td>{_e(r.get("tx"))}</td><td class="mono">{r.get("samples", 0):,}</td><td class="mono">{meanv}</td>
+        <td class="mono">{p90v}</td><td class="red">{errv}%</td><td class="mono">{r.get("apdex", 0)}</td>
+        <td><span class="badge red">Critical</span></td><td class="lat-reason">{_e(basis)}</td></tr>\n"""
     ok_tbl = ""
     for r in healthy_rows:
-        ok_tbl += f"""<tr><td>{_e(r.get("tx"))}</td><td class="mono">{r.get("samples", 0):,}</td><td class="mono">{r.get("mean", 0)}</td>
-        <td class="mono">{r.get("p90", 0)}</td><td class="green">{r.get("err_pct", 0)}%</td><td class="mono">{r.get("apdex", 0)}</td>
-        <td><span class="badge green">Healthy</span></td></tr>\n"""
+        p90v = r.get("p90", 0)
+        errv = r.get("err_pct", 0)
+        meanv = r.get("mean", 0)
+        basis = (
+            f"P90 {p90v} ms, mean {meanv} ms, errors {errv}% — within the healthy band for this controller for this run."
+        )
+        ok_tbl += f"""<tr><td>{_e(r.get("tx"))}</td><td class="mono">{r.get("samples", 0):,}</td><td class="mono">{meanv}</td>
+        <td class="mono">{p90v}</td><td class="green">{errv}%</td><td class="mono">{r.get("apdex", 0)}</td>
+        <td><span class="badge green">Healthy</span></td><td class="lat-reason">{_e(basis)}</td></tr>\n"""
 
     pg = payload.get("performance_grading")
     pg_html = _render_performance_grading_html(pg if isinstance(pg, dict) else None)
@@ -1048,6 +1109,8 @@ def render_combined_load_report_html(
 
     phase_list = payload.get("phase_list") or []
     phases_html = _render_phases(phase_list if isinstance(phase_list, list) else [])
+
+    recommendations_panel_html = _build_recommendations_panel_html(title_line, report_context="jmeter")
 
     footer = payload.get("footer") or {}
     chart_json = json.dumps(ch, separators=(",", ":"), allow_nan=False)
@@ -1134,6 +1197,7 @@ def render_combined_load_report_html(
     {zones_preamble_block}
     {zone_html}
   </div>
+  {vu_meth_html}
   <div class="section">
     <div class="section-label">Test Event Timeline</div>
     <h2 class="section-title">Key events during the test</h2>
@@ -1161,9 +1225,9 @@ def render_combined_load_report_html(
     <div class="chart-card"><div class="chart-wrap" style="height:240px"><canvas id="scorecardDonut"></canvas></div></div>
     <div>
       <h3 class="section-title" style="font-size:1.05rem">Critical transactions</h3>
-      <table class="data-table"><thead><tr><th>Transaction</th><th>Samples</th><th>Mean</th><th>P90</th><th>Err%</th><th>Apdex</th><th>Status</th></tr></thead><tbody>{crit_tbl}</tbody></table>
+      <table class="data-table"><thead><tr><th>Transaction</th><th>Samples</th><th>Mean</th><th>P90</th><th>Err%</th><th>Apdex</th><th>Status</th><th>Why this status</th></tr></thead><tbody>{crit_tbl}</tbody></table>
       <h3 class="section-title" style="font-size:1.05rem;margin-top:1rem">Healthy sample (top)</h3>
-      <table class="data-table"><thead><tr><th>Transaction</th><th>Samples</th><th>Mean</th><th>P90</th><th>Err%</th><th>Apdex</th><th>Status</th></tr></thead><tbody>{ok_tbl}</tbody></table>
+      <table class="data-table"><thead><tr><th>Transaction</th><th>Samples</th><th>Mean</th><th>P90</th><th>Err%</th><th>Apdex</th><th>Status</th><th>Why this status</th></tr></thead><tbody>{ok_tbl}</tbody></table>
     </div>
   </div>
 </div></div>
@@ -1214,7 +1278,7 @@ def render_combined_load_report_html(
     <h2 class="section-title">Where does the time go?</h2>
     {chart_obs("lat_decomp")}
     <table class="data-table">
-      <thead><tr><th>Load band</th><th>TCP connect (med)</th><th>TCP P90</th><th>TTFB (med)</th><th>TTFB P90</th><th>Total elapsed (med)</th><th>Server process (med)</th><th>Diagnosis</th></tr></thead>
+      <thead><tr><th>Load band</th><th>TCP connect (med)</th><th>TCP P90</th><th>TTFB (med)</th><th>TTFB P90</th><th>Total elapsed (med)</th><th>Server process (med)</th><th>Diagnosis</th><th>Why this diagnosis</th></tr></thead>
       <tbody>{lat_body}</tbody>
     </table>
   </div>
@@ -1318,6 +1382,12 @@ def render_combined_load_report_html(
       <div class="cap-sub">{_e(cap.get("target_sub") or "")}</div>
     </div>
   </div>
+  <p class="section-desc" style="margin-top:0.85rem;font-size:0.9rem;color:var(--gray);max-width:56rem">
+    <strong>Reading this block:</strong> Proven safe capacity is the top of the last dynamic VU band where mean RT, P95, and error rate
+    all stayed within your Target Values. If marginal / next tier shows little or no range, no band met the “marginal” rules between safe and stress.
+    “Observed peak” is the stress / maximum-concurrency slice in this dataset. These VU cut-offs come from the same per-bin analysis as the charts,
+    but they are not the same summation as Load-correlated Zone A/B/C (Overview) and not milliseconds.
+  </p>
   <div class="section" id="section-resolution-plan">
     <div class="section-label">Remediation roadmap</div>
     <h2 class="section-title">Phased optimisation plan</h2>
@@ -1333,6 +1403,7 @@ def render_combined_load_report_html(
     </table>
   </div>
 </div></div>
+{recommendations_panel_html}
 
 <div style="background:var(--ink);color:rgba(245,243,238,.4);padding:1.5rem 3rem;font-family:var(--mono);font-size:9px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;margin-top:3rem">
   <div style="display:flex;flex-direction:column;gap:0.35rem">

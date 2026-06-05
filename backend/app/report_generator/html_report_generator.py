@@ -72,6 +72,99 @@ class HTMLReportGenerator:
         return f"{sec:.{decimals}f} s"
     
     @staticmethod
+    def _generate_feature_extraction_panel(fe: Any) -> str:
+        """
+        Supplemental panel: observational outliers + robust means vs unchanged primary metrics.
+        """
+        if not fe or not isinstance(fe, dict):
+            return ""
+        disc = fe.get("disclaimer") or {}
+        pop = fe.get("populations") or {}
+        out = fe.get("outlier_observations") or {}
+        hints = fe.get("distribution_shape_hints") or {}
+        rob = fe.get("supplemental_robust_comparison") or {}
+        fences = out.get("fences_ms") or {}
+
+        def esc(x: Any) -> str:
+            return html.escape(str(x)) if x is not None else ""
+
+        def fmt_ms(v: Any) -> str:
+            if v is None:
+                return "—"
+            try:
+                return f"{float(v) / 1000.0:.3f}s ({float(v):,.0f} ms)"
+            except (TypeError, ValueError):
+                return esc(v)
+
+        primary_line = esc(disc.get("primary_metrics", ""))
+        block_line = esc(disc.get("this_block", ""))
+        pop_note = esc(pop.get("note", ""))
+        hint_note = esc(hints.get("note", ""))
+        rob_note = esc(rob.get("interpretation", ""))
+
+        wlim = rob.get("winsorize_limits") or {}
+        trim_p = rob.get("trim_proportion_each_tail")
+
+        m_gt_p90 = hints.get("mean_exceeds_p90")
+        tail_callout = ""
+        if m_gt_p90 is True:
+            tail_callout = (
+                '<p class="latency-analytics-callout"><strong>Shape signal:</strong> Mean response time is above the P90 — '
+                "a minority of much slower requests is stretching the average. Primary metrics still include every eligible row; "
+                "use supplemental means only as a comparison.</p>"
+            )
+
+        tr = pop.get("total_requests_in_run", "—")
+        rw = pop.get("rows_used_for_response_time_aggregates", "—")
+        tr_s = f"{tr:,}" if isinstance(tr, int) else esc(tr)
+        rw_s = f"{rw:,}" if isinstance(rw, int) else esc(rw)
+
+        return f'''
+<section id="section-latency-analytics" class="section latency-analytics-section">
+    <h2>Latency distribution analytics</h2>
+    <p class="muted"><strong>Primary metrics</strong> in this report (mean, percentiles, SLA, error rate, scoring) use the full, unfiltered execution data for their definitions. Nothing here replaces those values.</p>
+    <div class="latency-analytics-disclaimer">
+        <p><strong>Raw / official statistics:</strong> {primary_line}</p>
+        <p><strong>This section:</strong> {block_line}</p>
+    </div>
+    <p class="muted small">{pop_note}</p>
+    <ul class="latency-analytics-meta">
+        <li>Total requests in run: <strong>{tr_s}</strong></li>
+        <li>Rows used for response-time aggregates (same as primary): <strong>{rw_s}</strong></li>
+    </ul>
+    <h3>Observational outliers (Tukey IQR)</h3>
+    <p class="muted small">Flagged samples are counted for visibility only — they are <em>not</em> removed from mean, percentiles, or SLA.</p>
+    <table class="latency-analytics-table">
+        <tbody>
+            <tr><td>Method</td><td>{esc(out.get("method", ""))} (k={esc(out.get("k", ""))})</td></tr>
+            <tr><td>RT rows analyzed</td><td>{out.get("sample_count", 0):,}</td></tr>
+            <tr><td>Above upper fence</td><td>{out.get("count_above_upper_fence", 0):,}</td></tr>
+            <tr><td>Below lower fence</td><td>{out.get("count_below_lower_fence", 0):,}</td></tr>
+            <tr><td>Total flagged either tail</td><td>{out.get("count_flagged_either_tail", 0):,} ({100.0 * float(out.get("fraction_flagged") or 0):.2f}%)</td></tr>
+            <tr><td>Lower fence</td><td>{fmt_ms(fences.get("lower_fence_ms"))}</td></tr>
+            <tr><td>Upper fence</td><td>{fmt_ms(fences.get("upper_fence_ms"))}</td></tr>
+        </tbody>
+    </table>
+    <h3>Distribution hints (vs primary stats)</h3>
+    <table class="latency-analytics-table">
+        <tbody>
+            <tr><td>Primary mean (official)</td><td>{fmt_ms(hints.get("primary_mean_ms"))}</td></tr>
+            <tr><td>Primary P90 (official)</td><td>{fmt_ms(hints.get("primary_p90_ms"))}</td></tr>
+        </tbody>
+    </table>
+    {tail_callout}
+    <p class="muted small">{hint_note}</p>
+    <h3>Supplemental robust comparison only</h3>
+    <p class="muted small">{rob_note}</p>
+    <table class="latency-analytics-table">
+        <tbody>
+            <tr><td>Trimmed mean ({trim_p if trim_p is not None else "—"} / tail)</td><td>{fmt_ms(rob.get("trimmed_mean_ms"))}</td></tr>
+            <tr><td>Winsorized mean (limits {esc(wlim.get("lower_tail_fraction"))} / {esc(wlim.get("upper_tail_fraction"))} tails)</td><td>{fmt_ms(rob.get("winsorized_mean_ms"))}</td></tr>
+        </tbody>
+    </table>
+</section>'''
+
+    @staticmethod
     def generate_jmeter_html_report(
         metrics: Dict[str, Any],
         filename: str = "performance_report.html",
@@ -227,6 +320,10 @@ class HTMLReportGenerator:
         update_progress(40, "Generating test overview...")
         test_overview = HTMLReportGenerator._generate_test_overview(total_samples, test_duration_hours, throughput, success_rate)
         
+        feature_panel = HTMLReportGenerator._generate_feature_extraction_panel(
+            summary.get("feature_extraction")
+        )
+        
         update_progress(50, "Generating performance tables...")
         tx_sla_detail = (summary.get("transaction_sla_p90_peak") or {}).get("details") or []
         sla_by_label = {str(d.get("label")): d.get("sla_pass") for d in tx_sla_detail}
@@ -291,6 +388,7 @@ class HTMLReportGenerator:
         jmeter_nav_items.extend(
             [
                 ("section-test-overview", "Test overview"),
+                ("section-latency-analytics", "Latency analytics"),
                 ("section-performance-summary", "Performance summary"),
                 ("section-system-behaviour", "System behaviour"),
                 ("section-issues", "Issues"),
@@ -357,6 +455,8 @@ class HTMLReportGenerator:
         
         <!-- Test Overview -->
         {test_overview}
+        
+        {feature_panel}
         
         <!-- Performance Summary Tables -->
         {perf_tables}
@@ -4360,230 +4460,10 @@ class HTMLReportGenerator:
     
     @staticmethod
     def generate_web_vitals_html_report(metrics: Dict[str, Any], filename: str = "web_vitals_report.html") -> str:
-        """Generate HTML report for Web Vitals metrics"""
-        current_date = datetime.now().strftime("%B %d, %Y")
-        total_samples = metrics.get("total_samples", 0)
-        wv_nav = build_report_navigation_html(
-            [
-                ("section-wv-overview", "Overview"),
-                ("section-wv-details", "Detailed statistics"),
-                ("section-wv-distribution", "Performance distribution"),
-            ],
-            title="On this page",
-        )
-        
-        lcp = metrics.get("lcp", {})
-        fid = metrics.get("fid", {})
-        cls = metrics.get("cls", {})
-        fcp = metrics.get("fcp", {})
-        ttfb = metrics.get("ttfb", {})
-        summary = metrics.get("summary", {})
-        
-        def get_score_class(metric, value):
-            if metric == "lcp":
-                return "success" if value <= 2500 else "warning" if value <= 4000 else "danger"
-            elif metric == "fid":
-                return "success" if value <= 100 else "warning" if value <= 300 else "danger"
-            elif metric == "cls":
-                return "success" if value <= 0.1 else "warning" if value <= 0.25 else "danger"
-            elif metric == "fcp":
-                return "success" if value <= 1800 else "warning" if value <= 3000 else "danger"
-            elif metric == "ttfb":
-                return "success" if value <= 800 else "warning" if value <= 1800 else "danger"
-            return "warning"
-        
-        lcp_mean = lcp.get("mean", 0) or 0
-        fid_mean = fid.get("mean", 0) or 0
-        cls_mean = cls.get("mean", 0) or 0
-        fcp_mean = fcp.get("mean", 0) or 0
-        ttfb_mean = ttfb.get("mean", 0) or 0
-        
-        return f'''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Vitals Performance Report</title>
-    <style>
-        :root {{
-            --primary: #3498db;
-            --success: #27ae60;
-            --warning: #f39c12;
-            --danger: #e74c3c;
-            --text: #2c3e50;
-            --bg: #f8f9fa;
-        }}
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }}
-        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
-        .header {{ text-align: center; padding: 2rem; background: linear-gradient(135deg, var(--primary), #2980b9); color: white; border-radius: 12px; margin-bottom: 2rem; }}
-        .header h1 {{ font-size: 2.5rem; margin-bottom: 0.5rem; }}
-        .metrics-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; margin: 2rem 0; }}
-        .metric-card {{ background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-left: 4px solid var(--primary); }}
-        .metric-card.success {{ border-left-color: var(--success); }}
-        .metric-card.warning {{ border-left-color: var(--warning); }}
-        .metric-card.danger {{ border-left-color: var(--danger); }}
-        .metric-card h3 {{ font-size: 1rem; color: #666; margin-bottom: 0.5rem; }}
-        .metric-card .value {{ font-size: 2rem; font-weight: 700; }}
-        .metric-card .value.success {{ color: var(--success); }}
-        .metric-card .value.warning {{ color: var(--warning); }}
-        .metric-card .value.danger {{ color: var(--danger); }}
-        .metric-card .target {{ font-size: 0.85rem; color: #888; margin-top: 0.5rem; }}
-        .section {{ background: white; border-radius: 12px; padding: 2rem; margin: 2rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
-        .section h2 {{ color: var(--primary); margin-bottom: 1.5rem; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ padding: 1rem; text-align: left; border-bottom: 1px solid #eee; }}
-        th {{ background: var(--bg); font-weight: 600; }}
-        .footer {{ text-align: center; padding: 1.5rem; background: white; border-radius: 12px; margin-top: 2rem; }}
-    </style>
-    {report_navigation_css()}
-</head>
-<body>
-{wv_nav}
-<div class="report-main-with-nav">
-    <div class="container">
-        <div class="header" id="section-wv-overview">
-            <h1>⚡ Web Vitals Performance Report</h1>
-            <p>Core Web Vitals Analysis | {current_date}</p>
-            <p style="margin-top: 0.5rem;">Total Samples: {total_samples:,}</p>
-        </div>
-        
-        <div class="metrics-grid">
-            <div class="metric-card {get_score_class('lcp', lcp_mean)}">
-                <h3>LCP (Largest Contentful Paint)</h3>
-                <div class="value {get_score_class('lcp', lcp_mean)}">{lcp_mean:.0f}ms</div>
-                <div class="target">Target: ≤ 2500ms</div>
-            </div>
-            <div class="metric-card {get_score_class('fid', fid_mean)}">
-                <h3>FID (First Input Delay)</h3>
-                <div class="value {get_score_class('fid', fid_mean)}">{fid_mean:.0f}ms</div>
-                <div class="target">Target: ≤ 100ms</div>
-            </div>
-            <div class="metric-card {get_score_class('cls', cls_mean)}">
-                <h3>CLS (Cumulative Layout Shift)</h3>
-                <div class="value {get_score_class('cls', cls_mean)}">{cls_mean:.3f}</div>
-                <div class="target">Target: ≤ 0.1</div>
-            </div>
-            <div class="metric-card {get_score_class('fcp', fcp_mean)}">
-                <h3>FCP (First Contentful Paint)</h3>
-                <div class="value {get_score_class('fcp', fcp_mean)}">{fcp_mean:.0f}ms</div>
-                <div class="target">Target: ≤ 1800ms</div>
-            </div>
-            <div class="metric-card {get_score_class('ttfb', ttfb_mean)}">
-                <h3>TTFB (Time to First Byte)</h3>
-                <div class="value {get_score_class('ttfb', ttfb_mean)}">{ttfb_mean:.0f}ms</div>
-                <div class="target">Target: ≤ 800ms</div>
-            </div>
-        </div>
-        
-        <div class="section" id="section-wv-details">
-            <h2>📊 Detailed Statistics</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Mean</th>
-                        <th>Median</th>
-                        <th>P95</th>
-                        <th>P99</th>
-                        <th>Min</th>
-                        <th>Max</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>LCP</strong></td>
-                        <td>{lcp.get('mean', 0) or 0:.0f}ms</td>
-                        <td>{lcp.get('median', 0) or 0:.0f}ms</td>
-                        <td>{lcp.get('p95', 0) or 0:.0f}ms</td>
-                        <td>{lcp.get('p99', 0) or 0:.0f}ms</td>
-                        <td>{lcp.get('min', 0) or 0:.0f}ms</td>
-                        <td>{lcp.get('max', 0) or 0:.0f}ms</td>
-                    </tr>
-                    <tr>
-                        <td><strong>FID</strong></td>
-                        <td>{fid.get('mean', 0) or 0:.0f}ms</td>
-                        <td>{fid.get('median', 0) or 0:.0f}ms</td>
-                        <td>{fid.get('p95', 0) or 0:.0f}ms</td>
-                        <td>{fid.get('p99', 0) or 0:.0f}ms</td>
-                        <td>{fid.get('min', 0) or 0:.0f}ms</td>
-                        <td>{fid.get('max', 0) or 0:.0f}ms</td>
-                    </tr>
-                    <tr>
-                        <td><strong>CLS</strong></td>
-                        <td>{cls.get('mean', 0) or 0:.3f}</td>
-                        <td>{cls.get('median', 0) or 0:.3f}</td>
-                        <td>{cls.get('p95', 0) or 0:.3f}</td>
-                        <td>{cls.get('p99', 0) or 0:.3f}</td>
-                        <td>{cls.get('min', 0) or 0:.3f}</td>
-                        <td>{cls.get('max', 0) or 0:.3f}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>FCP</strong></td>
-                        <td>{fcp.get('mean', 0) or 0:.0f}ms</td>
-                        <td>{fcp.get('median', 0) or 0:.0f}ms</td>
-                        <td>{fcp.get('p95', 0) or 0:.0f}ms</td>
-                        <td>{fcp.get('p99', 0) or 0:.0f}ms</td>
-                        <td>{fcp.get('min', 0) or 0:.0f}ms</td>
-                        <td>{fcp.get('max', 0) or 0:.0f}ms</td>
-                    </tr>
-                    <tr>
-                        <td><strong>TTFB</strong></td>
-                        <td>{ttfb.get('mean', 0) or 0:.0f}ms</td>
-                        <td>{ttfb.get('median', 0) or 0:.0f}ms</td>
-                        <td>{ttfb.get('p95', 0) or 0:.0f}ms</td>
-                        <td>{ttfb.get('p99', 0) or 0:.0f}ms</td>
-                        <td>{ttfb.get('min', 0) or 0:.0f}ms</td>
-                        <td>{ttfb.get('max', 0) or 0:.0f}ms</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        
-        <div class="section" id="section-wv-distribution">
-            <h2>📈 Performance Distribution</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Good ✅</th>
-                        <th>Needs Improvement ⚠️</th>
-                        <th>Poor ❌</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>LCP</strong></td>
-                        <td>{summary.get('lcp_good', 0)}</td>
-                        <td>{summary.get('lcp_needs_improvement', 0)}</td>
-                        <td>{summary.get('lcp_poor', 0)}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>FID</strong></td>
-                        <td>{summary.get('fid_good', 0)}</td>
-                        <td>{summary.get('fid_needs_improvement', 0)}</td>
-                        <td>{summary.get('fid_poor', 0)}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>CLS</strong></td>
-                        <td>{summary.get('cls_good', 0)}</td>
-                        <td>{summary.get('cls_needs_improvement', 0)}</td>
-                        <td>{summary.get('cls_poor', 0)}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        
-        <div class="footer">
-            <p><strong>Report Generated:</strong> {current_date}</p>
-            <p><strong>Generated By:</strong> Raghvendra Kumar</p>
-            <p><strong>Classification:</strong> Internal</p>
-        </div>
-    </div>
-{report_navigation_js()}
-</div>
-</body>
-</html>'''
+        """Generate HTML report for Web Vitals metrics (editorial tabbed layout, same chrome as JMeter / Lighthouse)."""
+        from app.report_generator.csv_web_vitals_report_html import render_csv_web_vitals_editorial_html
+
+        return render_csv_web_vitals_editorial_html(metrics, filename)
     
     @staticmethod
     def generate_ui_performance_html_report(metrics: Dict[str, Any], filename: str = "ui_performance_report.html") -> str:

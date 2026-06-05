@@ -130,6 +130,36 @@
   font-weight: 500;
 }
 
+.progress-task-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.35rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.progress-task {
+  display: flex;
+  justify-content: space-between;
+  color: var(--report-gray);
+}
+
+.progress-task-in_progress {
+  color: var(--report-ink);
+  font-weight: 500;
+}
+
+.progress-task-completed {
+  color: #2d8a5e;
+}
+
+.progress-task-skipped {
+  color: #9ca3af;
+  font-style: italic;
+}
+
 .content-section.jmeter-upload-section {
   padding: 0.65rem 1rem;
   margin-bottom: 1rem;

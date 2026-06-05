@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import FileUpload from '../components/FileUpload';
 import TargetValuesModal from '../components/TargetValuesModal';
-import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress, RunTargets } from '../services/api';
+import { listRuns, RunInfo, generateRunReport, waitForRunReportCompletion, getRunReport, deleteRun, UploadedFile, ReportProgress, RunTargets, uploadWebVitalsBatch, getRun, formatEtaLabel } from '../services/api';
 import './WebVitalsPage.css';
 
 interface ProgressState {
@@ -31,6 +30,11 @@ const WebVitalsPage: React.FC = () => {
   const [targetModalOpen, setTargetModalOpen] = useState(false);
   const [targetModalRun, setTargetModalRun] = useState<RunInfo | null>(null);
   const [targetModalRegenerate, setTargetModalRegenerate] = useState(false);
+  const [lighthouseFiles, setLighthouseFiles] = useState<File[]>([]);
+  const [navTimingFiles, setNavTimingFiles] = useState<File[]>([]);
+  const [batchUploading, setBatchUploading] = useState(false);
+  const lhInputRef = useRef<HTMLInputElement | null>(null);
+  const navInputRef = useRef<HTMLInputElement | null>(null);
   const progressPollInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -46,7 +50,7 @@ const WebVitalsPage: React.FC = () => {
   const loadRuns = async () => {
     setLoading(true);
     try {
-      const result = await listRuns();
+      const result = await listRuns(true);
       // Filter only Web-Vitals runs
       const webVitalsRuns = result.runs.filter(run => run.categories.includes('web_vitals'));
       setRuns(webVitalsRuns);
@@ -62,7 +66,33 @@ const WebVitalsPage: React.FC = () => {
     loadRuns();
   };
 
-  const toggleExpand = (runId: string) => {
+  const handleWebVitalsBatchUpload = async () => {
+    if (lighthouseFiles.length === 0) {
+      alert('Add at least one Lighthouse results JSON file. Custom navigation timing files are optional.');
+      return;
+    }
+    setBatchUploading(true);
+    try {
+      const res = await uploadWebVitalsBatch(lighthouseFiles, navTimingFiles);
+      handleFilesUploaded(res.files);
+      const run = await getRun(res.run_id);
+      openTargetModal(run, false);
+      setLighthouseFiles([]);
+      setNavTimingFiles([]);
+      if (lhInputRef.current) lhInputRef.current.value = '';
+      if (navInputRef.current) navInputRef.current.value = '';
+    } catch (error: any) {
+      console.error('Web Vitals batch upload error:', error);
+      const detail = error.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : error.message || 'Upload failed';
+      alert(msg);
+    } finally {
+      setBatchUploading(false);
+    }
+  };
+
+  const toggleExpand = async (runId: string) => {
+    const isExpanding = !expandedRuns.has(runId);
     setExpandedRuns(prev => {
       const next = new Set(prev);
       if (next.has(runId)) {
@@ -72,6 +102,17 @@ const WebVitalsPage: React.FC = () => {
       }
       return next;
     });
+    if (isExpanding) {
+      const run = runs.find(r => r.run_id === runId);
+      if (run && !run.files) {
+        try {
+          const full = await getRun(runId);
+          setRuns(prev => prev.map(r => (r.run_id === runId ? full : r)));
+        } catch (error) {
+          console.error('Failed to load run details:', error);
+        }
+      }
+    }
   };
 
   const openTargetModal = (run: RunInfo, regenerate: boolean) => {
@@ -110,47 +151,46 @@ const WebVitalsPage: React.FC = () => {
         });
       }
 
-      const pollProgress = async () => {
-        try {
-          const progressData = await getReportProgress(run.run_id);
-          if (progressData && progressData.status === 'in_progress') {
-            setProgress({
-              runId: run.run_id,
-              stage: progressData.current_task === 'html_generation' ? 'generating' : 'analyzing',
-              message: progressData.message || 'Processing...',
-              progress: progressData
-            });
-          } else if (progressData && progressData.status === 'completed') {
-            setProgress({
-              runId: run.run_id,
-              stage: 'completed',
-              message: 'Report generation completed!',
-              progress: progressData
-            });
-            clearInterval(progressPollInterval.current!);
-            loadRuns();
-          } else if (progressData && progressData.status === 'failed') {
-            setProgress({
-              runId: run.run_id,
-              stage: 'completed',
-              message: `Error: ${progressData.message || 'Report generation failed'}`,
-              progress: progressData
-            });
-            clearInterval(progressPollInterval.current!);
-            loadRuns();
-          }
-        } catch (error) {
-          console.error('Error polling progress:', error);
+      const applyProgress = (progressData: ReportProgress) => {
+        if (progressData.status === 'in_progress') {
+          setProgress({
+            runId: run.run_id,
+            stage: progressData.current_task === 'html_generation' ? 'generating' : 'analyzing',
+            message: progressData.message || 'Processing...',
+            progress: progressData,
+          });
+        } else if (progressData.status === 'completed') {
+          setProgress({
+            runId: run.run_id,
+            stage: 'completed',
+            message: 'Report generation completed!',
+            progress: progressData,
+          });
+        } else if (progressData.status === 'failed' || progressData.status === 'stuck') {
+          setProgress({
+            runId: run.run_id,
+            stage: 'completed',
+            message: progressData.message || 'Report generation failed',
+            progress: progressData,
+          });
         }
       };
 
+      await generateRunReport(run.run_id, regenerate);
+
+      const finalProgress = await waitForRunReportCompletion(run.run_id, {
+        totalSizeBytes: run.total_size,
+        totalRecords: run.total_records,
+        onProgress: applyProgress,
+        pollIntervalMs: 2000,
+      });
+
+      applyProgress(finalProgress);
       if (progressPollInterval.current) {
         clearInterval(progressPollInterval.current);
+        progressPollInterval.current = null;
       }
-      progressPollInterval.current = setInterval(pollProgress, 2000);
-
-      await generateRunReport(run.run_id, regenerate, run.total_size, run.total_records);
-      await pollProgress();
+      loadRuns();
     } catch (error: any) {
       console.error('Error generating report:', error);
       alert(`Failed to generate report: ${error.response?.data?.detail || error.message}`);
@@ -285,12 +325,70 @@ const WebVitalsPage: React.FC = () => {
           {/* Upload Section */}
           <div className="content-section">
             <div className="section-header">
-              <h2>Upload Lighthouse Results</h2>
+              <h2>Upload results</h2>
             </div>
-            <FileUpload 
-              onFilesUploaded={handleFilesUploaded}
-              defaultCategory="web_vitals"
-            />
+            <p className="wv-upload-intro">
+              Add one or more Lighthouse report JSON files (required for the full report) and optional custom navigation timing JSON exports. All files in one upload share a single run.
+            </p>
+            <div className="wv-upload-grid">
+              <div className="wv-upload-card">
+                <h3>Lighthouse results</h3>
+                <p className="wv-upload-hint">Standard Lighthouse JSON (one or many).</p>
+                <label className="wv-file-label">
+                  <input
+                    ref={lhInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    multiple
+                    disabled={batchUploading}
+                    onChange={(e) => setLighthouseFiles(Array.from(e.target.files || []))}
+                  />
+                  <span className="wv-file-btn">Choose files</span>
+                </label>
+                {lighthouseFiles.length > 0 && (
+                  <ul className="wv-file-list">
+                    {lighthouseFiles.map((f) => (
+                      <li key={f.name + f.size}>{f.name}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="wv-upload-card">
+                <h3>Custom navigation timings</h3>
+                <p className="wv-upload-hint">Playwright-style JSON array exports (0 or many).</p>
+                <label className="wv-file-label">
+                  <input
+                    ref={navInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    multiple
+                    disabled={batchUploading}
+                    onChange={(e) => setNavTimingFiles(Array.from(e.target.files || []))}
+                  />
+                  <span className="wv-file-btn">Choose files</span>
+                </label>
+                {navTimingFiles.length > 0 && (
+                  <ul className="wv-file-list">
+                    {navTimingFiles.map((f) => (
+                      <li key={f.name + f.size}>{f.name}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <div className="wv-upload-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={batchUploading || lighthouseFiles.length === 0}
+                onClick={handleWebVitalsBatchUpload}
+              >
+                {batchUploading ? 'Uploading…' : 'Upload & continue'}
+              </button>
+            </div>
+            {recentUploads.length > 0 && (
+              <p className="wv-recent-note">Last upload: {recentUploads.length} file(s) — open the target dialog to generate the report.</p>
+            )}
           </div>
 
           {/* Progress Indicator */}
@@ -305,7 +403,10 @@ const WebVitalsPage: React.FC = () => {
                 <div className="progress-text">
                   <strong>{progress.message}</strong>
                   {progress.progress && progress.progress.overall_progress !== undefined && (
-                    <span className="progress-percent"> - {progress.progress.overall_progress}%</span>
+                    <span className="progress-percent"> — {progress.progress.overall_progress}%</span>
+                  )}
+                  {progress.progress && formatEtaLabel(progress.progress) && (
+                    <span className="progress-eta"> · Est. {formatEtaLabel(progress.progress)}</span>
                   )}
                 </div>
               </div>
@@ -441,7 +542,7 @@ const WebVitalsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {run.files.map(file => (
+                      {(run.files ?? []).map(file => (
                         <tr key={file.file_id}>
                           <td className="file-name">{file.filename}</td>
                           <td><span className="category-tag">{file.category}</span></td>
@@ -467,6 +568,7 @@ const WebVitalsPage: React.FC = () => {
         isOpen={targetModalOpen}
         runId={targetModalRun?.run_id ?? ''}
         runLabel={targetModalRun?.run_id}
+        targetProfile="web_vitals"
         onClose={() => { setTargetModalOpen(false); setTargetModalRun(null); }}
         onConfirm={handleTargetsConfirmed}
       />

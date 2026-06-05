@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import numpy as np
@@ -51,6 +51,19 @@ def _vu(d: Dict[str, Any]) -> int:
             except (TypeError, ValueError):
                 continue
     return 0
+
+
+def _effective_vu_combined_axis(d: Dict[str, Any], row_peak_vu: int, peak_vu_report: int) -> int:
+    """
+    For merged parallel JMeter files, per-row allThreads is per-engine; combined peak VUsers is the sum
+    of per-file peaks. Scale row values so the axis spans 0..peak_vu_report (approximate proportional load).
+    """
+    v = int(_vu(d))
+    rp = max(1, int(row_peak_vu or 0))
+    pr = int(peak_vu_report or 0)
+    if pr <= rp:
+        return v
+    return int(round(float(v) * (float(pr) / float(rp))))
 
 
 def _scenario_display(thread_name: str) -> str:
@@ -178,17 +191,78 @@ def _latency_decomp_badge(
     return ("outline-green", "Healthy")
 
 
-def _derive_dynamic_load_bands(data: List[Dict[str, Any]], max_vu: int) -> List[Tuple[str, int, int]]:
-    """
-    VU buckets sized from observed concurrency in this run (not fixed 1–30 / 31–60 …).
-    Partitions [min_vu, max_vu] into a small number of bands so each band can be classified
-    as stable / degrading / high-stress vs saved gates.
-    """
-    vus = [_vu(d) for d in data]
+def _latency_diagnosis_reason(
+    band_label: str,
+    ttfb_p90: float,
+    mean_rt: float,
+    band_index: int,
+    prev_ttfb_p90: Optional[float],
+    badge_text: str,
+) -> str:
+    """Plain-language basis for the latency decomposition badge (TTFB P90 chain, ms)."""
+    cur = float(ttfb_p90)
+    mrt = float(mean_rt)
+    rel_inc: Optional[float] = None
+    if band_index > 0 and prev_ttfb_p90 is not None:
+        prev = float(prev_ttfb_p90)
+        rel_inc = (cur - prev) / max(prev, 1e-6)
+    bits: List[str] = []
+    bl = band_label.strip() or "this band"
+    bits.append(
+        f"Load band '{bl}' (successful samples): TTFB P90 = {cur:.0f} ms, mean elapsed = {mrt:.0f} ms. "
+        f"Badge '{badge_text}' comes from those millisecond rules, not from the VU window label itself."
+    )
+    if band_index == 0:
+        bits.append(
+            f"First band rule: TTFB P90 above {_LAT_INIT_APPQ_MS:.0f} ms → App queuing; at/above {_LAT_TTFB_SAT_MS:.0f} / {_LAT_TTFB_CRIT_MS:.0f} ms → worse tiers."
+        )
+    elif rel_inc is not None and prev_ttfb_p90 is not None:
+        bits.append(
+            f"Versus previous band TTFB P90 {prev_ttfb_p90:.0f} ms: relative change {rel_inc*100:.1f}%. "
+            f"Step gates: >{_LAT_DEV_APPQ:.0%} → App queuing; ≥{_LAT_DEV_SAT:.0%} → Saturating; ≥{_LAT_DEV_CRIT:.0%} → Critical."
+        )
+    bits.append(
+        f"Absolute pressure: mean elapsed > {_LAT_MEAN_RT_CRIT_MS:.0f} ms also forces Critical. "
+        "VU in the row label is the concurrency bin only, not these millisecond cuts."
+    )
+    return " ".join(bits)
+
+
+def _vu_band_methodology_payload(
+    load_bands: List[Tuple[str, int, int]],
+    min_vu_observed: int,
+    max_vu_observed: int,
+) -> Dict[str, Any]:
+    """Rules + per-band rationale for dynamic VU windows (customer-facing)."""
+    nb = len(load_bands)
+    span = max(0, max_vu_observed - min_vu_observed) + 1 if max_vu_observed >= min_vu_observed else 1
+    summary_rules = (
+        f"Observed concurrent users in this JTL range from {min_vu_observed} to {max_vu_observed} VU (inclusive span {span}). "
+        f"The engine splits that span into {nb} contiguous bands so each has enough samples for stable aggregates (mean, P90, errors, TPS). "
+        "Band edges are inclusive; the same bands drive Overview zones, Response Time charts, Apdex-by-band, and the transaction table’s band columns."
+    )
+    band_rows: List[Dict[str, Any]] = []
+    for i, (lbl, lo, hi) in enumerate(load_bands):
+        band_rows.append(
+            {
+                "band_label": lbl,
+                "vu_lo": lo,
+                "vu_hi": hi,
+                "reason": (
+                    f"Window {i + 1} of {nb}: include every sample whose active thread count falls between {lo} and {hi} VU inclusive. "
+                    "Purpose: isolate how latency and errors evolve as nominal concurrency steps — not a SLA millisecond value."
+                ),
+            }
+        )
+    return {"summary_rules": summary_rules, "bands": band_rows}
+
+
+def _derive_dynamic_load_bands_from_vus(vus: List[int], cap_floor: int = 0) -> List[Tuple[str, int, int]]:
+    """Partition observed VU values into dynamic bands; ``cap_floor`` ensures axis reaches combined peak."""
     if not vus:
         return [("0 VU", 0, 0)]
     mn = int(min(vus))
-    mx = max(int(max(vus)), int(max_vu or 0))
+    mx = max(int(max(vus)), int(cap_floor or 0))
     if mx < mn:
         mx = mn
     if mx == mn:
@@ -211,6 +285,16 @@ def _derive_dynamic_load_bands(data: List[Dict[str, Any]], max_vu: int) -> List[
         bands.append((lbl, lo, hi))
         lo = hi + 1
     return bands
+
+
+def _derive_dynamic_load_bands(data: List[Dict[str, Any]], max_vu: int) -> List[Tuple[str, int, int]]:
+    """
+    VU buckets sized from observed concurrency in this run (not fixed 1–30 / 31–60 …).
+    Partitions [min_vu, max_vu] into a small number of bands so each band can be classified
+    as stable / degrading / high-stress vs saved gates.
+    """
+    vus = [_vu(d) for d in data]
+    return _derive_dynamic_load_bands_from_vus(vus, max_vu)
 
 
 def _zone_agg(band_stats: List[Dict[str, Any]], labels: List[str]) -> Optional[Dict[str, Any]]:
@@ -871,8 +955,10 @@ def _transaction_peak_profiles(
     tx_stats: Dict[str, Any],
     max_vu: int,
     peak_frac: float = 0.85,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> List[Tuple[str, float, float]]:
     """Top transactions by error rate at peak load, with P90 elapsed (ms) on all samples in window."""
+    vu = vu_fn or _vu
     if max_vu <= 0:
         thr = 0
     else:
@@ -884,7 +970,7 @@ def _transaction_peak_profiles(
         lab = d.get("label")
         if not lab or lab not in tx_stats:
             continue
-        if _vu(d) < thr:
+        if vu(d) < thr:
             continue
         by_label[str(lab)].append(d)
     prof: List[Tuple[str, float, float]] = []
@@ -972,6 +1058,7 @@ def _derive_key_findings_for_release(
     p90_gate_ms: float,
     err_gate_pct: float,
     load_bands: Optional[List[Tuple[str, int, int]]] = None,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> Tuple[List[str], int]:
     """
     Narrative key findings (evidence-led) and a severity score for release posture.
@@ -987,7 +1074,7 @@ def _derive_key_findings_for_release(
     n404 = sum(c for k, c in rcounter.items() if str(k).startswith("404"))
 
     onset = _degradation_onset_vu(band_stats, p90_gate_ms, err_gate_pct, load_bands)
-    peak_prof = _transaction_peak_profiles(data, tx_stats, max_vu, 0.85)
+    peak_prof = _transaction_peak_profiles(data, tx_stats, max_vu, 0.85, vu_fn)
     crit_er_vals = [p[1] for p in peak_prof[:5]]
     crit_er_max = max(crit_er_vals) if crit_er_vals else 0.0
     crit_er_min = min(crit_er_vals) if crit_er_vals else 0.0
@@ -1094,7 +1181,12 @@ def _derive_key_findings_for_release(
     return findings, sev
 
 
-def _top_error_minutes(minute_map: Dict[str, List[Dict[str, Any]]], top_n: int = 6) -> List[Dict[str, Any]]:
+def _top_error_minutes(
+    minute_map: Dict[str, List[Dict[str, Any]]],
+    top_n: int = 6,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
+) -> List[Dict[str, Any]]:
+    vu = vu_fn or _vu
     rows: List[Dict[str, Any]] = []
     for key, rowsamples in minute_map.items():
         if not rowsamples:
@@ -1103,7 +1195,7 @@ def _top_error_minutes(minute_map: Dict[str, List[Dict[str, Any]]], top_n: int =
         if fails == 0:
             continue
         er = 100.0 * fails / len(rowsamples) if rowsamples else 0.0
-        vus = int(round(float(np.mean([_vu(r) for r in rowsamples])))) if rowsamples else 0
+        vus = int(round(float(np.mean([vu(r) for r in rowsamples])))) if rowsamples else 0
         mean_rt = float(np.mean([_elapsed_ms(r) for r in rowsamples])) if rowsamples else 0.0
         n504 = sum(1 for r in rowsamples if str(r.get("response_code") or "") == "504")
         n404 = sum(1 for r in rowsamples if str(r.get("response_code") or "").startswith("4"))
@@ -1150,10 +1242,12 @@ def _evidence_err_pct_chain(rows: List[Tuple[str, int, int, Dict[str, Any]]]) ->
 def _evidence_404_chain(
     data: List[Dict[str, Any]],
     load_bands: List[Tuple[str, int, int]],
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> str:
+    vu = vu_fn or _vu
     parts: List[str] = []
     for label, lo, hi in load_bands:
-        band = [d for d in data if lo <= _vu(d) <= hi]
+        band = [d for d in data if lo <= vu(d) <= hi]
         if not band:
             continue
         n4 = sum(1 for d in band if str(d.get("response_code") or "").startswith("4"))
@@ -1164,10 +1258,15 @@ def _evidence_404_chain(
     return " → ".join(parts) if parts else ""
 
 
-def _evidence_504_chain(data: List[Dict[str, Any]], load_bands: List[Tuple[str, int, int]]) -> str:
+def _evidence_504_chain(
+    data: List[Dict[str, Any]],
+    load_bands: List[Tuple[str, int, int]],
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
+) -> str:
+    vu = vu_fn or _vu
     parts: List[str] = []
     for label, lo, hi in load_bands:
-        band = [d for d in data if lo <= _vu(d) <= hi]
+        band = [d for d in data if lo <= vu(d) <= hi]
         if not band:
             continue
         n504 = sum(1 for d in band if str(d.get("response_code") or "") == "504")
@@ -1209,14 +1308,16 @@ def _rca_url_path(d: Dict[str, Any]) -> str:
 def _best_404_path_profile(
     data: List[Dict[str, Any]],
     load_bands: List[Tuple[str, int, int]],
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> Optional[Tuple[str, List[Tuple[str, float, int, int]]]]:
     """Return (path, [(band_label, pct_4xx_among_path_hits_in_band, n_4xx, n_path_samples_in_band), ...])."""
+    vu = vu_fn or _vu
     path_band_n: Dict[str, Dict[Tuple[str, int, int], int]] = defaultdict(lambda: defaultdict(int))
     path_band_4: Dict[str, Dict[Tuple[str, int, int], int]] = defaultdict(lambda: defaultdict(int))
     for label, lo, hi in load_bands:
         key = (label, lo, hi)
         for d in data:
-            if not (lo <= _vu(d) <= hi):
+            if not (lo <= vu(d) <= hi):
                 continue
             path = _rca_url_path(d)
             path_band_n[path][key] += 1
@@ -1432,16 +1533,17 @@ def _build_combined_rca_hypotheses(
     n404: int,
     n5xx: int,
     no_http: int,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Evidence-backed root-cause hypotheses for the combined report (VU bands, HTTP classes, transaction stats).
     """
     rows = _iter_band_rows(band_stats, load_bands)
-    path_profile = _best_404_path_profile(data, load_bands)
+    path_profile = _best_404_path_profile(data, load_bands, vu_fn)
     n504 = sum(1 for d in data if str(d.get("response_code") or "") == "504")
     chain_err = _evidence_err_pct_chain(rows)
-    chain_404 = _evidence_404_chain(data, load_bands)
-    chain_504 = _evidence_504_chain(data, load_bands)
+    chain_404 = _evidence_404_chain(data, load_bands, vu_fn)
+    chain_504 = _evidence_504_chain(data, load_bands, vu_fn)
     worst_tx = _worst_transactions_for_rca(tx_stats, 6)
 
     tps_vals = [float(bs.get("avg_tps") or 0) for _lbl, _lo, _hi, bs in rows]
@@ -1945,11 +2047,16 @@ def _tps_band_bg_colors(avg_tps_list: List[float]) -> List[str]:
     return ["#2D6A2D", "#2D6A2D", "#2D6A2D", "#B45309", "#B45309", "#B45309"]
 
 
-def _first_vu_for_code(data: List[Dict[str, Any]], predicate) -> str:
+def _first_vu_for_code(
+    data: List[Dict[str, Any]],
+    predicate,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
+) -> str:
+    vu = vu_fn or _vu
     rows = sorted((d for d in data if d.get("timestamp")), key=lambda x: float(x["timestamp"]))
     for d in rows:
         if predicate(d):
-            return str(_vu(d))
+            return str(vu(d))
     return "—"
 
 
@@ -2019,11 +2126,13 @@ def _band_grades_for_bucket(
     load_bands: List[Tuple[str, int, int]],
     score_targets: Dict[str, float],
     throughput_global: float,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> List[Dict[str, Any]]:
     """One grade dict per load band, same scorecard as overall row; empty band → em dash."""
+    vu = vu_fn or _vu
     out: List[Dict[str, Any]] = []
     for band_lbl, lo, hi in load_bands:
-        sub = [d for d in bucket if lo <= _vu(d) <= hi]
+        sub = [d for d in bucket if lo <= vu(d) <= hi]
         if not sub:
             out.append(
                 {
@@ -2068,6 +2177,7 @@ def _build_tx_or_label_percentile_table(
     duration_s: float = 0.0,
     load_bands: Optional[List[Tuple[str, int, int]]] = None,
     throughput_global: float = 0.0,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> Dict[str, Any]:
     """
     Per-label elapsed stats on success=true samples only.
@@ -2092,7 +2202,7 @@ def _build_tx_or_label_percentile_table(
     for lab in sorted(by_label.keys(), key=lambda x: x.lower()):
         bucket = by_label[lab]
         band_grade_rows = (
-            _band_grades_for_bucket(bucket, bands, score_targets, throughput_global) if bands else []
+            _band_grades_for_bucket(bucket, bands, score_targets, throughput_global, vu_fn) if bands else []
         )
         rt_ms = [_elapsed_ms(d) for d in bucket if _jm_explicit_success(d)]
         n_pass = sum(1 for d in bucket if _jm_explicit_success(d))
@@ -2124,9 +2234,17 @@ def _build_tx_or_label_percentile_table(
         err_pct_tx = 100.0 * n_fail / n_tot if n_tot > 0 else 0.0
         t_mean = float((tgt or {}).get("response_time_ms") or 2000)
         t_p90 = float((tgt or {}).get("p90_percentile_ms") or 3000)
+        t_p95 = float((tgt or {}).get("p95_percentile_ms") or 5000)
         avg_v = int(round(float(np.mean(arr))))
         p90_v = _pct(90)
         p95_v = _pct(95)
+        p50_v = _pct(50)
+        p60_v = _pct(60)
+        p70_v = _pct(70)
+        p80_v = _pct(80)
+        p99_v = _pct(99)
+        min_v = int(np.min(arr))
+        max_v = int(np.max(arr))
         g_letter, g_score, g_tone = _label_row_grading(
             n_pass, n_fail, list(rt_ms), float(avg_v), float(p95_v), duration_s, score_targets
         )
@@ -2134,21 +2252,28 @@ def _build_tx_or_label_percentile_table(
             {
                 "name": lab,
                 "empty_rt": False,
-                "min": int(np.min(arr)),
-                "median": _pct(50),
+                "min": min_v,
                 "avg": avg_v,
-                "p50": _pct(50),
-                "p60": _pct(60),
-                "p70": _pct(70),
-                "p80": _pct(80),
+                "p50": p50_v,
+                "p60": p60_v,
+                "p70": p70_v,
+                "p80": p80_v,
                 "p90": p90_v,
                 "p95": p95_v,
-                "p99": _pct(99),
-                "max": int(np.max(arr)),
+                "p99": p99_v,
+                "max": max_v,
                 "pass": n_pass,
                 "fail": n_fail,
+                "min_tone": _distribution_sla_tone_rt(float(min_v), t_mean, _DIST_SLA_MEAN_AMBER_MS),
                 "avg_tone": _distribution_sla_tone_rt(float(avg_v), t_mean, _DIST_SLA_MEAN_AMBER_MS),
+                "p50_tone": _distribution_sla_tone_rt(float(p50_v), t_mean, _DIST_SLA_MEAN_AMBER_MS),
+                "p60_tone": _distribution_sla_tone_rt(float(p60_v), t_mean, _DIST_SLA_MEAN_AMBER_MS),
+                "p70_tone": _distribution_sla_tone_rt(float(p70_v), t_mean, _DIST_SLA_MEAN_AMBER_MS),
+                "p80_tone": _distribution_sla_tone_rt(float(p80_v), t_mean, _DIST_SLA_MEAN_AMBER_MS),
                 "p90_tone": _distribution_sla_tone_rt(float(p90_v), t_p90, _DIST_SLA_P90_AMBER_MS),
+                "p95_tone": _distribution_sla_tone_rt(float(p95_v), t_p95, _DIST_SLA_P90_AMBER_MS * 2),
+                "p99_tone": _distribution_sla_tone_rt(float(p99_v), t_p95, _DIST_SLA_P90_AMBER_MS * 2),
+                "max_tone": _distribution_sla_tone_rt(float(max_v), t_p95, _DIST_SLA_P90_AMBER_MS * 2),
                 "fail_tone": _distribution_sla_tone_err_pct(err_pct_tx),
                 "band_grades": band_grade_rows,
                 "grade": g_letter,
@@ -2164,13 +2289,14 @@ def _build_tx_or_label_percentile_table(
     )
     if tx_only:
         foot = (
-            "Transaction controller rows only (empty URL). Elapsed statistics (min, median, average, percentiles, max) "
+            "Transaction controller rows only (empty URL). Elapsed statistics (min, average, percentiles P50–P99, max) "
             "use samples with success=true only. "
             "Pass = count of rows with success=true and empty URL; fail = count with success=false and empty URL. "
             + band_col_txt
             + "Overall grade uses the same weighted scorecard as the main report (performance 30%, reliability 25%, "
             "user experience 25%, scalability 20%) for all samples of the label: success/error mix, mean and P95 on "
-            "successful samples, label throughput (samples ÷ full test duration), and % of successful samples under 2s."
+            "successful samples, label throughput (samples ÷ full test duration), and % of successful samples under 2s. "
+            "Cell colours vs Target Values: mean-type columns vs response-time target; P90 vs P90 target; P95/P99/max vs P95 target (wider amber band)."
         )
         title_mode = "Transaction controllers (empty URL)"
     else:
@@ -2259,8 +2385,15 @@ def build_combined_load_report_payload(
     row_peak_vu = max((_vu(d) for d in data), default=0) or int(summary.get("max_concurrent_users") or 0)
     parallel_sum = int(summary.get("multi_source_peak_vusers_sum") or 0)
     peak_vu_report = parallel_sum if parallel_sum > 0 else row_peak_vu
-    max_vu = row_peak_vu
-    load_bands = _derive_dynamic_load_bands(data, max_vu)
+    vu_breakdown = summary.get("multi_source_peak_breakdown") or []
+
+    def vu_fn(d: Dict[str, Any]) -> int:
+        return _effective_vu_combined_axis(d, row_peak_vu, peak_vu_report)
+
+    vus_eff = [vu_fn(d) for d in data]
+    vu_axis_max = max(int(peak_vu_report or 0), int(row_peak_vu or 0), max(vus_eff) if vus_eff else 0)
+    max_vu = vu_axis_max
+    load_bands = _derive_dynamic_load_bands_from_vus(vus_eff, vu_axis_max)
 
     # Environment + host from data
     env_host = ""
@@ -2302,7 +2435,7 @@ def build_combined_load_report_payload(
         if not rows:
             continue
         MINS.append(key)
-        vus = [_vu(r) for r in rows]
+        vus = [vu_fn(r) for r in rows]
         VUS.append(float(max(vus)) if vus else 0.0)
         e_times = [_elapsed_ms(r) for r in rows]
         MEAN_RT.append(float(np.mean(e_times)) if e_times else 0.0)
@@ -2355,7 +2488,7 @@ def build_combined_load_report_payload(
     err_band_other: List[int] = []
 
     for label, lo, hi in load_bands:
-        band_rows = [d for d in data if lo <= _vu(d) <= hi]
+        band_rows = [d for d in data if lo <= vu_fn(d) <= hi]
         if not band_rows:
             band_stats.append(
                 {
@@ -2385,6 +2518,10 @@ def build_combined_load_report_payload(
                     "mean_rt": 0,
                     "badge": "gray",
                     "badge_text": "N/A",
+                    "diagnosis_reason": (
+                        "No samples fell in this VU band in the uploaded JTL — latency decomposition and the TTFB chain "
+                        "are not applied for this row."
+                    ),
                 }
             )
             apdex_by_band.append(0.0)
@@ -2482,6 +2619,14 @@ def build_combined_load_report_payload(
         badge, btext = _latency_decomp_badge(ttfb_f, mean_f, data_band_idx, prev_ttfb)
         row["badge"] = badge
         row["badge_text"] = btext
+        row["diagnosis_reason"] = _latency_diagnosis_reason(
+            str(row.get("band") or ""),
+            ttfb_f,
+            mean_f,
+            data_band_idx,
+            prev_ttfb,
+            btext,
+        )
         prev_ttfb = ttfb_f
         data_band_idx += 1
 
@@ -2491,7 +2636,7 @@ def build_combined_load_report_payload(
         band_rows = [
             d
             for d in data
-            if lo <= _vu(d) <= hi and not is_jmeter_error_outcome(d) and _elapsed_ms(d) > 0
+            if lo <= vu_fn(d) <= hi and not is_jmeter_error_outcome(d) and _elapsed_ms(d) > 0
         ]
         if not band_rows:
             bar_percentiles.append([0, 0, 0, 0])
@@ -2628,6 +2773,7 @@ def build_combined_load_report_payload(
         p90_gate_ms=p90_gate_ms,
         err_gate_pct=err_gate_pct,
         load_bands=load_bands,
+        vu_fn=vu_fn,
     )
 
     raw_safe, marginal_lo, marginal_hi, safe_cap_detail, med_detail, peak_detail, cap_has_stress = _capacity_envelope_vu(
@@ -2689,8 +2835,8 @@ def build_combined_load_report_payload(
         if rs and sum(1 for r in rs if is_jmeter_error_outcome(r)) > 0:
             err_onset_clock = k
             break
-    onset_504_vu = _first_vu_for_code(data, lambda d: str(d.get("response_code") or "") == "504")
-    top_err_minutes = _top_error_minutes(minute_map, 6)
+    onset_504_vu = _first_vu_for_code(data, lambda d: str(d.get("response_code") or "") == "504", vu_fn)
+    top_err_minutes = _top_error_minutes(minute_map, 6, vu_fn)
     peak_err_time = top_err_minutes[0]["time"] if top_err_minutes else ""
     peak_err_vu = top_err_minutes[0].get("vu", 0) if top_err_minutes else 0
 
@@ -2738,14 +2884,32 @@ def build_combined_load_report_payload(
     band_avg_tps_list = [float(b.get("avg_tps") or 0) for b in band_stats]
     tps_band_colors = _tps_band_bg_colors(band_avg_tps_list)
 
+    if vu_breakdown:
+        _peak_v_parts: List[str] = []
+        for b in vu_breakdown:
+            bu = (b.get("base_url") or "").strip() or "base URL n/a"
+            fn = (b.get("filename") or "").strip()
+            pv = int(b.get("peak_vusers") or 0)
+            if fn:
+                _peak_v_parts.append(f"{bu} · {fn}: max {pv} VU")
+            else:
+                _peak_v_parts.append(f"{bu}: max {pv} VU")
+        peak_vu_kpi_sub = (
+            "; ".join(_peak_v_parts)
+            + f" — combined {peak_vu_report} VU (max {row_peak_vu} VU in any sample row)."
+        )
+    elif parallel_sum > 0:
+        peak_vu_kpi_sub = (
+            f"sum of per-file peak allThreads ({parallel_sum}); "
+            f"up to {row_peak_vu} VU in any row"
+        )
+    else:
+        peak_vu_kpi_sub = "max allThreads / grpThreads in CSV rows"
+
     kpis = [
         {"label": "Total samples", "value": f"{total:,}", "sub": f"across {uniq_tx} transaction controllers", "tone": ""},
         {"label": "Overall error rate", "value": f"{err_rate_pct:.2f}%", "sub": f"{errs:,} failed samples", "tone": "red" if err_rate_pct >= tgt["error_rate"] else "amber" if err_rate_pct >= tgt["error_rate"] * 0.85 else ""},
-        {"label": "Peak concurrent users", "value": str(peak_vu_report), "sub": (
-            f"sum of peak VU per merged file ({parallel_sum}); up to {row_peak_vu} VU in any row"
-            if parallel_sum > 0
-            else "max allThreads / grpThreads in CSV rows"
-        ), "tone": ""},
+        {"label": "Peak concurrent users", "value": str(peak_vu_report), "sub": peak_vu_kpi_sub, "tone": ""},
         {"label": "Avg TPS", "value": f"{throughput:.1f}", "sub": f"peak {peak_tps:.1f} / min · {peak_tps_min}" if peak_tps_min else f"peak {peak_tps:.1f} / min", "tone": ""},
         {
             "label": "Overall mean RT",
@@ -2771,13 +2935,14 @@ def build_combined_load_report_payload(
         n404=n4,
         n5xx=n5,
         no_http=no_http,
+        vu_fn=vu_fn,
     )
 
     phased_plan = summary.get("phased_improvement_plan") or {}
     phase_list = _normalize_phase_list_for_combined(phased_plan)
 
     tx_pct_table = _build_tx_or_label_percentile_table(
-        data, tgt, duration_s, load_bands, throughput
+        data, tgt, duration_s, load_bands, throughput, vu_fn
     )
 
     band_labels_dyn = [x[0] for x in load_bands]
@@ -2787,12 +2952,15 @@ def build_combined_load_report_payload(
         else ""
     )
     zones_preamble = (
-        "Concurrency bands in this report follow the VU range actually exercised in this JMeter run "
-        f"(up to {row_peak_vu} VU in any sample row).{_par_zone} "
+        "Concurrency bands in this report follow the effective concurrency axis for this run "
+        f"(up to {max_vu} VU; raw CSV allThreads up to {row_peak_vu} VU per row when multiple files are merged).{_par_zone} "
         f"Split into about {len(band_labels_dyn)} windows such as "
         f"{', '.join(band_labels_dyn[:4])}{' …' if len(band_labels_dyn) > 4 else ''}. "
         "Zone A / B / C below is behaviour-based — stable green load, degrading amber, and high stress — "
-        "using your saved P90 and error targets plus how throughput moves between bands, not fixed 1–30 / 31–60 tiers."
+        "using your saved P90 and error targets plus how throughput moves between bands, not fixed 1–30 / 31–60 tiers. "
+        "Those zone spans (e.g. green 0–857 VU vs amber 858–1143 VU) are summaries over groups of those bins — "
+        "they are not the same numbers as the Latency decomposition diagnosis (which uses milliseconds; see Response Time panel) "
+        "and not automatically identical to 'Proven safe capacity' (see Capacity panel)."
     )
     chart_observations = _build_chart_observations(
         MINS,
@@ -2810,6 +2978,10 @@ def build_combined_load_report_payload(
         float(tgt["error_rate"]),
         err_rate_pct,
     )
+
+    vus_obs = [vu_fn(d) for d in data]
+    min_vu_obs = int(min(vus_obs)) if vus_obs else 0
+    vu_band_methodology = _vu_band_methodology_payload(load_bands, min_vu_obs, vu_axis_max)
 
     return {
         "meta": {
@@ -2838,7 +3010,9 @@ def build_combined_load_report_payload(
             float(tgt["p95_percentile_ms"]),
             float(tgt["error_rate"]),
             load_bands,
+            vu_fn,
         ),
+        "vu_band_methodology": vu_band_methodology,
         "chart_observations": chart_observations,
         "timeline": _build_key_events_timeline(
             minute_map,
@@ -2909,6 +3083,7 @@ def build_combined_load_report_payload(
             "max_vu": max_vu,
             "peak_parallel_vusers": peak_vu_report,
             "multi_source_peak_vusers_sum": parallel_sum,
+            "multi_source_peak_breakdown": vu_breakdown,
             "target_vu": max_vu,
             "safe_range": safe_range,
             "marginal_range": marginal_range,
@@ -3051,8 +3226,14 @@ def _success_gate_rows(
     ]
 
 
-def _vu_range_mix(data: List[Dict[str, Any]], lo: int, hi: int) -> Dict[str, int]:
-    rows = [d for d in data if lo <= _vu(d) <= hi]
+def _vu_range_mix(
+    data: List[Dict[str, Any]],
+    lo: int,
+    hi: int,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
+) -> Dict[str, int]:
+    vu = vu_fn or _vu
+    rows = [d for d in data if lo <= vu(d) <= hi]
     n = len(rows)
     if n == 0:
         return {"n404": 0, "n5xx": 0, "nnhr": 0, "nfail": 0, "samples": 0}
@@ -3143,8 +3324,14 @@ def _error_dominant_narrative(mix: Dict[str, int]) -> str:
     )
 
 
-def _observed_vu_bounds(data: List[Dict[str, Any]], lo: int, hi: int) -> Optional[Tuple[int, int]]:
-    vals = [_vu(d) for d in data if lo <= _vu(d) <= hi]
+def _observed_vu_bounds(
+    data: List[Dict[str, Any]],
+    lo: int,
+    hi: int,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
+) -> Optional[Tuple[int, int]]:
+    vu = vu_fn or _vu
+    vals = [vu(d) for d in data if lo <= vu(d) <= hi]
     if not vals:
         return None
     return min(vals), max(vals)
@@ -3154,13 +3341,14 @@ def _combined_vu_span_for_labels(
     data: List[Dict[str, Any]],
     band_labels: List[str],
     load_bands: List[Tuple[str, int, int]],
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> Tuple[int, int]:
     lo_mn, hi_mx = None, None
     for lab in band_labels:
         lo, hi = _band_lo_hi(lab, load_bands)
         if lo is None:
             continue
-        obs = _observed_vu_bounds(data, lo, hi)
+        obs = _observed_vu_bounds(data, lo, hi, vu_fn)
         a, b = obs if obs else (lo, hi)
         if lo_mn is None:
             lo_mn, hi_mx = int(a), int(b)
@@ -3172,8 +3360,14 @@ def _combined_vu_span_for_labels(
     return lo_mn, hi_mx
 
 
-def _zone_p99_over_span(data: List[Dict[str, Any]], vu_lo: int, vu_hi: int) -> float:
-    et = [_elapsed_ms(d) for d in data if vu_lo <= _vu(d) <= vu_hi]
+def _zone_p99_over_span(
+    data: List[Dict[str, Any]],
+    vu_lo: int,
+    vu_hi: int,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
+) -> float:
+    vu = vu_fn or _vu
+    et = [_elapsed_ms(d) for d in data if vu_lo <= vu(d) <= vu_hi]
     if len(et) < 3:
         return 0.0
     return float(np.percentile(np.array(et, dtype=float), 99))
@@ -3216,12 +3410,13 @@ def _zone_title_observed(
     vu_lo: int,
     vu_hi: int,
     err_txt: str,
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> str:
-    obs = _observed_vu_bounds(data, vu_lo, vu_hi)
+    obs = _observed_vu_bounds(data, vu_lo, vu_hi, vu_fn)
     vu_part = _observed_vu_caption(obs[0], obs[1]) if obs else "—"
     bl = ", ".join(band_labels)
     return (
-        f"Observed {vu_part} in CSV · buckets {bl} · "
+        f"Observed {vu_part} (effective VU axis) · buckets {bl} · "
         f"Mean RT {z['mean_rt']:.0f}ms · P90 {z['p90']:.0f}ms · Error {err_txt}"
     )
 
@@ -3261,11 +3456,13 @@ def _zones_intro_detailed(
     sla_ms: float,
     err_gate_pct: float,
     load_bands: List[Tuple[str, int, int]],
+    vu_fn: Optional[Callable[[Dict[str, Any]], int]] = None,
 ) -> List[Dict[str, str]]:
     """
     Three behaviour zones from this run's VU buckets (dynamic banding) vs saved P90 / error gates
     and throughput shape — not fixed 1–30 / 31–60 tiers.
     """
+    vu = vu_fn or _vu
     populated = [b for b in band_stats if b.get("n")]
     if not populated:
         common = (
@@ -3329,15 +3526,15 @@ def _zones_intro_detailed(
         if not z:
             return
         bl = list(z.get("band_labels") or [])
-        vu_lo, vu_hi = _combined_vu_span_for_labels(data, bl, load_bands)
+        vu_lo, vu_hi = _combined_vu_span_for_labels(data, bl, load_bands, vu_fn)
         err_r = _err_range_from_bands(band_stats, bl)
         if err_r and abs(err_r[0] - err_r[1]) < 1e-9:
             er_txt = f"{err_r[0]:.1f}%"
         else:
             er_txt = f"{err_r[0]:.1f}–{err_r[1]:.1f}%" if err_r else f"{z['err_pct']:.1f}%"
-        title = _zone_title_observed(z, bl, data, vu_lo, vu_hi, er_txt)
-        mix = _vu_range_mix(data, vu_lo, vu_hi)
-        p99z = _zone_p99_over_span(data, vu_lo, vu_hi)
+        title = _zone_title_observed(z, bl, data, vu_lo, vu_hi, er_txt, vu_fn)
+        mix = _vu_range_mix(data, vu_lo, vu_hi, vu_fn)
+        p99z = _zone_p99_over_span(data, vu_lo, vu_hi, vu_fn)
         zlbl, zcss = _zone_label_and_css(z, sla_ms, err_gate_pct, letter)
         parts: List[str] = []
         if letter == "A":
@@ -3378,7 +3575,7 @@ def _zones_intro_detailed(
         n504z = sum(
             1
             for d in data
-            if vu_lo <= _vu(d) <= vu_hi and str(d.get("response_code") or "") == "504"
+            if vu_lo <= vu(d) <= vu_hi and str(d.get("response_code") or "") == "504"
         )
         if n504z:
             parts.append(f"{n504z:,} HTTP 504 outcomes in this VU span — check gateways and upstream timeouts.")
@@ -3556,7 +3753,11 @@ def _build_chart_observations(
         out["heatmap"] = "Heatmap relates response-time distribution shape to load; rightward shift under load is the usual stress signal."
 
     out["lat_decomp"] = (
-        "TCP connect and TTFB medians vs total elapsed show whether delay is path/network vs server think-time; rising TTFB P90 with flat connect hints back-end queueing."
+        "TCP connect and TTFB medians vs total elapsed show whether delay is path/network vs server think-time. "
+        "Diagnosis uses TTFB P90 in milliseconds (not the VU range in the first column): first populated band "
+        f"above {_LAT_INIT_APPQ_MS:.0f} ms → App queuing; ≥{_LAT_TTFB_SAT_MS:.0f} ms or a large step-up vs the prior band → "
+        f"Saturating; ≥{_LAT_TTFB_CRIT_MS:.0f} ms or mean RT above {_LAT_MEAN_RT_CRIT_MS:.0f} ms (or ≥{_LAT_DEV_CRIT:.0%} TTFB jump) → Critical. "
+        "The band label (e.g. '0–285 VU') is concurrent users only — '285' is not a 285 ms threshold."
     )
 
     if n >= 2 and TPS_ARR and VUS:
@@ -3617,7 +3818,8 @@ def _build_chart_observations(
         "Share of transactions rated critical / warning / healthy — a concentration in critical at end of test usually blocks release until those controllers are fixed."
     )
     out["apdex_band"] = (
-        "Apdex by dynamic load band (T=3s): sustained drops in heavier bands mean more users perceive slow or failing responses under peak-shaped load."
+        "Apdex by dynamic load band (T=3s). Colours reflect Apdex score tiers (e.g. ≥0.85 satisfied, 0.50–0.85 tolerating), "
+        "not the same rule as Overview Zone A/B/C nor Latency decomposition. Band names are still VU windows from this run."
     )
     out["tx_percentile"] = (
         "Per-transaction elapsed percentiles summarise behaviour across the full test window; "

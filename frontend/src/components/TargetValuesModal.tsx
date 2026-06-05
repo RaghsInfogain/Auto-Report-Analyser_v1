@@ -6,6 +6,8 @@ interface TargetValuesModalProps {
   isOpen: boolean;
   runId: string;
   runLabel?: string;
+  /** Web Vitals / Lighthouse: hide load-test-only fields (avg RT, error rate, throughput, P95). */
+  targetProfile?: 'load_test' | 'web_vitals';
   onClose: () => void;
   onConfirm: (targets: RunTargets) => Promise<void>;
 }
@@ -38,9 +40,11 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
   isOpen,
   runId,
   runLabel,
+  targetProfile = 'load_test',
   onClose,
   onConfirm
 }) => {
+  const isWebVitals = targetProfile === 'web_vitals';
   const [targets, setTargets] = useState<RunTargets>({ ...DEFAULT_TARGETS });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -133,9 +137,17 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 onChange={(e) => handleChange('application_name', e.target.value)}
                 placeholder="e.g. BusinessNext CRM"
                 autoComplete="off"
-                title="Shown in the report header. Blank = inferred from JMeter data."
+                title={
+                  isWebVitals
+                    ? 'Shown in the report header.'
+                    : 'Shown in the report header. Blank = inferred from JMeter data.'
+                }
               />
-              <span className="target-hint">Report header; leave blank to infer from JMeter.</span>
+              <span className="target-hint">
+                {isWebVitals
+                  ? 'Shown in the report header.'
+                  : 'Report header; leave blank to infer from JMeter.'}
+              </span>
             </div>
 
             <div className="target-field">
@@ -153,6 +165,7 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
               />
             </div>
 
+            {!isWebVitals && (
             <div className="target-field">
               <label htmlFor="avg_response">Avg response (ms)</label>
               <input
@@ -166,7 +179,9 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 title="e.g. 2000 for 2 seconds"
               />
             </div>
+            )}
 
+            {!isWebVitals && (
             <div className="target-field">
               <label htmlFor="error_rate">Error rate (%)</label>
               <input
@@ -181,7 +196,9 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 title="e.g. 1 for 1%"
               />
             </div>
+            )}
 
+            {!isWebVitals && (
             <div className="target-field">
               <label htmlFor="throughput">Throughput (req/s)</label>
               <input
@@ -195,7 +212,9 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 title="Requests per second"
               />
             </div>
+            )}
 
+            {!isWebVitals && (
             <div className="target-field">
               <label htmlFor="p95">95th percentile (ms)</label>
               <input
@@ -209,6 +228,7 @@ const TargetValuesModal: React.FC<TargetValuesModalProps> = ({
                 title="e.g. 3000 for 3 seconds"
               />
             </div>
+            )}
 
             <div className="target-field">
               <label htmlFor="sla">SLA compliance (%)</label>

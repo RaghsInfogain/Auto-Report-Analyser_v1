@@ -75,6 +75,14 @@
 }
 
 /* Progress Banner */
+.progress-eta {
+  display: block;
+  margin-top: 0.25rem;
+  color: #c45c26;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
 .progress-banner {
   background: #fff3cd;
   border-left: 4px solid #ffc107;

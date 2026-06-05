@@ -3,15 +3,18 @@ import FileUpload from '../components/FileUpload';
 import TargetValuesModal from '../components/TargetValuesModal';
 import {
   listRuns,
+  getRun,
   RunInfo,
   generateRunReport,
+  waitForRunReportCompletion,
   getRunReport,
   deleteRun,
   UploadedFile,
-  getReportProgress,
   ReportProgress,
   RunTargets,
+  formatEtaLabel,
 } from '../services/api';
+import ProgressBar from '../components/ProgressBar';
 import './JMeterPage.css';
 
 interface ProgressState {
@@ -53,7 +56,7 @@ const JMeterPage: React.FC = () => {
   const loadRuns = async () => {
     setLoading(true);
     try {
-      const result = await listRuns();
+      const result = await listRuns(true);
       // Filter only JMeter runs
       const jmeterRuns = result.runs.filter(run => run.categories.includes('jmeter'));
       setRuns(jmeterRuns);
@@ -68,7 +71,8 @@ const JMeterPage: React.FC = () => {
     loadRuns();
   };
 
-  const toggleExpand = (runId: string) => {
+  const toggleExpand = async (runId: string) => {
+    const isExpanding = !expandedRuns.has(runId);
     setExpandedRuns(prev => {
       const next = new Set(prev);
       if (next.has(runId)) {
@@ -78,6 +82,17 @@ const JMeterPage: React.FC = () => {
       }
       return next;
     });
+    if (isExpanding) {
+      const run = runs.find(r => r.run_id === runId);
+      if (run && !run.files) {
+        try {
+          const full = await getRun(runId);
+          setRuns(prev => prev.map(r => (r.run_id === runId ? full : r)));
+        } catch (error) {
+          console.error('Failed to load run details:', error);
+        }
+      }
+    }
   };
 
   const openTargetModal = (run: RunInfo, regenerate: boolean) => {
@@ -116,47 +131,49 @@ const JMeterPage: React.FC = () => {
         });
       }
 
-      const pollProgress = async () => {
-        try {
-          const progressData = await getReportProgress(run.run_id);
-          if (progressData && progressData.status === 'in_progress') {
-            setProgress({
-              runId: run.run_id,
-              stage: progressData.current_task === 'html_generation' ? 'generating' : 'analyzing',
-              message: progressData.message || 'Processing...',
-              progress: progressData
-            });
-          } else if (progressData && progressData.status === 'completed') {
-            setProgress({
-              runId: run.run_id,
-              stage: 'completed',
-              message: 'Report generation completed!',
-              progress: progressData
-            });
-            clearInterval(progressPollInterval.current!);
-            loadRuns();
-          } else if (progressData && progressData.status === 'failed') {
-            setProgress({
-              runId: run.run_id,
-              stage: 'completed',
-              message: `Error: ${progressData.message || 'Report generation failed'}`,
-              progress: progressData
-            });
-            clearInterval(progressPollInterval.current!);
-            loadRuns();
-          }
-        } catch (error) {
-          console.error('Error polling progress:', error);
+      const applyProgress = (progressData: ReportProgress) => {
+        if (progressData.status === 'in_progress') {
+          setProgress({
+            runId: run.run_id,
+            stage: progressData.current_task === 'html_generation' ? 'generating' : 'analyzing',
+            message: progressData.message || 'Processing...',
+            progress: progressData,
+          });
+        } else if (progressData.status === 'completed') {
+          setProgress({
+            runId: run.run_id,
+            stage: 'completed',
+            message: 'Report generation completed!',
+            progress: progressData,
+          });
+        } else if (progressData.status === 'failed' || progressData.status === 'stuck') {
+          setProgress({
+            runId: run.run_id,
+            stage: 'completed',
+            message: progressData.message || 'Report generation failed',
+            progress: progressData,
+          });
         }
       };
 
+      await generateRunReport(run.run_id, regenerate);
+
+      const finalProgress = await waitForRunReportCompletion(run.run_id, {
+        totalSizeBytes: run.total_size,
+        totalRecords: run.total_records,
+        onProgress: applyProgress,
+        pollIntervalMs: 2000,
+      });
+
+      applyProgress(finalProgress);
       if (progressPollInterval.current) {
         clearInterval(progressPollInterval.current);
+        progressPollInterval.current = null;
       }
-      progressPollInterval.current = setInterval(pollProgress, 2000);
-
-      await generateRunReport(run.run_id, regenerate, run.total_size, run.total_records);
-      await pollProgress();
+      loadRuns();
+      if (finalProgress.status === 'failed' || finalProgress.status === 'stuck') {
+        throw new Error(finalProgress.message || 'Report generation failed');
+      }
     } catch (error: any) {
       console.error('Error generating report:', error);
       alert(`Failed to generate report: ${error.response?.data?.detail || error.message}`);
@@ -300,19 +317,39 @@ const JMeterPage: React.FC = () => {
           {/* Progress Indicator */}
           {progress && (
             <div className="progress-banner">
-              <div className="progress-content">
-                <span className="progress-icon">
-                  {progress.stage === 'analyzing' && '🔍'}
-                  {progress.stage === 'generating' && '⚙️'}
-                  {progress.stage === 'completed' && '✅'}
-                </span>
-                <div className="progress-text">
-                  <strong>{progress.message}</strong>
-                  {progress.progress && progress.progress.overall_progress !== undefined && (
-                    <span className="progress-percent"> - {progress.progress.overall_progress}%</span>
-                  )}
-                </div>
-              </div>
+              <ProgressBar
+                variant="analysis"
+                percent={progress.progress?.overall_progress ?? (progress.stage === 'completed' ? 100 : 5)}
+                label={
+                  progress.stage === 'generating'
+                    ? 'Generating report'
+                    : progress.stage === 'completed'
+                    ? 'Report ready'
+                    : 'Analyzing & building report'
+                }
+                sublabel={progress.message}
+                eta={
+                  progress.stage !== 'completed'
+                    ? formatEtaLabel(progress.progress)
+                    : undefined
+                }
+              />
+              {progress.progress?.tasks && (
+                <ul className="progress-task-list">
+                  {Object.entries(progress.progress.tasks).map(([id, task]) => (
+                    <li key={id} className={`progress-task progress-task-${task.status}`}>
+                      <span className="progress-task-name">{task.name}</span>
+                      <span className="progress-task-pct">
+                        {task.status === 'completed'
+                          ? '✓'
+                          : task.status === 'skipped'
+                          ? '—'
+                          : `${task.progress_percent}%`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 
@@ -444,7 +481,7 @@ const JMeterPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {run.files.map(file => (
+                      {(run.files ?? []).map(file => (
                         <tr key={file.file_id}>
                           <td className="file-name">{file.filename}</td>
                           <td><span className="category-tag">{file.category}</span></td>

@@ -35,6 +35,9 @@ FIELD_MAPPING: Mapping[str, List[str]] = {
 # Use vectorized pandas load above this size (CSV only) — much faster than row-wise csv on huge JTLs
 PANDAS_CSV_BYTES = 30 * 1024 * 1024
 
+# Skip full in-memory parse on upload above this size (estimate rows instead)
+LARGE_FILE_SKIP_FULL_PARSE_BYTES = 100 * 1024 * 1024
+
 
 def _resolve_jtl_columns(column_names: List[str]) -> Dict[str, str]:
     colset = set(column_names)
@@ -49,6 +52,62 @@ def _resolve_jtl_columns(column_names: List[str]) -> Dict[str, str]:
 
 class JTLParserV2:
     """Simplified JTL parser with robust error handling"""
+
+    @staticmethod
+    def estimate_record_count(file_path: str) -> int:
+        """Fast row estimate for large JTL/CSV (header excluded). Used at upload time."""
+        path = Path(file_path)
+        if not path.is_file():
+            return 0
+        if path.suffix.lower() == ".xml":
+            try:
+                count = 0
+                for _event, elem in ET.iterparse(path, events=("end",)):
+                    if elem.tag.endswith("sample") or elem.tag == "sample":
+                        count += 1
+                    elem.clear()
+                return max(count, 0)
+            except Exception:
+                return 0
+        try:
+            size = path.stat().st_size
+            if size <= 0:
+                return 0
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                header = f.readline()
+                sample = f.readline()
+            if not sample:
+                return 0
+            avg_line = max(len(header.encode("utf-8", errors="ignore")), len(sample.encode("utf-8", errors="ignore")), 80)
+            return max(1, int(size / avg_line) - 1)
+        except OSError:
+            return 0
+
+    @staticmethod
+    def concatenate_files_on_disk(source_paths: List[str], output_path: str) -> int:
+        """Concatenate JTL/CSV files without loading into memory. Returns estimated record count."""
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "wb") as dest:
+            for i, src in enumerate(source_paths):
+                sp = Path(src)
+                if not sp.is_file():
+                    continue
+                with open(sp, "rb") as inp:
+                    if i == 0:
+                        while True:
+                            chunk = inp.read(8 * 1024 * 1024)
+                            if not chunk:
+                                break
+                            dest.write(chunk)
+                    else:
+                        inp.readline()
+                        while True:
+                            chunk = inp.read(8 * 1024 * 1024)
+                            if not chunk:
+                                break
+                            dest.write(chunk)
+        return JTLParserV2.estimate_record_count(str(out))
 
     @staticmethod
     def parse(file_path: str) -> List[Dict[str, Any]]:

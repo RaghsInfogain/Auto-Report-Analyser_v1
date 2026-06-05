@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileUpload from '../components/FileUpload';
 import TargetValuesModal from '../components/TargetValuesModal';
-import { listRuns, RunInfo, generateRunReport, getRunReport, deleteRun, UploadedFile, getReportProgress, ReportProgress, RunTargets } from '../services/api';
+import { listRuns, getRun, RunInfo, generateRunReport, waitForRunReportCompletion, getRunReport, deleteRun, UploadedFile, ReportProgress, RunTargets, formatEtaLabel } from '../services/api';
 import './FilesPage.css';
 
 interface ProgressState {
@@ -46,7 +46,7 @@ const FilesPage: React.FC = () => {
   const loadRuns = async () => {
     setLoading(true);
     try {
-      const result = await listRuns();
+      const result = await listRuns(true);
       setRuns(result.runs);
     } catch (error) {
       console.error('Failed to load runs:', error);
@@ -61,7 +61,8 @@ const FilesPage: React.FC = () => {
     loadRuns();
   };
 
-  const toggleExpand = (runId: string) => {
+  const toggleExpand = async (runId: string) => {
+    const isExpanding = !expandedRuns.has(runId);
     setExpandedRuns(prev => {
       const next = new Set(prev);
       if (next.has(runId)) {
@@ -71,6 +72,17 @@ const FilesPage: React.FC = () => {
       }
       return next;
     });
+    if (isExpanding) {
+      const run = runs.find(r => r.run_id === runId);
+      if (run && !run.files) {
+        try {
+          const full = await getRun(runId);
+          setRuns(prev => prev.map(r => (r.run_id === runId ? full : r)));
+        } catch (error) {
+          console.error('Failed to load run details:', error);
+        }
+      }
+    }
   };
 
   const openTargetModal = (run: RunInfo, regenerate: boolean) => {
@@ -111,86 +123,54 @@ const FilesPage: React.FC = () => {
         });
       }
 
-      // Start polling for progress
-      const pollProgress = async () => {
-        try {
-          const progressData = await getReportProgress(run.run_id);
-          setProgress(prev => prev ? { ...prev, progress: progressData } : null);
-          
-          if (progressData.status === 'completed' || progressData.status === 'failed' || progressData.status === 'stuck') {
-            if (progressPollInterval.current) {
-              clearInterval(progressPollInterval.current);
-              progressPollInterval.current = null;
-            }
-            
-            if (progressData.status === 'completed') {
-              setProgress({
-                runId: run.run_id,
-                stage: 'completed',
-                message: 'Report generated successfully!',
-                progress: progressData
-              });
-              setRuns(runs =>
-                runs.map(r =>
-                  r.run_id === run.run_id
-                    ? { ...r, report_status: 'generated' }
-                    : r
-                )
-              );
-              setTimeout(() => setProgress(null), 3000);
-            } else if (progressData.status === 'stuck' || progressData.status === 'failed') {
-              setProgress({
-                runId: run.run_id,
-                stage: 'completed',
-                message: progressData.message || 'Report generation failed or was stuck',
-                progress: progressData
-              });
-              setRuns(runs =>
-                runs.map(r =>
-                  r.run_id === run.run_id
-                    ? { ...r, report_status: 'pending' }
-                    : r
-                )
-              );
-              setTimeout(() => setProgress(null), 5000);
-            }
-          }
-        } catch (error) {
-          console.error('Error polling progress:', error);
-        }
+      const applyProgress = (progressData: ReportProgress) => {
+        setProgress((prev) =>
+          prev
+            ? {
+                ...prev,
+                progress: progressData,
+                message: progressData.message || prev.message,
+              }
+            : null
+        );
       };
 
-      // Poll every 2 seconds
-      if (progressPollInterval.current) {
-        clearInterval(progressPollInterval.current);
-      }
-      progressPollInterval.current = setInterval(pollProgress, 2000);
+      await generateRunReport(run.run_id, regenerate);
 
-      // Call the unified backend endpoint (this will take time)
-      const result = await generateRunReport(run.run_id, regenerate, run.total_size, run.total_records);
-
-      // Stop polling
-      if (progressPollInterval.current) {
-        clearInterval(progressPollInterval.current);
-        progressPollInterval.current = null;
-      }
-
-      // Final progress update
-      const finalProgress = await getReportProgress(run.run_id);
-      setProgress({
-        runId: run.run_id,
-        stage: 'completed',
-        message: 'Report generated successfully!',
-        progress: finalProgress
+      const finalProgress = await waitForRunReportCompletion(run.run_id, {
+        totalSizeBytes: run.total_size,
+        totalRecords: run.total_records,
+        onProgress: applyProgress,
+        pollIntervalMs: 2000,
       });
 
-      setRuns(runs =>
-        runs.map(r =>
-          r.run_id === run.run_id
-            ? { ...r, report_status: 'generated', total_records: result.total_records }
-            : r
-        )
-      );
+      if (finalProgress.status === 'completed') {
+        setProgress({
+          runId: run.run_id,
+          stage: 'completed',
+          message: 'Report generated successfully!',
+          progress: finalProgress,
+        });
+        setRuns((runs) =>
+          runs.map((r) =>
+            r.run_id === run.run_id ? { ...r, report_status: 'generated' } : r
+          )
+        );
+        setTimeout(() => setProgress(null), 3000);
+      } else {
+        setProgress({
+          runId: run.run_id,
+          stage: 'completed',
+          message: finalProgress.message || 'Report generation failed',
+          progress: finalProgress,
+        });
+        setRuns((runs) =>
+          runs.map((r) =>
+            r.run_id === run.run_id ? { ...r, report_status: 'pending' } : r
+          )
+        );
+        setTimeout(() => setProgress(null), 5000);
+      }
 
       // Clear progress after 3 seconds
       setTimeout(() => {
@@ -373,6 +353,9 @@ const FilesPage: React.FC = () => {
             <div className="progress-spinner"></div>
             <div className="progress-details">
               <span className="progress-message">{progress.message}</span>
+              {progress.progress && formatEtaLabel(progress.progress) && (
+                <span className="progress-eta">Est. {formatEtaLabel(progress.progress)}</span>
+              )}
               {progress.progress && (
                 <div className="progress-tasks">
                   <div className="progress-bar-container">
@@ -587,7 +570,7 @@ const FilesPage: React.FC = () => {
                               </tr>
                             </thead>
                             <tbody>
-                              {run.files.map(file => (
+                              {(run.files ?? []).map(file => (
                                 <tr key={file.file_id}>
                                   <td>{getCategoryIcon(file.category)} {file.filename}</td>
                                   <td><span className="file-type-small">{file.category.replace('_', ' ')}</span></td>
@@ -620,6 +603,12 @@ const FilesPage: React.FC = () => {
         isOpen={targetModalOpen}
         runId={targetModalRun?.run_id ?? ''}
         runLabel={targetModalRun?.run_id}
+        targetProfile={
+          targetModalRun?.categories?.length &&
+          targetModalRun.categories.every((c) => c === 'web_vitals')
+            ? 'web_vitals'
+            : 'load_test'
+        }
         onClose={() => { setTargetModalOpen(false); setTargetModalRun(null); }}
         onConfirm={handleTargetsConfirmed}
       />

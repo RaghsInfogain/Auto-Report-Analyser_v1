@@ -14,6 +14,8 @@ import numpy as np
 from app.models.jmeter import JMeterMetrics
 from app.utils.jmeter_url import is_jmeter_transaction_controller_by_url, normalize_jmeter_url_value
 from app.utils.jmeter_outcome import is_jmeter_error_outcome, include_in_response_time_stats
+from app.analyzers.feature_extraction import extract_jmeter_feature_bundle
+from app.utils.jmeter_base_url import dominant_base_url_for_paths, dominant_origin_from_jmeter_rows
 
 
 class JMeterAnalyzerV2:
@@ -72,27 +74,74 @@ class JMeterAnalyzerV2:
         return 0
 
     @staticmethod
-    def _multi_source_peak_vusers_sum(data: List[Dict[str, Any]]) -> int:
+    def _resolve_parallel_vusers(
+        data: List[Dict[str, Any]],
+        parallel_peak_sources: Optional[List[Dict[str, Any]]],
+        merged_source_filenames: Optional[List[str]],
+    ) -> Tuple[int, List[Dict[str, Any]]]:
         """
-        For merged runs where each row has ``_merge_source_idx`` from N parallel JTL files,
-        return sum of (max VU observed in each source). Single source or missing tag → 0.
+        Combined peak VUsers for parallel JMeter result files = sum of max(allThreads) per file.
+
+        Prefer ``parallel_peak_sources`` (pre-merge) when len>=2 — accurate even if
+        ``_merge_source_idx`` is missing from saved CSV. Otherwise group merged rows by
+        ``_merge_source_idx`` (requires 2+ distinct indices).
         """
+        breakdown: List[Dict[str, Any]] = []
+
+        if parallel_peak_sources and len(parallel_peak_sources) >= 2:
+            total = 0
+            for i, src in enumerate(parallel_peak_sources):
+                pk = int(src.get("peak_vusers") or 0)
+                total += pk
+                fp = str(src.get("file_path") or "").strip()
+                bu = dominant_base_url_for_paths([fp]) if fp else ""
+                if not bu:
+                    bu = dominant_origin_from_jmeter_rows(
+                        [d for d in data if int(d.get("_merge_source_idx", i)) == i]
+                    )
+                breakdown.append(
+                    {
+                        "source_index": i,
+                        "filename": str(src.get("filename") or f"Result file {i + 1}"),
+                        "base_url": bu,
+                        "peak_vusers": pk,
+                    }
+                )
+            return total, breakdown
+
         by_idx: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         for d in data:
-            if "_merge_source_idx" not in d:
-                return 0
-            try:
-                idx = int(d["_merge_source_idx"])
-            except (TypeError, ValueError):
-                return 0
+            idx = 0
+            if "_merge_source_idx" in d and d.get("_merge_source_idx") not in ("", None):
+                try:
+                    idx = int(float(d["_merge_source_idx"]))
+                except (TypeError, ValueError):
+                    idx = 0
             by_idx[idx].append(d)
+
         if len(by_idx) < 2:
-            return 0
+            return 0, []
+
         total = 0
-        for rows in by_idx.values():
+        names = merged_source_filenames or []
+        for idx in sorted(by_idx.keys()):
+            rows = by_idx[idx]
             peak = max((JMeterAnalyzerV2._vu_value_row(x) for x in rows), default=0)
             total += int(peak)
-        return total
+            fn = ""
+            if names and 0 <= idx < len(names):
+                fn = names[idx]
+            breakdown.append(
+                {
+                    "source_index": idx,
+                    "filename": fn or f"Result file {idx + 1}",
+                    "base_url": dominant_origin_from_jmeter_rows(rows),
+                    "peak_vusers": int(peak),
+                }
+            )
+        return total, breakdown
+
+
 
     @staticmethod
     def _transaction_p90_sla_at_peak_load(
@@ -341,12 +390,18 @@ class JMeterAnalyzerV2:
         data: List[Dict[str, Any]],
         targets: Optional[Dict[str, float]] = None,
         application_display_name: Optional[str] = None,
+        *,
+        parallel_peak_sources: Optional[List[Dict[str, Any]]] = None,
+        merged_source_filenames: Optional[List[str]] = None,
     ) -> JMeterMetrics:
         """
         Analyze JMeter data and return comprehensive metrics.
         targets: optional dict with keys availability_target, avg_response_time_target (ms),
                  error_rate_target (%), throughput_target, p95_target (ms), sla_compliance_target (%)
         application_display_name: if set, overrides inferred JMeter thread/host name in report titles.
+        parallel_peak_sources: when 2+ JMeter files were merged, pass one dict per file with
+            peak_vusers, filename, file_path — used for combined peak VUsers (sum) and reporting.
+        merged_source_filenames: optional labels (same order as merge indices) when only merged CSV is loaded.
         """
         if not data:
             raise ValueError("No data provided for analysis")
@@ -416,7 +471,9 @@ class JMeterAnalyzerV2:
         transaction_stats, request_stats = JMeterAnalyzerV2._analyze_by_label(data)
 
         max_vu, peak_thr = JMeterAnalyzerV2._max_vu_and_peak_threshold(data)
-        multi_vu_sum = JMeterAnalyzerV2._multi_source_peak_vusers_sum(data)
+        multi_vu_sum, multi_vu_breakdown = JMeterAnalyzerV2._resolve_parallel_vusers(
+            data, parallel_peak_sources, merged_source_filenames
+        )
         header_vu = int(multi_vu_sum) if multi_vu_sum > 0 else int(max_vu)
         display_targets = JMeterAnalyzerV2._resolve_display_targets(targets)
         sla_p90_ms = float(display_targets.get("p95_percentile") or 3000)
@@ -477,6 +534,14 @@ class JMeterAnalyzerV2:
         
         # Response time distribution
         rt_distribution = JMeterAnalyzerV2._calculate_response_time_distribution(data)
+
+        # Observational outliers + robust comparison metrics only (does not alter primary stats)
+        feature_extraction = extract_jmeter_feature_bundle(
+            sample_times,
+            total_samples=total_samples,
+            rt_row_count=len(rt_rows),
+            primary_sample_time_stats=sample_time_stats,
+        )
         
         # Critical issues and recommendations
         critical_issues = JMeterAnalyzerV2._identify_issues(
@@ -560,9 +625,11 @@ class JMeterAnalyzerV2:
             "targets": display_targets,
             "max_concurrent_users": max_vu,
             "multi_source_peak_vusers_sum": int(multi_vu_sum),
+            "multi_source_peak_breakdown": multi_vu_breakdown,
             "peak_load_vu_threshold": int(round(peak_thr)) if peak_thr else 0,
             "transaction_sla_p90_peak": tx_sla_peak,
             "report_header": report_header,
+            "feature_extraction": feature_extraction,
         }
         
         return JMeterMetrics(

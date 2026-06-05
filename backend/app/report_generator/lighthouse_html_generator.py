@@ -4,9 +4,13 @@ Generates comprehensive HTML reports for Lighthouse performance analysis
 """
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
+from pathlib import Path
 import html
+import json
 
 from app.report_generator.report_theme_css import build_lighthouse_report_css
+from app.report_generator.combined_load_report_html import _COMBINED_CSS, _brand_logo_data_uri, _BRAND_TAGLINE
+from app.report_generator.experience_recommendations_html import recommendations_panel_html
 
 
 class LighthouseHTMLGenerator:
@@ -223,8 +227,9 @@ class LighthouseHTMLGenerator:
             
             print(f"  {'='*60}\n")
             
-            # Combine all sections
-            html = f'''<!DOCTYPE html>
+            # Tabbed editorial shell (aligned with JMeter combined load report UX)
+            if len(sections) < 12:
+                out_html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -238,12 +243,113 @@ class LighthouseHTMLGenerator:
     </div>
 </body>
 </html>'''
-            
-            # Final verification
-            print(f"  📊 Final HTML size: {len(html):,} characters")
+            else:
+                tab_ids = [
+                    "overview",
+                    "scorecard",
+                    "metrics",
+                    "issues",
+                    "roadmap",
+                    "operations",
+                    "conclusion",
+                    "recommendations",
+                ]
+                nav_labels = [
+                    "Overview",
+                    "Scorecard",
+                    "Metrics &amp; pages",
+                    "Issues",
+                    "Roadmap",
+                    "Operations",
+                    "Conclusion",
+                    "Recommendations",
+                ]
+                title_esc = html.escape(
+                    str(metadata.get("application") or metadata.get("url") or Path(str(filename)).stem or "Web experience")
+                )
+                date_line = html.escape(str(metadata.get("report_date") or ""))
+                prepared = html.escape(str(metadata.get("prepared_by") or ""))
+                fname_esc = html.escape(str(filename or ""))
+                logo_uri = _brand_logo_data_uri()
+                tag_esc = html.escape(_BRAND_TAGLINE)
+                if logo_uri:
+                    header_brand = f"""  <div class="report-header-brand-row">
+    <div class="report-brand">
+      <img src="{logo_uri}" alt="Autoload.AI" loading="lazy" />
+      <div class="report-brand-tagline">{tag_esc}</div>
+    </div>
+  </div>
+"""
+                else:
+                    header_brand = ""
+                nav_html = "".join(
+                    f"""<button class="{'nav-btn active' if tid == tab_ids[0] else 'nav-btn'}" onclick="show('{tid}')">{lab}</button>\n"""
+                    for tid, lab in zip(tab_ids, nav_labels)
+                )
+                rec_panel = recommendations_panel_html(title_esc, report_context="web_vitals")
+                p_overview = sections[1]
+                p_scorecard = sections[2]
+                p_metrics = "".join(sections[3:5])
+                p_issues = sections[5]
+                p_roadmap = "".join(sections[6:8])
+                p_ops = "".join(sections[8:10])
+                p_conc = "".join(sections[10:12])
+                tab_js_ids = json.dumps(tab_ids)
+                show_script = f"""<script>
+function show(id) {{
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const el = document.getElementById('panel-'+id);
+  if(el) el.classList.add('active');
+  const btns=[...document.querySelectorAll('.nav-btn')];
+  const ids={tab_js_ids};
+  const idx = ids.indexOf(id);
+  if(idx>=0 && btns[idx]) btns[idx].classList.add('active');
+  window.scrollTo({{top:0,behavior:'smooth'}});
+}}
+</script>"""
+                out_html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_esc} · Web Experience Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+{LighthouseHTMLGenerator._generate_css()}
+<style>
+{_COMBINED_CSS}
+</style>
+</head>
+<body>
+<div class="report-header">
+{header_brand}  <div class="header-eyebrow">Performance Engineering · Lighthouse · Core Web Vitals</div>
+  <h1 class="header-title">{title_esc}<br>Web Experience Report</h1>
+  <div class="header-sub">{fname_esc} · {date_line}</div>
+  <div class="header-meta">
+    <div class="header-meta-item"><span class="header-meta-label">Prepared by</span><span class="header-meta-value">{prepared}</span></div>
+  </div>
+</div>
+<nav class="sticky-nav">
+{nav_html}
+</nav>
+<div id="panel-overview" class="panel active"><div class="page">{p_overview}</div></div>
+<div id="panel-scorecard" class="panel"><div class="page">{p_scorecard}</div></div>
+<div id="panel-metrics" class="panel"><div class="page">{p_metrics}</div></div>
+<div id="panel-issues" class="panel"><div class="page">{p_issues}</div></div>
+<div id="panel-roadmap" class="panel"><div class="page">{p_roadmap}</div></div>
+<div id="panel-operations" class="panel"><div class="page">{p_ops}</div></div>
+<div id="panel-conclusion" class="panel"><div class="page">{p_conc}</div></div>
+{rec_panel}
+{show_script}
+</body>
+</html>'''
+
+            print(f"  📊 Final HTML size: {len(out_html):,} characters")
             print(f"  📊 Sections count: {len(sections)}")
             
-            return html
+            return out_html
         except Exception as e:
             print(f"  ✗ Critical error in generate_full_report: {e}")
             import traceback

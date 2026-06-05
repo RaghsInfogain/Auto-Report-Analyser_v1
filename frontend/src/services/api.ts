@@ -30,13 +30,18 @@ export function reportGenerationTimeoutMs(
   if (mb <= 0) sec = 180;
   else if (mb <= 200) sec = 180 + mb * 0.5;
   else if (mb <= 500) sec = 280 + (mb - 200) * 1.2;
-  else sec = 640 + (mb - 500) * 3;
+  else {
+    sec = 640 + (mb - 500) * 4;
+    if (mb > 10_000) {
+      sec = Math.max(sec, 7200 + (mb - 10_000) * 0.5);
+    }
+  }
   const rec =
     typeof totalRecords === 'number' && totalRecords > 0 ? totalRecords : 0;
   if (rec > 2_000_000) {
     sec = Math.max(sec, 400 + rec / 8000);
   }
-  sec = Math.min(Math.max(sec, 180), 10800);
+  sec = Math.min(Math.max(sec, 180), 21600);
   // Extra headroom so the client does not abort before the server budget
   return Math.ceil(sec * 1000) + 120_000;
 }
@@ -60,30 +65,151 @@ export interface AnalysisResult {
   metrics: any;
 }
 
-export const uploadFiles = async (files: File[], categories: string[]): Promise<{ files: UploadedFile[] }> => {
-  console.log('API_BASE_URL:', API_BASE_URL);
-  console.log('Upload URL:', `${API_BASE_URL}/api/upload`);
-  console.log('Files:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
-  console.log('Categories:', categories);
-  
+export interface UploadBatchResponse {
+  message: string;
+  run_id: string;
+  files: UploadedFile[];
+}
+
+const CHUNKED_UPLOAD_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB — use chunked API above this
+export const CHUNK_SIZE_BYTES = 32 * 1024 * 1024;
+
+export type UploadProgressCallback = (info: {
+  stage: 'upload' | 'finalize';
+  fileIndex: number;
+  fileCount: number;
+  fileName: string;
+  percent: number;
+  message: string;
+}) => void;
+
+export const uploadFiles = async (
+  files: File[],
+  categories: string[],
+  onProgress?: UploadProgressCallback
+): Promise<UploadBatchResponse> => {
+  const useChunked = files.some((f) => f.size >= CHUNKED_UPLOAD_THRESHOLD_BYTES);
+  if (useChunked) {
+    return uploadFilesChunked(files, categories, onProgress);
+  }
+
   const formData = new FormData();
-  files.forEach((file) => {
-    formData.append('files', file);
-  });
-  categories.forEach((category) => {
-    formData.append('categories', category);
-  });
+  files.forEach((file) => formData.append('files', file));
+  categories.forEach((category) => formData.append('categories', category));
 
-  // Log upload details for debugging
-  console.log('Uploading:', {
-    fileCount: files.length,
-    fileNames: files.map(f => f.name),
-    categories: categories
+  const response = await axios.post(`${API_BASE_URL}/api/upload`, formData, {
+    timeout: 0,
+    onUploadProgress: (evt) => {
+      if (!onProgress || !evt.total) return;
+      const percent = Math.round((evt.loaded / evt.total) * 100);
+      onProgress({
+        stage: 'upload',
+        fileIndex: 0,
+        fileCount: files.length,
+        fileName: files.length === 1 ? files[0].name : `${files.length} files`,
+        percent,
+        message: `Uploading… ${(evt.loaded / (1024 * 1024)).toFixed(1)} / ${(evt.total / (1024 * 1024)).toFixed(1)} MB`,
+      });
+    },
   });
-
-  // Use axios directly - don't set Content-Type, let browser set it with boundary
-  const response = await axios.post(`${API_BASE_URL}/api/upload`, formData);
   return response.data;
+};
+
+export const uploadFilesChunked = async (
+  files: File[],
+  categories: string[],
+  onProgress?: UploadProgressCallback
+): Promise<UploadBatchResponse> => {
+  let runId: string | undefined;
+  const uploaded: UploadedFile[] = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const category = categories[i];
+    const initForm = new FormData();
+    initForm.append('filename', file.name);
+    initForm.append('category', category);
+    initForm.append('total_size', String(file.size));
+    if (runId) initForm.append('run_id', runId);
+
+    const initRes = await axios.post(`${API_BASE_URL}/api/upload/init`, initForm, { timeout: 60000 });
+    const { upload_id, run_id, chunk_size_recommended } = initRes.data;
+    runId = run_id;
+    const chunkSize = chunk_size_recommended || CHUNK_SIZE_BYTES;
+    const totalChunks = Math.ceil(file.size / chunkSize);
+
+    for (let c = 0; c < totalChunks; c++) {
+      const start = c * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      const blob = file.slice(start, end);
+      const chunkForm = new FormData();
+      chunkForm.append('upload_id', upload_id);
+      chunkForm.append('chunk_index', String(c));
+      chunkForm.append('total_chunks', String(totalChunks));
+      chunkForm.append('chunk', blob, `${file.name}.part${c}`);
+
+      await axios.post(`${API_BASE_URL}/api/upload/chunk`, chunkForm, {
+        timeout: 0,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+
+      const pct = Math.round(((c + 1) / totalChunks) * 100);
+      onProgress?.({
+        stage: 'upload',
+        fileIndex: i,
+        fileCount: files.length,
+        fileName: file.name,
+        percent: pct,
+        message: `Uploading ${file.name}: part ${c + 1} of ${totalChunks}`,
+      });
+    }
+
+    const completeForm = new FormData();
+    completeForm.append('upload_id', upload_id);
+    const completeRes = await axios.post(`${API_BASE_URL}/api/upload/complete`, completeForm, { timeout: 120000 });
+    uploaded.push(completeRes.data.file);
+  }
+
+  onProgress?.({
+    stage: 'finalize',
+    fileIndex: files.length - 1,
+    fileCount: files.length,
+    fileName: '',
+    percent: 95,
+    message: 'Finalizing run (merge / row estimates)…',
+  });
+
+  const finalizeRes = await axios.post(
+    `${API_BASE_URL}/api/upload/finalize-run/${runId}`,
+    undefined,
+    { timeout: 600000 }
+  );
+
+  onProgress?.({
+    stage: 'finalize',
+    fileIndex: files.length - 1,
+    fileCount: files.length,
+    fileName: '',
+    percent: 100,
+    message: 'Upload complete',
+  });
+
+  return {
+    message: finalizeRes.data.message || 'Files uploaded successfully',
+    run_id: runId!,
+    files: finalizeRes.data.files || uploaded,
+  };
+};
+
+/** Single run: Lighthouse JSONs + optional custom navigation-timing JSONs (0–many each). */
+export const uploadWebVitalsBatch = async (
+  lighthouseJsonFiles: File[],
+  navigationTimingJsonFiles: File[]
+): Promise<UploadBatchResponse> => {
+  const files = lighthouseJsonFiles.concat(navigationTimingJsonFiles);
+  const categories = files.map(() => 'web_vitals');
+  return uploadFiles(files, categories);
 };
 
 export const listFiles = async (): Promise<{ files: UploadedFile[] }> => {
@@ -162,12 +288,12 @@ export interface RunInfo {
   uploaded_at: string;
   report_status: string;
   categories: string[];
-  files: UploadedFile[];
+  files?: UploadedFile[];
   base_url?: string;
 }
 
-export const listRuns = async (): Promise<{ runs: RunInfo[] }> => {
-  const response = await api.get('/api/runs');
+export const listRuns = async (summary: boolean = true): Promise<{ runs: RunInfo[] }> => {
+  const response = await api.get('/api/runs', { params: { summary } });
   return response.data;
 };
 
@@ -201,18 +327,22 @@ export const saveRunTargets = async (runId: string, targets: RunTargets): Promis
   return response.data;
 };
 
+/** Start report generation (returns immediately; use waitForRunReportCompletion to poll). */
 export const generateRunReport = async (
   runId: string,
   regenerate: boolean = false,
-  totalSizeBytes?: number,
-  totalRecords?: number
+  _totalSizeBytes?: number,
+  _totalRecords?: number
 ): Promise<{
   success: boolean;
+  status?: string;
   run_id: string;
-  file_count: number;
-  total_records: number;
-  analysis_duration: number;
-  report_urls: {
+  message?: string;
+  max_wait_seconds?: number;
+  file_count?: number;
+  total_records?: number;
+  analysis_duration?: number;
+  report_urls?: {
     html: string;
     pdf: string;
     ppt: string;
@@ -221,9 +351,42 @@ export const generateRunReport = async (
   const response = await api.post(
     `/api/runs/${runId}/generate-report?regenerate=${regenerate}`,
     undefined,
-    { timeout: reportGenerationTimeoutMs(totalSizeBytes, totalRecords) }
+    { timeout: 120_000 }
   );
   return response.data;
+};
+
+/** Poll until report generation finishes (for large JTL — avoids long-lived HTTP). */
+export const waitForRunReportCompletion = async (
+  runId: string,
+  options?: {
+    onProgress?: (progress: ReportProgress) => void;
+    totalSizeBytes?: number;
+    totalRecords?: number;
+    pollIntervalMs?: number;
+  }
+): Promise<ReportProgress> => {
+  const maxWaitMs = reportGenerationTimeoutMs(
+    options?.totalSizeBytes,
+    options?.totalRecords
+  );
+  const pollMs = options?.pollIntervalMs ?? 2000;
+  const terminal = new Set(['completed', 'failed', 'stuck']);
+  const started = Date.now();
+
+  while (Date.now() - started < maxWaitMs) {
+    const progress = await getReportProgress(runId);
+    options?.onProgress?.(progress);
+    if (terminal.has(progress.status)) {
+      return progress;
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+
+  throw new Error(
+    `Report generation timed out after ${Math.round(maxWaitMs / 60000)} minutes. ` +
+      'Check server logs — very large files may need more RAM or time.'
+  );
 };
 
 export const getRunReport = async (runId: string, reportType: 'html' | 'pdf' | 'ppt'): Promise<Blob | string> => {
@@ -243,7 +406,7 @@ export interface ReportProgress {
     [key: string]: {
       name: string;
       description: string;
-      status: 'pending' | 'in_progress' | 'completed' | 'failed';
+      status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
       started_at?: string;
       completed_at?: string;
       progress_percent: number;
@@ -253,7 +416,27 @@ export interface ReportProgress {
   message: string;
   last_updated: string;
   can_retry?: boolean;
+  estimated_total_seconds?: number;
+  estimated_remaining_seconds?: number;
+  elapsed_seconds?: number;
+  eta_label?: string;
+  html_only?: boolean;
 }
+
+export const formatEtaLabel = (progress?: ReportProgress | null): string | undefined => {
+  if (!progress) return undefined;
+  if (progress.status === 'completed') return 'Complete';
+  if (progress.eta_label) return progress.eta_label;
+  if (progress.estimated_remaining_seconds != null) {
+    const s = progress.estimated_remaining_seconds;
+    if (s < 60) return `~${s} sec remaining`;
+    if (s < 3600) return `~${Math.max(1, Math.round(s / 60))} min remaining`;
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s % 3600) / 60);
+    return m > 0 ? `~${h}h ${m}m remaining` : `~${h}h remaining`;
+  }
+  return undefined;
+};
 
 export const getReportProgress = async (runId: string): Promise<ReportProgress> => {
   const response = await api.get(`/api/runs/${runId}/progress`);

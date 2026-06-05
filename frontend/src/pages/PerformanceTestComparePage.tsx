@@ -49,7 +49,7 @@ const PerformanceTestComparePage: React.FC = () => {
   const loadRuns = async () => {
     setLoading(true);
     try {
-      const result = await listRuns();
+      const result = await listRuns(true);
       const jmeterRuns = result.runs.filter((run) => run.categories.includes('jmeter'));
       setRuns(jmeterRuns);
     } catch (error) {

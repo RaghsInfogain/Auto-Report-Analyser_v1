@@ -13,6 +13,7 @@ import statistics
 from datetime import datetime
 import pandas as pd
 import asyncio
+import threading
 from functools import wraps
 
 from app.parsers.json_parser import JSONParser
@@ -28,6 +29,8 @@ from app.analyzers.lighthouse_analyzer import LighthouseAnalyzer
 from app.report_generator.report_builder import ReportBuilder
 from app.report_generator.html_report_generator import HTMLReportGenerator
 from app.report_generator.lighthouse_html_generator import LighthouseHTMLGenerator
+from app.lighthouse_nav_report_v2 import generate_lighthouse_nav_html_v2
+from app.lighthouse_nav_report_v2.integration import collect_lighthouse_and_nav_from_run
 from app.report_generator.pdf_generator import PDFReportGenerator
 from app.report_generator.ppt_generator import PPTReportGenerator
 from app.report_generator.jmeter_ab_comparison_report import generate_jmeter_ab_comparison_html
@@ -36,8 +39,29 @@ from app.integrations.jmeter_compare_v2 import (
     compact_analysis_for_api,
     render_stored_v2_payload,
 )
+from app.utils.storage_paths import resolve_storage_path
+from app.utils.upload_progress_tracker import UploadProgressTracker, MAX_UPLOAD_BYTES, CHUNK_SIZE_BYTES
+from app.api.upload_handlers import (
+    register_partial_upload,
+    get_partial_upload,
+    pop_partial_upload,
+    stream_save_upload,
+    finalize_jmeter_run,
+)
 from app.database import get_db
 from app.database.service import DatabaseService, _dominant_jmeter_base_url_for_files
+from app.database.run_analysis_cache import ComparisonCacheService, RunAnalysisCacheService
+from app.services.jmeter_analysis_service import (
+    try_load_cached_jmeter_metrics,
+    persist_jmeter_cache,
+    apply_cached_jmeter_to_run,
+    analyze_jmeter_path,
+)
+from app.services.web_vitals_cache_service import (
+    try_load_cached_web_vitals_metrics,
+    persist_web_vitals_cache,
+    apply_cached_web_vitals_to_run,
+)
 from app.database.models import UploadedFile, AnalysisResult, GeneratedReport
 from app.ai.chatbot_engine import PerformanceChatbot
 from app.utils.progress_tracker import ReportProgressTracker
@@ -45,6 +69,8 @@ from app.utils.report_timeouts import (
     compute_report_wait_timeout_seconds,
     estimate_run_max_record_count,
     estimate_run_total_bytes,
+    format_duration_human,
+    should_skip_pdf_ppt_reports,
 )
 
 router = APIRouter()
@@ -93,25 +119,73 @@ MERGED_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
 JMETER_COMPARE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Background report jobs (HTTP returns immediately; client polls /runs/{id}/progress)
+_active_report_threads: Dict[str, threading.Thread] = {}
+
+
+def _is_report_thread_active(run_id: str) -> bool:
+    thread = _active_report_threads.get(run_id)
+    return thread is not None and thread.is_alive()
+
+
+def _reset_orphaned_run_status(db: Session, run_id: str, files) -> bool:
+    """
+    Reset analyzing/generating when no worker is running (e.g. after server restart).
+    Returns True if status was reset to pending.
+    """
+    stuck_files = [f for f in files if f.report_status in ("analyzing", "generating")]
+    if not stuck_files:
+        return False
+    if _is_report_thread_active(run_id):
+        return False
+
+    progress = ReportProgressTracker.get_progress(run_id)
+    if progress and progress.get("status") == "in_progress":
+        if not ReportProgressTracker.is_stuck(run_id, timeout_minutes=5):
+            return False
+
+    for f in stuck_files:
+        f.report_status = "pending"
+    db.commit()
+    ReportProgressTracker.clear_progress(run_id)
+    print(f"⚠️  Reset orphaned run status for {run_id} (no active report worker)")
+    return True
+
 
 def _load_jmeter_records_for_run(db: Session, run_id: str) -> List[Dict[str, Any]]:
     """Load and merge all JMeter JTL/JSON files for a run_id."""
     files = [f for f in DatabaseService.get_files_by_run_id(db, run_id) if f.category == "jmeter"]
     if not files:
         raise HTTPException(status_code=404, detail=f"No JMeter files for run_id {run_id}")
+
     all_data: List[List[Dict[str, Any]]] = []
+    seen_paths: set[str] = set()
     for db_file in files:
-        p = db_file.file_path
-        if not os.path.isfile(p):
+        resolved = resolve_storage_path(
+            db_file.file_path,
+            run_id=run_id,
+            file_id=db_file.file_id,
+            filename=db_file.filename,
+        )
+        if not resolved:
+            print(f"compare-ab: file missing for run {run_id}: {db_file.file_path}")
             continue
-        ext = Path(p).suffix.lower()
+        if resolved in seen_paths:
+            continue
+        seen_paths.add(resolved)
+        if resolved != db_file.file_path:
+            db_file.file_path = resolved
+            db.commit()
+
+        ext = Path(resolved).suffix.lower()
         try:
             if ext == ".json":
-                all_data.append(JSONParser.parse(p, "jmeter"))
+                all_data.append(JSONParser.parse(resolved, "jmeter"))
             else:
-                all_data.append(JTLParserV2.parse(str(p)))
+                all_data.append(JTLParserV2.parse(resolved))
         except Exception as e:
-            print(f"compare-ab: skip {p}: {e}")
+            print(f"compare-ab: skip {resolved}: {e}")
+
     if not all_data:
         raise HTTPException(
             status_code=400,
@@ -152,6 +226,13 @@ async def jmeter_compare_ab(
     tmp_paths: List[Path] = []
     orig_name_a: Optional[str] = None
     orig_name_b: Optional[str] = None
+    cache_key = ComparisonCacheService.build_cache_key(
+        "jmeter_ab",
+        run_id_a if use_runs else None,
+        run_id_b if use_runs else None,
+        name_a=name_a,
+        name_b=name_b,
+    )
     try:
         if use_files:
             for uf in (file_a, file_b):
@@ -162,24 +243,50 @@ async def jmeter_compare_ab(
                 p = Path(raw)
                 p.write_bytes(await uf.read())
                 tmp_paths.append(p)
-            data_a = JTLParserV2.parse(str(tmp_paths[0]))
-            data_b = JTLParserV2.parse(str(tmp_paths[1]))
             orig_name_a = file_a.filename if file_a else None
             orig_name_b = file_b.filename if file_b else None
-        else:
-            data_a = _load_jmeter_records_for_run(db, run_id_a or "")
-            data_b = _load_jmeter_records_for_run(db, run_id_b or "")
 
-        html, analysis = build_jmeter_comparison_v2(
-            data_a,
-            data_b,
-            name_a=name_a,
-            name_b=name_b,
-            environment_a=environment_a,
-            environment_b=environment_b,
-            build_a=build_a,
-            build_b=build_b,
+        cmp_fp = ComparisonCacheService.build_comparison_fingerprint(
+            run_id_a=run_id_a if use_runs else None,
+            run_id_b=run_id_b if use_runs else None,
+            path_a=str(tmp_paths[0]) if tmp_paths else None,
+            path_b=str(tmp_paths[1]) if len(tmp_paths) > 1 else None,
+            db=db if use_runs else None,
         )
+        cached_analysis = ComparisonCacheService.get_valid(db, cache_key, cmp_fp)
+        if cached_analysis and cached_analysis.get("report_payload"):
+            analysis = cached_analysis
+            html = render_stored_v2_payload(analysis["report_payload"])
+        else:
+            if use_files:
+                data_a = JTLParserV2.parse(str(tmp_paths[0]))
+                data_b = JTLParserV2.parse(str(tmp_paths[1]))
+            else:
+                data_a = _load_jmeter_records_for_run(db, run_id_a or "")
+                data_b = _load_jmeter_records_for_run(db, run_id_b or "")
+
+            html, analysis = build_jmeter_comparison_v2(
+                data_a,
+                data_b,
+                name_a=name_a,
+                name_b=name_b,
+                environment_a=environment_a,
+                environment_b=environment_b,
+                build_a=build_a,
+                build_b=build_b,
+            )
+            ComparisonCacheService.save(
+                db,
+                cache_key=cache_key,
+                fingerprint=cmp_fp,
+                comparison_type="jmeter_ab",
+                payload=analysis,
+                run_id_a=run_id_a if use_runs else None,
+                run_id_b=run_id_b if use_runs else None,
+                name_a=name_a,
+                name_b=name_b,
+            )
+
         exec_s = analysis.get("executive_summary") or {}
         verdict = exec_s.get("verdict")
         traffic = exec_s.get("traffic_signal")
@@ -265,7 +372,10 @@ async def get_jmeter_comparison_report_html(
     row = DatabaseService.get_jmeter_comparison_report(db, comparison_report_id)
     if not row:
         raise HTTPException(status_code=404, detail="Comparison report not found")
-    path = row.html_path
+    path = resolve_storage_path(row.html_path) or row.html_path
+    if path and path != row.html_path:
+        row.html_path = path
+        db.commit()
     if not path or not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Report file missing on disk")
     with open(path, "r", encoding="utf-8") as f:
@@ -316,9 +426,10 @@ async def regenerate_jmeter_comparison_report(comparison_report_id: str, db: Ses
             raise HTTPException(status_code=500, detail="No stored analysis to regenerate from")
         html = generate_jmeter_ab_comparison_html(analysis)
 
-    path = Path(row.html_path)
+    path = Path(resolve_storage_path(row.html_path) or row.html_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")
+    row.html_path = str(path)
     exec_s = analysis.get("executive_summary") or {}
     row.analysis_json = analysis
     flag_modified(row, "analysis_json")
@@ -453,15 +564,22 @@ async def generate_complete_report(file_id: str, db: Session = Depends(get_db)):
             pdf_bytes = PDFReportGenerator.generate_jmeter_pdf_report(metrics)
             ppt_bytes = PPTReportGenerator.generate_jmeter_ppt_report(metrics)
         elif category == "web_vitals":
-            # Check if this is a Lighthouse JSON file (has lighthouse-specific structure)
-            if file_path.endswith(".json") and "lighthouse" in str(file_path).lower() or (isinstance(metrics, dict) and "metrics" in metrics and "grades" in metrics):
-                # Generate Lighthouse HTML report
+            lh_paths_v2, nav_paths_v2 = collect_lighthouse_and_nav_from_run([db_file])
+            if lh_paths_v2:
+                html_content = generate_lighthouse_nav_html_v2(
+                    lh_paths_v2,
+                    nav_paths=nav_paths_v2,
+                    site_name=Path(db_file.filename).stem,
+                    site_section="",
+                    env="Production",
+                )
+                pdf_bytes = b""
+                ppt_bytes = b""
+            elif file_path.endswith(".json") and (isinstance(metrics, dict) and "metrics" in metrics and "grades" in metrics):
                 html_content = LighthouseHTMLGenerator.generate_full_report(metrics, db_file.filename)
-                # PDF and PPT generation for Lighthouse - placeholder for now
-                pdf_bytes = b""  # TODO: Implement Lighthouse PDF generator
-                ppt_bytes = b""  # TODO: Implement Lighthouse PPT generator
+                pdf_bytes = b""
+                ppt_bytes = b""
             else:
-                # Generate Web Vitals reports (old format)
                 html_content = HTMLReportGenerator.generate_web_vitals_html_report(metrics, db_file.filename)
                 pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(metrics, db_file.filename)
                 ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(metrics, db_file.filename)
@@ -666,13 +784,10 @@ async def upload_files(
             if file_extension not in [".json", ".csv"]:
                 raise HTTPException(status_code=400, detail="Files must be .json or .csv")
         
-        # Generate unique file ID and save file
+        # Generate unique file ID and save file (streamed — supports multi-GB files)
         file_id = str(uuid.uuid4())
         file_path = UPLOAD_DIR / f"{file_id}{file_extension}"
-        
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
+        bytes_written = await stream_save_upload(file, file_path)
         
         # Store in database with run_id
         db_file = DatabaseService.create_uploaded_file(
@@ -680,7 +795,7 @@ async def upload_files(
             filename=file.filename,
             category=category,
             file_path=str(file_path),
-            file_size=len(content),
+            file_size=bytes_written,
             uploaded_by="current_user",
             run_id=run_id  # All files in this upload share the same run_id
         )
@@ -702,101 +817,13 @@ async def upload_files(
         
         uploaded_files.append(db_file.to_dict())
     
-    # ========================================================================
-    # JMETER FILES MERGING LOGIC (JTL/CSV)
-    # ========================================================================
-    # JMeter files contain time-series data (rows of test results).
-    # Merging strategy: Simple concatenation - combine all records into one file.
-    # This preserves all individual test results for time-series analysis.
-    # ========================================================================
-    if len(jmeter_files_data) > 1:
-        # USE CASE 2: Multiple JMeter files - Concatenate all records
-        print(f"\n{'='*60}")
-        print(f"JMETER MERGING: Multiple JMeter files detected")
-        print(f"Strategy: Concatenate all time-series records")
-        print(f"Merging {len(jmeter_files_data)} JMeter files for run {run_id}...")
-        print(f"{'='*60}\n")
-        
-        # Parse all JMeter files
-        all_jmeter_data = []
-        for jmeter_file_info in jmeter_files_data:
-            file_path = jmeter_file_info["file_path"]
-            print(f"  Parsing {Path(file_path).name}...")
-            try:
-                if str(file_path).endswith(".jtl") or str(file_path).endswith(".csv"):
-                    data = JTLParserV2.parse(str(file_path))
-                else:
-                    data = JSONParser.parse(str(file_path), "jmeter")
-                all_jmeter_data.append(data)
-                print(f"    ✓ Parsed {len(data):,} records")
-            except Exception as e:
-                print(f"    ✗ Error parsing {Path(file_path).name}: {e}")
-                raise HTTPException(status_code=400, detail=f"Error parsing file {Path(file_path).name}: {e}")
-        
-        # JMeter merge: Simple concatenation (extend all records)
-        merged_data = JTLParserV2.merge_data(all_jmeter_data, tag_source_index=True)
-        print(f"  ✓ Merged {len(merged_data):,} total records (concatenated, source-index tagged)")
-        
-        # Save merged file as CSV (JTL format)
-        MERGED_DIR.mkdir(exist_ok=True)
-        merged_file_path = MERGED_DIR / f"{run_id}_merged.jtl"
-        
-        # Write merged data as CSV (JTL format)
-        # Convert list of dicts to DataFrame, handling None values
+    if jmeter_files_data:
         try:
-            df = pd.DataFrame(merged_data)
-            df.to_csv(merged_file_path, index=False)
-            merged_file_size = merged_file_path.stat().st_size
-            print(f"  ✓ Saved merged JMeter file: {merged_file_path} ({merged_file_size:,} bytes)")
+            finalize_jmeter_run(db, run_id, UPLOAD_DIR, MERGED_DIR)
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"  ✗ Error saving merged file: {e}")
-            raise HTTPException(status_code=500, detail=f"Error saving merged file: {e}")
-        
-        # Update all JMeter file records to point to merged file
-        merged_filename = f"MERGED_{run_id}_{'+'.join(jmeter_filenames[:3])}{'...' if len(jmeter_filenames) > 3 else ''}"
-        for jmeter_file_info in jmeter_files_data:
-            db_file = jmeter_file_info["db_file"]
-            db_file.file_path = str(merged_file_path)
-            db_file.filename = merged_filename
-            db_file.file_size = merged_file_path.stat().st_size
-            db_file.record_count = len(merged_data)
-        
-        db.commit()
-        print(f"✓ Merged JMeter file created and linked to {len(jmeter_files_data)} file records")
-        print(f"  All files now point to: {merged_file_path}")
-        
-    elif len(jmeter_files_data) == 1:
-        # USE CASE 1: Single file - Keep original file, just get record count
-        print(f"\n{'='*60}")
-        print(f"USE CASE 1: Single JMeter file detected")
-        print(f"Processing single file for run {run_id}...")
-        print(f"{'='*60}\n")
-        
-        single_file_info = jmeter_files_data[0]
-        file_path = single_file_info["file_path"]
-        db_file = single_file_info["db_file"]
-        
-        print(f"  File: {db_file.filename}")
-        print(f"  Path: {file_path}")
-        print(f"  File exists: {os.path.exists(file_path)}")
-        
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail=f"Uploaded file not found: {file_path}")
-        
-        # Parse to get record count (file_path stays as original uploaded file)
-        try:
-            if str(file_path).endswith(".jtl") or str(file_path).endswith(".csv"):
-                data = JTLParserV2.parse(str(file_path))
-            else:
-                data = JSONParser.parse(str(file_path), "jmeter")
-            db_file.record_count = len(data)
-            db.commit()
-            print(f"  ✓ Parsed {len(data):,} records")
-            print(f"  ✓ File path preserved: {file_path}")
-            print(f"  ✓ Single file ready for analysis")
-        except Exception as e:
-            print(f"  ✗ Error parsing file: {e}")
-            raise HTTPException(status_code=400, detail=f"Error parsing file: {e}")
+            raise HTTPException(status_code=400, detail=f"Error processing JMeter files: {e}")
     
     # ========================================================================
     # WEB VITALS/LIGHTHOUSE FILES - NO MERGING DURING UPLOAD
@@ -809,6 +836,167 @@ async def upload_files(
     # Each file keeps its original path and filename
     
     return {"message": "Files uploaded successfully", "run_id": run_id, "files": uploaded_files}
+
+
+@router.post("/upload/init")
+async def upload_init(
+    filename: str = Form(...),
+    category: str = Form(...),
+    total_size: int = Form(...),
+    run_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Start a chunked upload session (for files up to 50 GB)."""
+    if total_size <= 0:
+        raise HTTPException(status_code=400, detail="total_size must be positive")
+    if total_size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds maximum size ({MAX_UPLOAD_BYTES // (1024**3)} GB)",
+        )
+    if category not in ["web_vitals", "jmeter", "ui_performance"]:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}")
+
+    ext = Path(filename).suffix.lower()
+    if category == "jmeter" and ext not in [".jtl", ".csv", ".xml"]:
+        raise HTTPException(status_code=400, detail="JMeter files must be .jtl, .csv, or .xml")
+    if category == "web_vitals" and ext != ".json":
+        raise HTTPException(status_code=400, detail="Lighthouse/Web Vitals files must be .json")
+
+    if not run_id:
+        run_id = DatabaseService.generate_next_run_id(db)
+
+    file_id = str(uuid.uuid4())
+    final_path = UPLOAD_DIR / f"{file_id}{ext or '.jtl'}"
+    partial_path = UPLOAD_DIR / f"{file_id}.partial"
+
+    upload_id = UploadProgressTracker.create(
+        filename=filename,
+        category=category,
+        total_bytes=total_size,
+        run_id=run_id,
+        file_id=file_id,
+    )
+    register_partial_upload(
+        upload_id,
+        partial_path=partial_path,
+        final_path=final_path,
+        run_id=run_id,
+        file_id=file_id,
+        filename=filename,
+        category=category,
+        total_bytes=total_size,
+    )
+    if partial_path.exists():
+        partial_path.unlink()
+
+    return {
+        "upload_id": upload_id,
+        "file_id": file_id,
+        "run_id": run_id,
+        "chunk_size_recommended": CHUNK_SIZE_BYTES,
+    }
+
+
+@router.post("/upload/chunk")
+async def upload_chunk(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    chunk: UploadFile = File(...),
+):
+    """Append one chunk to an in-progress upload."""
+    meta = get_partial_upload(upload_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Upload session not found or expired")
+
+    partial_path: Path = meta["partial_path"]
+    append = partial_path.exists() and partial_path.stat().st_size > 0
+    await stream_save_upload(
+        chunk,
+        partial_path,
+        upload_id=upload_id,
+        total_bytes=meta["total_bytes"],
+        append=append,
+    )
+    bytes_written = partial_path.stat().st_size if partial_path.exists() else 0
+
+    return {
+        "upload_id": upload_id,
+        "chunk_index": chunk_index,
+        "bytes_written": bytes_written,
+        "total_bytes": meta["total_bytes"],
+        "progress_percent": min(100, int(bytes_written / max(meta["total_bytes"], 1) * 100)),
+    }
+
+
+@router.post("/upload/complete")
+async def upload_complete(upload_id: str = Form(...), db: Session = Depends(get_db)):
+    """Finalize one chunked file and register it on the run."""
+    meta = pop_partial_upload(upload_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Upload session not found or already completed")
+
+    partial_path: Path = meta["partial_path"]
+    final_path: Path = meta["final_path"]
+    if not partial_path.is_file():
+        UploadProgressTracker.fail(upload_id, "No data received")
+        raise HTTPException(status_code=400, detail="No upload data received")
+
+    shutil.move(str(partial_path), str(final_path))
+    size = final_path.stat().st_size
+
+    existing = DatabaseService.get_uploaded_file(db, meta["file_id"])
+    if not existing:
+        db_file = DatabaseService.create_uploaded_file(
+            db=db,
+            filename=meta["filename"],
+            category=meta["category"],
+            file_path=str(final_path),
+            file_size=size,
+            uploaded_by="current_user",
+            run_id=meta["run_id"],
+            file_id=meta["file_id"],
+        )
+    else:
+        db_file = existing
+        db_file.file_path = str(final_path)
+        db_file.file_size = size
+
+    UploadProgressTracker.complete(upload_id, f"Saved {meta['filename']}")
+    return {
+        "upload_id": upload_id,
+        "run_id": meta["run_id"],
+        "file_id": meta["file_id"],
+        "file": db_file.to_dict(),
+        "message": "Chunk upload complete. Call /upload/finalize-run to merge JMeter files.",
+    }
+
+
+@router.post("/upload/finalize-run/{run_id}")
+async def upload_finalize_run(run_id: str, db: Session = Depends(get_db)):
+    """After all chunked files for a run are uploaded, merge JMeter files and estimate row counts."""
+    files = DatabaseService.get_files_by_run_id(db, run_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if any(f.category == "jmeter" for f in files):
+        finalize_jmeter_run(db, run_id, UPLOAD_DIR, MERGED_DIR)
+    refreshed = DatabaseService.get_files_by_run_id(db, run_id)
+    return {
+        "run_id": run_id,
+        "message": "Run finalized",
+        "files": [f.to_dict() for f in refreshed],
+    }
+
+
+@router.get("/upload/{upload_id}/progress")
+async def get_upload_progress(upload_id: str):
+    """Poll chunked upload progress."""
+    progress = UploadProgressTracker.get(upload_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    return progress
+
 
 @router.get("/files")
 @timeout_handler(30.0)  # 30 second timeout
@@ -825,12 +1013,15 @@ async def list_files(db: Session = Depends(get_db)):
 
 @router.get("/runs")
 @timeout_handler(30.0)  # 30 second timeout
-async def list_runs(db: Session = Depends(get_db)):
+async def list_runs(
+    summary: bool = Query(True, description="Omit per-file details for faster list loads"),
+    db: Session = Depends(get_db),
+):
     """List all runs (grouped by upload batch)"""
     try:
         import time
         start_time = time.time()
-        runs = DatabaseService.get_all_run_ids(db)
+        runs = DatabaseService.get_all_run_ids(db, summary_only=summary)
         
         # Proactively detect and reset stuck runs
         from datetime import datetime, timedelta
@@ -838,22 +1029,10 @@ async def list_runs(db: Session = Depends(get_db)):
         for run in runs:
             run_id = run.get('run_id')
             if run_id and run.get('report_status') in ['analyzing', 'generating']:
-                # Check if it's actually stuck (no progress update in last 5 minutes)
                 files = DatabaseService.get_files_by_run_id(db, run_id)
-                if files:
-                    # Check if any file has been stuck for more than 5 minutes
-                    stuck_files = [f for f in files if f.report_status in ["analyzing", "generating"]]
-                    if stuck_files:
-                        # Check progress tracker
-                        if ReportProgressTracker.is_stuck(run_id, timeout_minutes=5):
-                            print(f"⚠️  Auto-resetting stuck run: {run_id}")
-                            for f in stuck_files:
-                                f.report_status = "pending"
-                            db.commit()
-                            ReportProgressTracker.clear_progress(run_id)
-                            reset_count += 1
-                            # Update the run status in the response
-                            run['report_status'] = 'pending'
+                if files and _reset_orphaned_run_status(db, run_id, files):
+                    reset_count += 1
+                    run['report_status'] = 'pending'
         
         if reset_count > 0:
             print(f"✅ Auto-reset {reset_count} stuck run(s) during list_runs")
@@ -1091,37 +1270,36 @@ async def get_report_progress(run_id: str):
     progress = ReportProgressTracker.get_progress(run_id)
     
     if not progress:
-        # Check if run exists and has stuck status
         from app.database import SessionLocal
         db = SessionLocal()
         try:
             files = DatabaseService.get_files_by_run_id(db, run_id)
             if files and any(f.report_status in ["analyzing", "generating"] for f in files):
-                # Check if it's stuck
-                if ReportProgressTracker.is_stuck(run_id):
-                    # Reset stuck status
-                    for f in files:
-                        if f.report_status in ["analyzing", "generating"]:
-                            f.report_status = "pending"
-                    db.commit()
+                if _reset_orphaned_run_status(db, run_id, files):
                     return {
                         "run_id": run_id,
                         "status": "stuck",
-                        "message": "Report generation appears to be stuck. Status has been reset. Please try again.",
-                        "can_retry": True
+                        "message": "Previous report job was interrupted. Status reset — click Generate to retry.",
+                        "can_retry": True,
                     }
-                else:
+                if _is_report_thread_active(run_id):
                     return {
                         "run_id": run_id,
-                        "status": "unknown",
-                        "message": "No progress tracking found. Report generation may not have started."
+                        "status": "in_progress",
+                        "message": "Report generation is starting…",
+                        "overall_progress": 0,
                     }
-            else:
                 return {
                     "run_id": run_id,
-                    "status": "not_found",
-                    "message": "Run not found or no active report generation"
+                    "status": "stuck",
+                    "message": "Report generation was interrupted. Please click Generate again.",
+                    "can_retry": True,
                 }
+            return {
+                "run_id": run_id,
+                "status": "not_found",
+                "message": "Run not found or no active report generation",
+            }
         finally:
             db.close()
     
@@ -1147,6 +1325,10 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
     
     if not files:
         raise HTTPException(status_code=404, detail="Run not found")
+
+    if any(f.report_status in ("analyzing", "generating") for f in files):
+        if _reset_orphaned_run_status(db, run_id, files):
+            files = DatabaseService.get_files_by_run_id(db, run_id)
 
     total_bytes = estimate_run_total_bytes(files)
     rec_est = estimate_run_max_record_count(files)
@@ -1178,6 +1360,8 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
             if f.report_status in ["analyzing", "generating", "generated"]:
                 f.report_status = "pending"
         db.commit()
+        RunAnalysisCacheService.delete_for_run(db, run_id)
+        ComparisonCacheService.invalidate_runs(db, run_id)
         print(f"✓ Cleared progress, analysis results, and reset file statuses for regenerate")
     else:
         # Check if already in progress (only for non-regenerate requests)
@@ -1194,7 +1378,7 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
                 ReportProgressTracker.clear_progress(run_id)  # Clear old progress
             
             # Check if stuck in progress tracker
-            if ReportProgressTracker.is_stuck(run_id, timeout_minutes=5):
+            if ReportProgressTracker.is_stuck(run_id, timeout_minutes=30):
                 # Reset stuck status
                 print(f"⚠️  Run {run_id} appears stuck in progress tracker, resetting...")
                 for f in files:
@@ -1208,9 +1392,14 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
                 print(f"ℹ️  Run {run_id} already in progress, returning current progress")
                 return existing_progress
     
-    # Initialize progress tracking for new generation
-    ReportProgressTracker.initialize(run_id)
-    print(f"✓ Initialized progress tracking for {run_id}")
+    html_only = should_skip_pdf_ppt_reports(total_bytes, rec_est)
+    ReportProgressTracker.initialize(
+        run_id,
+        estimated_total_seconds=MAX_TIMEOUT,
+        html_only=html_only,
+    )
+    eta_label = format_duration_human(MAX_TIMEOUT * (0.85 if html_only else 1.0))
+    print(f"✓ Initialized progress tracking for {run_id} (est. {eta_label})")
     
     def run_analysis_with_timeout():
         """Run analysis in a separate thread with timeout"""
@@ -1293,41 +1482,44 @@ async def generate_run_report(run_id: str, db: Session = Depends(get_db), regene
             except Exception as close_error:
                 print(f"✗ Error closing database session: {close_error}")
     
-    try:
-        # Use ThreadPoolExecutor to run with timeout
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = loop.run_in_executor(executor, run_analysis_with_timeout)
-            try:
-                result = await asyncio.wait_for(future, timeout=MAX_TIMEOUT)
-                
-                # Check if result indicates failure
-                if isinstance(result, dict) and result.get("success") is False:
-                    error_msg = result.get("error", "Unknown error occurred during report generation")
-                    ReportProgressTracker.fail(run_id, error_msg)
-                    raise HTTPException(status_code=500, detail=error_msg)
-                
-                return result
-            except asyncio.TimeoutError:
-                # Update status to error
-                for f in files:
-                    f.report_status = "error"
-                db.commit()
-                raise HTTPException(status_code=504, detail=f"Report generation timed out after {MAX_TIMEOUT} seconds. The dataset may be too large. Please try with smaller files or contact support.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Update status to error for all files
-        print(f"✗ Error in report generation for {run_id}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    existing_thread = _active_report_threads.get(run_id)
+    if existing_thread and existing_thread.is_alive():
+        prog = ReportProgressTracker.get_progress(run_id)
+        return prog or {
+            "success": True,
+            "status": "in_progress",
+            "run_id": run_id,
+            "message": "Report generation is already running.",
+        }
+
+    def _background_wrapper():
         try:
-            for f in files:
-                f.report_status = "error"
-            db.commit()
-        except Exception as db_error:
-            print(f"✗ Error updating status: {str(db_error)}")
-        raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
+            run_analysis_with_timeout()
+        finally:
+            _active_report_threads.pop(run_id, None)
+
+    worker = threading.Thread(
+        target=_background_wrapper,
+        name=f"report-gen-{run_id}",
+        daemon=True,
+    )
+    _active_report_threads[run_id] = worker
+    worker.start()
+
+    print(
+        f"✓ Report generation started in background for {run_id} "
+        f"(budget up to {MAX_TIMEOUT:.0f}s; poll /api/runs/{run_id}/progress)"
+    )
+    return {
+        "success": True,
+        "status": "started",
+        "run_id": run_id,
+        "message": f"Report generation started. Estimated time: {eta_label}.",
+        "max_wait_seconds": int(MAX_TIMEOUT),
+        "estimated_total_seconds": int(MAX_TIMEOUT * (0.85 if html_only else 1.0)),
+        "eta_label": eta_label,
+        "html_only": html_only,
+    }
 
 def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_time):
     """Perform the actual analysis and report generation with optimizations"""
@@ -1380,6 +1572,24 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         
         for category, category_files in files_by_category.items():
             if category == "jmeter":
+                cached_jmeter = try_load_cached_jmeter_metrics(db, run_id, category_files, regenerate)
+                if cached_jmeter is not None:
+                    ReportProgressTracker.update_task(
+                        run_id, "parsing", "completed", 100, "Using cached JMeter metrics"
+                    )
+                    ReportProgressTracker.update_task(
+                        run_id, "analysis", "completed", 100, "Using cached JMeter metrics"
+                    )
+                    entry = apply_cached_jmeter_to_run(db, run_id, category_files, cached_jmeter, start_time)
+                    all_metrics.append({
+                        "file_id": entry["file_id"],
+                        "filename": entry["filename"],
+                        "category": "jmeter",
+                        "metrics": entry["metrics"],
+                    })
+                    total_records += entry["sample_count"]
+                    continue
+
                 # Check if files already point to a merged file (from upload-time merge)
                 first_file_path = category_files[0].file_path
                 # Only consider it merged if there are multiple files AND the path/filename indicates merged
@@ -1432,11 +1642,20 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     ReportProgressTracker.update_task(run_id, "analysis", "in_progress", 0, f"Analyzing {len(merged_data):,} records...")
                     print(f"Starting analysis of merged data ({len(merged_data):,} records)...")
                     analysis_start = time.time()
+                    merged_source_labels = [
+                        (
+                            db_file.filename.replace("MERGED_", "").split("_", 1)[-1]
+                            if "MERGED_" in db_file.filename
+                            else db_file.filename
+                        )
+                        for db_file in category_files
+                    ]
                     try:
                         metrics_obj = JMeterAnalyzerV2.analyze(
                             merged_data,
                             targets=run_targets,
                             application_display_name=application_display_name,
+                            merged_source_filenames=merged_source_labels,
                         )
                         metrics = metrics_obj.dict()
                         _attach_jmeter_raw_source_path(metrics, merged_file_path)
@@ -1613,6 +1832,14 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         'category': category,
                         'metrics': metrics
                     })
+                    persist_jmeter_cache(
+                        db,
+                        run_id,
+                        category_files,
+                        metrics,
+                        sample_count=len(merged_data) if merged_data else metrics.get("total_samples", 0),
+                        analysis_duration=time.time() - start_time,
+                    )
                     print(f"✓ Added single file metrics to all_metrics")
                 
                 else:
@@ -1657,6 +1884,19 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         })
                     
                     if all_jmeter_data:
+                        parallel_peak_sources = []
+                        for db_file, lst in zip(category_files, all_jmeter_data):
+                            peak = max(
+                                (JMeterAnalyzerV2._vu_value_row(d) for d in lst),
+                                default=0,
+                            )
+                            parallel_peak_sources.append(
+                                {
+                                    "filename": db_file.filename,
+                                    "file_path": db_file.file_path,
+                                    "peak_vusers": int(peak),
+                                }
+                            )
                         # Merge all JTL data
                         print(f"Starting merge of {len(all_jmeter_data)} file(s)...")
                         merged_data = JTLParserV2.merge_data(all_jmeter_data, tag_source_index=True)
@@ -1669,6 +1909,7 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 merged_data,
                                 targets=run_targets,
                                 application_display_name=application_display_name,
+                                parallel_peak_sources=parallel_peak_sources,
                             )
                             metrics = metrics_obj.dict()
                             _attach_jmeter_raw_source_path(
@@ -1744,13 +1985,36 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     'category': category,
                     'metrics': metrics
                 })
+                persist_jmeter_cache(
+                    db,
+                    run_id,
+                    category_files,
+                    metrics,
+                    sample_count=total_records or metrics.get("total_samples", 0),
+                    analysis_duration=time.time() - start_time,
+                )
             
             elif category == "web_vitals":
+                cached_wv = try_load_cached_web_vitals_metrics(db, run_id, category_files, regenerate)
+                if cached_wv is not None:
+                    ReportProgressTracker.update_task(
+                        run_id, "parsing", "completed", 100, "Using cached Web Vitals metrics"
+                    )
+                    ReportProgressTracker.update_task(
+                        run_id, "analysis", "completed", 100, "Using cached Web Vitals metrics"
+                    )
+                    entry = apply_cached_web_vitals_to_run(db, run_id, category_files, cached_wv, start_time)
+                    all_metrics.append({
+                        "file_id": entry["file_id"],
+                        "filename": entry["filename"],
+                        "category": "web_vitals",
+                        "metrics": entry["metrics"],
+                    })
+                    total_records += entry["sample_count"]
+                    continue
+
                 # ============================================================
                 # LIGHTHOUSE/WEB VITALS ANALYSIS (Separate from JMeter)
-                # ============================================================
-                # Handle Lighthouse files (web_vitals with .json)
-                # Uses statistical aggregation, NOT concatenation like JMeter
                 # ============================================================
                 lighthouse_files = [f for f in category_files if f.file_path.endswith(".json")]
                 
@@ -1862,6 +2126,24 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                                 db_file.report_status = "error"
                             db.commit()
                             raise
+                    else:
+                        # Reused cached parse/analysis — top of perform_analysis left "parsing" in_progress.
+                        # Mark complete so progress UI and ReportProgressTracker.complete() match reality.
+                        n_pages = len((metrics or {}).get("page_data", []))
+                        ReportProgressTracker.update_task(
+                            run_id,
+                            "parsing",
+                            "completed",
+                            100,
+                            f"Skipped re-parse; using stored results ({len(lighthouse_files)} files)",
+                        )
+                        ReportProgressTracker.update_task(
+                            run_id,
+                            "analysis",
+                            "completed",
+                            100,
+                            f"Skipped re-analysis; using stored results ({n_pages} pages)",
+                        )
                     
                     # Store analysis for all Lighthouse files
                     file_count = len(lighthouse_files)
@@ -1907,6 +2189,14 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         'category': category,
                         'metrics': metrics  # This should have page_data with all pages
                     })
+                    persist_web_vitals_cache(
+                        db,
+                        run_id,
+                        category_files,
+                        metrics,
+                        sample_count=file_count,
+                        analysis_duration=time.time() - start_time,
+                    )
                     
                 elif len(lighthouse_files) == 1:
                     # Single Lighthouse file - Use new clean implementation
@@ -1916,6 +2206,21 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     if existing_analysis and not regenerate:
                         print(f"Reusing existing analysis for {db_file.filename}")
                         metrics = existing_analysis.metrics
+                        n_pages = len((metrics or {}).get("page_data", []))
+                        ReportProgressTracker.update_task(
+                            run_id,
+                            "parsing",
+                            "completed",
+                            100,
+                            f"Skipped re-parse; using stored results ({db_file.filename})",
+                        )
+                        ReportProgressTracker.update_task(
+                            run_id,
+                            "analysis",
+                            "completed",
+                            100,
+                            f"Skipped re-analysis; using stored results ({n_pages} pages)",
+                        )
                     else:
                         print(f"Analyzing Lighthouse file {db_file.filename}...")
                         print(f"  Regenerate mode: {regenerate}")
@@ -1967,6 +2272,14 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                         'category': category,
                         'metrics': metrics
                     })
+                    persist_web_vitals_cache(
+                        db,
+                        run_id,
+                        category_files,
+                        metrics,
+                        sample_count=1,
+                        analysis_duration=time.time() - start_time,
+                    )
                 
                 else:
                     # Handle non-Lighthouse web_vitals files (CSV)
@@ -2154,6 +2467,18 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
         
         # Use the first file for report generation
         primary_file = files[0]
+
+        run_total_bytes = estimate_run_total_bytes(files)
+        rec_est = estimate_run_max_record_count(files)
+        html_only = should_skip_pdf_ppt_reports(run_total_bytes, rec_est)
+        if html_only:
+            skip_msg = (
+                f"Skipped for large run ({run_total_bytes / (1024 * 1024):.0f} MiB, "
+                f"{rec_est:,} samples) — HTML only"
+            )
+            print(f"  → {skip_msg}")
+            ReportProgressTracker.update_task(run_id, "pdf_generation", "skipped", 100, skip_msg)
+            ReportProgressTracker.update_task(run_id, "ppt_generation", "skipped", 100, skip_msg)
         
         # Delete existing reports if regenerating
         if regenerate:
@@ -2193,74 +2518,81 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                 html_duration = time.time() - html_start_time
                 print(f"✓ HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
             elif primary_category == "web_vitals":
-                # Check if this is a Lighthouse JSON file (has lighthouse-specific structure)
-                if isinstance(primary_metrics, dict) and "metrics" in primary_metrics and "grades" in primary_metrics and "overall_grade" in primary_metrics:
-                    # Use Lighthouse HTML generator
-                    print(f"  Calling LighthouseHTMLGenerator.generate_full_report()...")
+                lh_paths_v2, nav_paths_v2 = collect_lighthouse_and_nav_from_run(files)
+                if lh_paths_v2:
+                    ReportProgressTracker.update_task(
+                        run_id, "html_generation", "in_progress", 20, "Generating Lighthouse + Navigation Timing report (v2)..."
+                    )
+                    print(
+                        f"  → Lighthouse Navigation report v2: {len(lh_paths_v2)} Lighthouse JSON file(s), "
+                        f"nav_timing file(s)={len(nav_paths_v2)}"
+                    )
+                    site_name = Path(primary_file.filename).stem
+                    for f in files:
+                        if f.file_path == lh_paths_v2[0]:
+                            site_name = Path(f.filename).stem
+                            break
+                    html_content = generate_lighthouse_nav_html_v2(
+                        lh_paths_v2,
+                        nav_paths=nav_paths_v2,
+                        site_name=site_name,
+                        site_section="",
+                        env="Production",
+                    )
+                    html_duration = time.time() - html_start_time
+                    print(f"  ✓ Lighthouse v2 HTML generated in {html_duration:.1f}s ({len(html_content):,} characters)")
+                    if 'data-report="lh-nav-v2"' not in html_content:
+                        raise ValueError("Lighthouse v2 HTML output missing template marker")
+                elif isinstance(primary_metrics, dict) and "metrics" in primary_metrics and "grades" in primary_metrics and "overall_grade" in primary_metrics:
+                    # Legacy Lighthouse HTML generator (unchanged) — used if no raw Lighthouse paths resolved
+                    print(f"  Calling LighthouseHTMLGenerator.generate_full_report() (legacy)...")
                     print(f"  📊 Routes: primary_metrics keys = {list(primary_metrics.keys())}")
                     print(f"  📊 Routes: page_data in primary_metrics = {'page_data' in primary_metrics}")
                     if 'page_data' in primary_metrics:
                         page_data_list = primary_metrics.get('page_data', [])
                         print(f"  📊 Routes: page_data count = {len(page_data_list)}")
-                        # Validate each page has unique metrics
-                        for idx, page in enumerate(page_data_list[:3], 1):  # Show first 3
+                        for idx, page in enumerate(page_data_list[:3], 1):
                             if isinstance(page, dict):
                                 lcp = page.get('lcp', 0)
                                 fcp = page.get('fcp', 0)
                                 title = page.get('page_title', 'N/A')
                                 print(f"    Page {idx}: {title[:40]}... | LCP={lcp*1000:.0f}ms, FCP={fcp*1000:.0f}ms")
-                    
-                    # CRITICAL: Add progress update and timeout protection
-                    ReportProgressTracker.update_task(run_id, "html_generation", "in_progress", 20, "Generating Lighthouse HTML report...")
-                    print(f"\n  📄 HTML REPORT GENERATION")
-                    print(f"  {'='*60}")
-                    print(f"  → Starting Lighthouse HTML generation...")
-                    print(f"  → Metrics keys available: {list(primary_metrics.keys())}")
-                    print(f"  → Page data count: {len(primary_metrics.get('page_data', []))}")
-                    print(f"  → Issues count: {len(primary_metrics.get('issues', []))}")
-                    print(f"  → Recommendations: {bool(primary_metrics.get('recommendations'))}")
-                    print(f"  → Business Impact: {bool(primary_metrics.get('business_impact'))}")
-                    print(f"  → AIML Results: {bool(primary_metrics.get('aiml_results'))}")
-                    print(f"  {'='*60}\n")
-                    
+
+                    ReportProgressTracker.update_task(run_id, "html_generation", "in_progress", 20, "Generating Lighthouse HTML report (legacy)...")
+                    print(f"\n  📄 HTML REPORT GENERATION (legacy)\n  {'='*60}")
                     html_content = LighthouseHTMLGenerator.generate_full_report(primary_metrics, primary_file.filename)
                     html_duration = time.time() - html_start_time
-                    print(f"\n  ✓ Lighthouse HTML report generated in {html_duration:.1f}s")
+                    print(f"\n  ✓ Legacy Lighthouse HTML report generated in {html_duration:.1f}s")
                     print(f"  ✓ Report size: {len(html_content):,} characters ({len(html_content) / 1024:.1f} KB)")
-                    
-                    # CRITICAL: Verify all sections are in the HTML before proceeding
-                    # Note: Check for section headers in HTML (h2 tags)
+
                     required_sections = [
                         "Issues Identified",
                         "Performance Optimization Roadmap",
                         "Business Impact Projections",
                         "Next Steps for Monitoring and Maintenance",
                         "AIML Modeling Appendix",
-                        "Final Conclusion"
+                        "Final Conclusion",
                     ]
-                    print(f"\n  🔍 Verifying all sections are present in HTML:")
+                    print(f"\n  🔍 Verifying legacy Lighthouse sections in HTML:")
                     missing_sections = []
                     for section in required_sections:
-                        # Check for section header (h2 tag) or section div
                         if f"<h2>{section}</h2>" in html_content or f'<h2>{section}</h2>' in html_content or section in html_content:
                             print(f"      ✓ {section} found")
                         else:
                             print(f"      ✗ {section} MISSING!")
                             missing_sections.append(section)
-                    
+
                     if missing_sections:
-                        # Log more details for debugging
                         print(f"\n  ⚠️  Some sections may be missing. Checking HTML content...")
                         print(f"  → HTML content length: {len(html_content):,} characters")
-                        # Check if sections exist with different formatting
-                        for section in missing_sections:
-                            # Try variations
+                        for section in list(missing_sections):
                             if section.replace(" ", "") in html_content.replace(" ", ""):
                                 print(f"  → Found '{section}' with different formatting")
                                 missing_sections.remove(section)
                             elif section.split()[0] in html_content:
                                 print(f"  → Found partial match for '{section}'")
-                        
+                                missing_sections.remove(section)
+
                         if missing_sections:
                             error_msg = f"HTML report is incomplete. Missing sections: {', '.join(missing_sections)}"
                             print(f"\n  ✗ {error_msg}")
@@ -2272,7 +2604,6 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                     else:
                         print(f"\n  ✓ All required sections verified in HTML report")
                 else:
-                    # Use old Web Vitals HTML generator
                     html_content = HTMLReportGenerator.generate_web_vitals_html_report(primary_metrics, primary_file.filename)
                     html_duration = time.time() - html_start_time
                     print(f"✓ Web Vitals HTML report generated in {html_duration:.1f}s ({len(html_content):,} characters)")
@@ -2298,41 +2629,44 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
                 print(f"✗ Error updating file status: {db_error}")
             raise
         
-        ReportProgressTracker.update_task(run_id, "pdf_generation", "in_progress", 0, "Generating PDF report...")
-        print(f"Generating PDF report...")
-        try:
-            if primary_category == "jmeter":
-                pdf_bytes = PDFReportGenerator.generate_jmeter_pdf_report(primary_metrics)
-            elif primary_category == "web_vitals":
-                pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(primary_metrics, primary_file.filename)
-            else:
-                pdf_bytes = PDFReportGenerator.generate_ui_performance_pdf_report(primary_metrics, primary_file.filename)
-            print(f"✓ PDF report generated ({len(pdf_bytes):,} bytes)")
-            ReportProgressTracker.update_task(run_id, "pdf_generation", "completed", 100, f"PDF report generated ({len(pdf_bytes):,} bytes)")
-        except Exception as e:
-            print(f"✗ PDF report generation failed: {str(e)}")
-            ReportProgressTracker.update_task(run_id, "pdf_generation", "failed", 0, f"PDF generation failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"PDF report generation failed: {str(e)}")
-        
-        ReportProgressTracker.update_task(run_id, "ppt_generation", "in_progress", 0, "Generating PPT report...")
-        print(f"Generating PPT report...")
-        try:
-            if primary_category == "jmeter":
-                ppt_bytes = PPTReportGenerator.generate_jmeter_ppt_report(primary_metrics)
-            elif primary_category == "web_vitals":
-                ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(primary_metrics, primary_file.filename)
-            else:
-                ppt_bytes = PPTReportGenerator.generate_ui_performance_ppt_report(primary_metrics, primary_file.filename)
-            print(f"✓ PPT report generated ({len(ppt_bytes):,} bytes)")
-            ReportProgressTracker.update_task(run_id, "ppt_generation", "completed", 100, f"PPT report generated ({len(ppt_bytes):,} bytes)")
-        except Exception as e:
-            print(f"✗ PPT report generation failed: {str(e)}")
-            ReportProgressTracker.update_task(run_id, "ppt_generation", "failed", 0, f"PPT generation failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"PPT report generation failed: {str(e)}")
+        pdf_bytes = b""
+        ppt_bytes = b""
+        if not html_only:
+            ReportProgressTracker.update_task(run_id, "pdf_generation", "in_progress", 0, "Generating PDF report...")
+            print(f"Generating PDF report...")
+            try:
+                if primary_category == "jmeter":
+                    pdf_bytes = PDFReportGenerator.generate_jmeter_pdf_report(primary_metrics)
+                elif primary_category == "web_vitals":
+                    pdf_bytes = PDFReportGenerator.generate_web_vitals_pdf_report(primary_metrics, primary_file.filename)
+                else:
+                    pdf_bytes = PDFReportGenerator.generate_ui_performance_pdf_report(primary_metrics, primary_file.filename)
+                print(f"✓ PDF report generated ({len(pdf_bytes):,} bytes)")
+                ReportProgressTracker.update_task(run_id, "pdf_generation", "completed", 100, f"PDF report generated ({len(pdf_bytes):,} bytes)")
+            except Exception as e:
+                print(f"✗ PDF report generation failed: {str(e)}")
+                ReportProgressTracker.update_task(run_id, "pdf_generation", "failed", 0, f"PDF generation failed: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise HTTPException(status_code=500, detail=f"PDF report generation failed: {str(e)}")
+            
+            ReportProgressTracker.update_task(run_id, "ppt_generation", "in_progress", 0, "Generating PPT report...")
+            print(f"Generating PPT report...")
+            try:
+                if primary_category == "jmeter":
+                    ppt_bytes = PPTReportGenerator.generate_jmeter_ppt_report(primary_metrics)
+                elif primary_category == "web_vitals":
+                    ppt_bytes = PPTReportGenerator.generate_web_vitals_ppt_report(primary_metrics, primary_file.filename)
+                else:
+                    ppt_bytes = PPTReportGenerator.generate_ui_performance_ppt_report(primary_metrics, primary_file.filename)
+                print(f"✓ PPT report generated ({len(ppt_bytes):,} bytes)")
+                ReportProgressTracker.update_task(run_id, "ppt_generation", "completed", 100, f"PPT report generated ({len(ppt_bytes):,} bytes)")
+            except Exception as e:
+                print(f"✗ PPT report generation failed: {str(e)}")
+                ReportProgressTracker.update_task(run_id, "ppt_generation", "failed", 0, f"PPT generation failed: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise HTTPException(status_code=500, detail=f"PPT report generation failed: {str(e)}")
         
         print(f"Saving reports to database...")
         
@@ -2365,53 +2699,54 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             traceback.print_exc()
             raise
         
-        pdf_path = REPORTS_DIR / f"{run_id}_report.pdf"
-        print(f"Saving PDF report to: {pdf_path}")
-        try:
-            with open(pdf_path, "wb") as f:
-                f.write(pdf_bytes)
-                pdf_size = len(pdf_bytes)
-                print(f"  ✓ PDF report saved ({pdf_size:,} bytes)")
+        if not html_only:
+            pdf_path = REPORTS_DIR / f"{run_id}_report.pdf"
+            print(f"Saving PDF report to: {pdf_path}")
+            try:
+                with open(pdf_path, "wb") as f:
+                    f.write(pdf_bytes)
+                    pdf_size = len(pdf_bytes)
+                    print(f"  ✓ PDF report saved ({pdf_size:,} bytes)")
+                
+                DatabaseService.create_generated_report(
+                    db=db,
+                    file_id=primary_file.file_id,
+                    report_type="pdf",
+                    report_path=str(pdf_path),
+                    file_size=pdf_size,
+                    generated_by="raghskmr"
+                )
+                db.commit()
+                print(f"  ✓ PDF report saved to database")
+            except Exception as e:
+                print(f"  ✗ Error saving PDF report: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
             
-            DatabaseService.create_generated_report(
-                db=db,
-                file_id=primary_file.file_id,
-                report_type="pdf",
-                report_path=str(pdf_path),
-                file_size=pdf_size,
-                generated_by="raghskmr"
-            )
-            db.commit()
-            print(f"  ✓ PDF report saved to database")
-        except Exception as e:
-            print(f"  ✗ Error saving PDF report: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
-        
-        ppt_path = REPORTS_DIR / f"{run_id}_report.pptx"
-        print(f"Saving PPT report to: {ppt_path}")
-        try:
-            with open(ppt_path, "wb") as f:
-                f.write(ppt_bytes)
-                ppt_size = len(ppt_bytes)
-                print(f"  ✓ PPT report saved ({ppt_size:,} bytes)")
-            
-            DatabaseService.create_generated_report(
-                db=db,
-                file_id=primary_file.file_id,
-                report_type="ppt",
-                report_path=str(ppt_path),
-                file_size=ppt_size,
-                generated_by="raghskmr"
-            )
-            db.commit()
-            print(f"  ✓ PPT report saved to database")
-        except Exception as e:
-            print(f"  ✗ Error saving PPT report: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise
+            ppt_path = REPORTS_DIR / f"{run_id}_report.pptx"
+            print(f"Saving PPT report to: {ppt_path}")
+            try:
+                with open(ppt_path, "wb") as f:
+                    f.write(ppt_bytes)
+                    ppt_size = len(ppt_bytes)
+                    print(f"  ✓ PPT report saved ({ppt_size:,} bytes)")
+                
+                DatabaseService.create_generated_report(
+                    db=db,
+                    file_id=primary_file.file_id,
+                    report_type="ppt",
+                    report_path=str(ppt_path),
+                    file_size=ppt_size,
+                    generated_by="raghskmr"
+                )
+                db.commit()
+                print(f"  ✓ PPT report saved to database")
+            except Exception as e:
+                print(f"  ✗ Error saving PPT report: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
         
         print(f"✓ All reports saved successfully")
         
@@ -2478,15 +2813,27 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             
             # Category-specific section requirements
             if primary_category == "web_vitals":
-                # Lighthouse/Web Vitals specific sections
-                required_sections = [
-                    "Issues Identified",
-                    "Performance Optimization Roadmap", 
-                    "Business Impact Projections",
-                    "Next Steps for Monitoring and Maintenance",  # Full section name
-                    "AIML Modeling Appendix",
-                    "Final Conclusion"
-                ]
+                # Lighthouse + optional nav timing v2 uses a different template (no legacy
+                # "Issues Identified" / "AIML" headings). Verify structure instead.
+                if 'data-report="lh-nav-v2"' in html_content_check:
+                    required_sections = [
+                        'id="p-ov"',
+                        'id="p-cwv"',
+                        'id="p-issues"',
+                        'id="p-rca"',
+                        'id="p-plan"',
+                        'id="report-payload"',
+                    ]
+                else:
+                    # Legacy LighthouseHTMLGenerator / full report layout
+                    required_sections = [
+                        "Issues Identified",
+                        "Performance Optimization Roadmap",
+                        "Business Impact Projections",
+                        "Next Steps for Monitoring and Maintenance",  # Full section name
+                        "AIML Modeling Appendix",
+                        "Final Conclusion",
+                    ]
             elif primary_category == "jmeter":
                 # JMeter HTML layout (v3+): issues + deep health + resolution plan; business impact block removed.
                 # Action plan heading: classic HTML generator vs combined load report differ.
@@ -2535,7 +2882,8 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             print(f"    Task statuses: {tasks_status}")
             print(f"    Overall progress: {progress_before.get('overall_progress', 0)}%")
         
-        ReportProgressTracker.complete(run_id, "All reports generated successfully!")
+        done_msg = "HTML report generated successfully!" if html_only else "All reports generated successfully!"
+        ReportProgressTracker.complete(run_id, done_msg)
         
         # Double-check completion status
         final_progress = ReportProgressTracker.get_progress(run_id)
@@ -2544,7 +2892,7 @@ def perform_analysis_and_report_generation(files, db, run_id, regenerate, start_
             print(f"   Message: {final_progress.get('message')}")
             print(f"   Task statuses: {[(tid, task.get('status')) for tid, task in final_progress.get('tasks', {}).items()]}")
             # Force completion since reports are saved and verified
-            ReportProgressTracker.complete(run_id, "All reports generated and verified successfully!")
+            ReportProgressTracker.complete(run_id, done_msg)
         
         # Update status to generated for all files
         for f in files:
